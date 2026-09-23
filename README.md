@@ -35,6 +35,11 @@ factory/sandbox_factory.py ──► OCI Resource Manager (managed Terraform)
 | `stacks/sandbox/modules/{adb,kafka,app}` | The optional pieces |
 | `factory/sandbox_factory.py` | CLI: create, deploy, list, destroy, reap |
 | `factory/mcp_server.py` | Same functions as MCP tools for a chat agent |
+| `foundation/control_adb.tf` | Always Free ATP in sbx-control: APEX front end + request queue |
+| `factory/controldb.py` | Control DB setup: SBX schema, `sandbox_requests`, APEX workspace, end users |
+| `factory/apex_builder.py` | Builds the APEX app through the App Builder wizard (Playwright) |
+| `factory/apex_customize.py` | Export → rewrite form items → re-import (switches, select lists, defaults) |
+| `factory/worker.py` | Turns queued rows into sandboxes; streams the log back into the row |
 | `examples/hello-app/` | Sample Dockerfile for `deploy` |
 
 ## 1. Foundation (once per tenancy)
@@ -119,7 +124,35 @@ Reads the `expires` tag on every factory stack and runs a destroy job for
 each one past its date. Schedule it daily (cron, Task Scheduler, or an OCI
 Function on a Resource Scheduler). The budget alert is the backstop.
 
-## 5. Chat agent
+## 5. APEX front end (self-service form)
+
+```
+APEX app "Sandbox Factory"  ──insert──▶  SBX.SANDBOX_REQUESTS  ◀──poll──  worker.py ──▶ factory ──▶ Resource Manager
+        (any browser)                     status / outputs / log                (where Docker + OCI creds live)
+```
+
+One-time setup, after the foundation stack is applied (it now includes the control ATP):
+
+```bash
+cd factory
+SBX_SECRETS_FILE=/tmp/sbx.json python controldb.py setup        # schema, table, view, workspace
+SBX_SECRETS_FILE=/tmp/sbx.json python apex_builder.py           # creates the app via the wizard
+python apex_customize.py                                        # polishes the request form
+python controldb.py users alice@example.com bob@example.com     # end-user accounts
+python worker.py                                                # leave running
+```
+
+URL: `<control ADB ORDS URL>/r/sbx/sandbox-factory`. Users sign in with an
+APEX account, open **Requests → Create**, pick Create / Deploy / Destroy and
+the switches, and submit. The row shows QUEUED → RUNNING → DONE with the
+outputs (URLs, connect strings) and the full Terraform log. **Sandboxes**
+lists what is live and when it expires.
+
+The wizard-built app is reproducible: `apex_blueprint.json` is the wizard
+blueprint, `apex_customize.py` is idempotent. APEX has no create-app API, so
+`apex_builder.py` drives the UI with Playwright (verified on APEX 26.1).
+
+## 6. Chat agent
 
 `factory/mcp_server.py` exposes `create_sandbox`, `deploy_app`,
 `list_sandboxes`, `destroy_sandbox` and `reap_sandboxes` as MCP tools.

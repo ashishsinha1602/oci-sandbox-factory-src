@@ -7,6 +7,7 @@ outputs at runtime; nothing is written to disk.
 
     python controldb.py setup      # schema SBX, tables, APEX workspace SBX
     python controldb.py sql "select count(*) from sbx.sandbox_requests"
+    python controldb.py users alice@example.com   # APEX end-user accounts for the app
 """
 
 from __future__ import annotations
@@ -165,6 +166,35 @@ def setup(argv: list[str]) -> None:
     conn.close()
 
 
+def add_users(argv: list[str]) -> None:
+    """Create APEX end-user accounts for the Sandbox Factory app.
+
+        python controldb.py users alice@example.com bob@example.com
+    Each user gets a one-time password (printed) and must change it on first login.
+    """
+    conn = connect("ADMIN")
+    cur = conn.cursor()
+    for email in argv:
+        user = email.split("@")[0].upper()
+        pw = _password()
+        cur.execute(f"""
+            begin
+              apex_util.set_workspace(p_workspace => '{WORKSPACE}');
+              if apex_util.get_user_id(:u) is null then
+                apex_util.create_user(
+                  p_user_name => :u, p_email_address => :e, p_web_password => :pw,
+                  p_developer_privs => null, p_default_schema => '{SCHEMA}',
+                  p_change_password_on_first_use => 'Y');
+              else
+                apex_util.reset_password(p_user_name => :u, p_old_password => null,
+                                         p_new_password => :pw, p_change_password_on_first_use => true);
+              end if;
+            end;""", u=user, e=email, pw=pw)
+        print(f"{user:<20} {email:<40} one-time password: {pw}")
+    conn.commit()
+    conn.close()
+
+
 def run_sql(argv: list[str]) -> None:
     conn = connect("ADMIN")
     cur = conn.cursor()
@@ -179,4 +209,4 @@ def run_sql(argv: list[str]) -> None:
 
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else "setup"
-    {"setup": setup, "sql": run_sql}[cmd](sys.argv[2:])
+    {"setup": setup, "sql": run_sql, "users": add_users}[cmd](sys.argv[2:])

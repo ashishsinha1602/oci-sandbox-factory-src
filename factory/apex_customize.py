@@ -31,7 +31,7 @@ SELECT_LISTS = {
 }
 DEFAULTS = {
     "P3_TTL_DAYS": "7",
-    "P3_APP_PORT": "8080",
+    "P3_APP_PORT": "80",
     "P3_APP_IMAGE": "docker.io/library/nginx:alpine",
     "P3_STATUS": "QUEUED",
 }

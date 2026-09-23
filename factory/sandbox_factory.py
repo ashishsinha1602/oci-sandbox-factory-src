@@ -133,6 +133,17 @@ def job_outputs(rm, job_id: str) -> dict:
     return out
 
 
+def adb_password_from_state(rm, stack_id: str) -> str | None:
+    try:
+        state = json.loads(rm.get_stack_tf_state(stack_id).data.content.decode())
+    except Exception:  # noqa: BLE001
+        return None
+    for r in state.get("resources", []):
+        if r.get("type") == "random_password" and r.get("name") == "admin":
+            return r["instances"][0]["attributes"].get("result")
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Commands
 # ---------------------------------------------------------------------------
@@ -204,7 +215,14 @@ def cmd_create(args, app_containers: list | None = None) -> dict:
 
     job = run_job(rm, stack_id, "APPLY", args.sandbox_id)
     outputs = job_outputs(rm, job.id)
-    print(json.dumps(outputs, indent=2))
+    if isinstance(outputs.get("adb"), dict):
+        # Sensitive outputs are masked in the job outputs; read the password from the state
+        # so the requester can log in to SQL Developer Web / connect a client.
+        pw = adb_password_from_state(rm, stack_id)
+        if pw:
+            outputs["adb"]["admin_user"] = "ADMIN"
+            outputs["adb"]["admin_password"] = pw
+    print(json.dumps({k: v for k, v in outputs.items() if k != "adb_admin_password"}, indent=2))
     return outputs
 
 

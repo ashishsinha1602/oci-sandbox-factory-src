@@ -169,7 +169,9 @@ function sfInit(){
         h+='<div class="sf-req"><div class="hd">'+(r.status==='RUNNING'?'<span class="sf-spin"></span>':'')+'<b>'+esc(r.sandbox_id)+'</b><span class="sf-badge '+esc(r.status)+'">'+esc(r.status)+'</span><span>'+esc(r.action)+'</span><span class="meta">'+esc(r.created)+' &middot; '+esc(r.elapsed)+'s</span></div>';
         if(o&&r.status==='DONE'){ h+='<div class="sf-links">';
           if(o.app&&o.app.urls)o.app.urls.forEach(function(u){h+='<a href="'+esc(u)+'" target="_blank">'+esc(u)+'</a>'});
-          if(o.adb)h+='<a href="'+esc(o.adb.sql_web_url)+'" target="_blank">SQL Developer Web</a><code>'+esc(o.adb.connect_string)+'</code>';
+          if(o.adb){h+='<div style="margin-top:6px"><a href="'+esc(o.adb.sql_web_url)+'" target="_blank">SQL Developer Web</a> &middot; user <code>'+esc(o.adb.admin_user||'ADMIN')+'</code>'
+              +(o.adb.admin_password?' &middot; password <code>'+esc(o.adb.admin_password)+'</code> <button type="button" class="sf-btn sec" style="padding:2px 8px;font-size:12px" onclick="navigator.clipboard.writeText(this.previousElementSibling.textContent)">copy</button>':'')
+              +'<br>connect string <code>'+esc(o.adb.connect_string)+'</code></div>'}
           if(o.kafka)h+='<code>kafka: '+esc(o.kafka.bootstrap_servers)+'</code>';
           if(o.destroyed)h+='destroyed';
           h+='</div>'}

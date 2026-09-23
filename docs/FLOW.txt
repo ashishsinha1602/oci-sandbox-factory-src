@@ -1,0 +1,103 @@
+OCI SANDBOX FACTORY - HOW A REQUEST FLOWS
+==========================================
+
+ +--------------+   1. types / clicks      +--------------------------+
+ |  User        | -----------------------> |  APEX home page          |
+ |  (browser)   | <----------------------- |  chat . describe . form  |
+ +--------------+   8. status card polls   +------------+-------------+
+                       every 5 s                        | 2. Ajax
+                                                        v
+                                           +--------------------------+  3. chat / plan  +----------------------+
+                                           |  PL/SQL callback "SF"    | ---------------> | OCI Generative AI    |
+                                           |  in the control ATP      | <--------------- | Gemini 2.5 Flash     |
+                                           +------------+-------------+  JSON: reply +   +----------------------+
+                                                        | 4. user clicks     optional action
+                                                        |    "Create it"
+                                                        v
+                                           +--------------------------+
+                                           |  SBX.SANDBOX_REQUESTS    |   one row: QUEUED
+                                           +------------+-------------+
+                                                        | 5. poll every 10 s, claim row -> RUNNING
+                                                        v
+                                           +--------------------------+  6a. docker buildx arm64 -> push  +------------------+
+                                           |  worker.py               | -------------------------------> | OCI Registry     |
+                                           |  (your laptop today)     |                                  +------------------+
+                                           |                          |  6b. zip stack -> APPLY job       +------------------+
+                                           |                          | -------------------------------> | Resource Manager |
+                                           |                          | <----- log lines, outputs ------- | (Terraform)      |
+                                           +------------+-------------+                                  +--------+---------+
+                                                        | 7. log + outputs + DONE written to the row              | creates
+                                                        |    (URLs, connect string, ADMIN password)               v
+                                                        |                                       +-----------------------------+
+                                                        |  every 30 min: reap past "expires",   | sbx-sandboxes               |
+                                                        +- reconcile ------ destroy ----------> | ATP . Streaming . Container |
+                                                                                                | NSG . API Gateway (HTTPS)   |
+                                                                                                +-----------------------------+
+
+STEP BY STEP
+------------
+1. You type or click. Chat, "Describe it", the form, or "Just deploy my container".
+
+2. The page calls the database. An Ajax call hits a PL/SQL callback in the control
+   Autonomous Database (SBXCTL). No page reloads.
+
+3. The AI proposes. For chat and describe, the callback sends the conversation plus
+   your current sandboxes to OCI Generative AI (Gemini 2.5 Flash, region Phoenix),
+   using the database's own identity (resource principal) - no API keys anywhere.
+   The model must answer in JSON: a reply and, if you clearly asked for something,
+   an action (create, deploy or destroy) with its parameters.
+
+4. You confirm. The action becomes a button. The click inserts ONE row into the
+   queue table SBX.SANDBOX_REQUESTS with status QUEUED. Until then nothing exists.
+
+5. The worker claims it. worker.py (a Windows scheduled task on this laptop,
+   restarted every 10 minutes if it dies) polls every 10 seconds, claims the row
+   with SELECT ... FOR UPDATE SKIP LOCKED and marks it RUNNING.
+
+6. Build and provision.
+   a. For a local folder or Git repo: docker buildx --platform linux/arm64 --push
+      to a public repo sbx/<sandbox>/app in your OCI Container Registry.
+   b. Zip stacks/sandbox, create or update the Resource Manager stack sbx-<id>,
+      run an APPLY job. Terraform creates: Autonomous Database, Streaming pool +
+      topic (Kafka API), Container Instance (ARM), network security group with
+      only the declared port, API Gateway with an Oracle HTTPS hostname. Every
+      resource is tagged sbx.owner / sandbox_id / team / expires.
+
+7. Results flow back. Every Terraform log line is streamed into the row. At the
+   end the outputs (app URL, gateway hostname, connect string, SQL Developer Web
+   link, ADMIN password read from the stack state) are written and the row is DONE.
+
+8. The page shows it. The status card polls every 5 seconds: log tail while
+   running, links and credentials when done. One card per sandbox.
+
+BACKGROUND
+----------
+- Reaper: every 30 minutes the worker runs a DESTROY job for any stack whose
+  expires tag is before today, then deletes the stack. Daily backstop task at 09:00.
+- Reconcile: sandboxes destroyed from the CLI or the reaper get a DESTROY/DONE
+  row so the page stops showing them.
+- 3-day cap enforced in: table check constraint, Terraform validation, CLI
+  choices, form and chat defaults.
+- Budget alerts on compartment sbx; quotas on A1 cores, ADB, OKE, partitions.
+
+DESTROY
+-------
+Chat "destroy <id>" -> Destroy button -> DESTROY row -> worker -> Resource
+Manager DESTROY job -> stack deleted. About 3 minutes.
+
+WHERE THINGS ARE
+----------------
+App:      https://g63702d3fbc0a2d-sbxctl.adb.us-phoenix-1.oraclecloudapps.com/ords/r/sbx/sandbox-factory
+Login:    SBX / Sbx#Tmp2026x9Q  (APEX account; change it after first use)
+Code:     C:\Users\sinha\Documents\oci-sandbox-factory
+Docs:     docs/ARCHITECTURE.md, docs/DEMO-RUNBOOK.md, this file
+Worker:   scheduled task SandboxFactory\Worker  (schtasks /Run /TN "SandboxFactory\Worker")
+Reaper:   scheduled task SandboxFactory\Reap (daily 09:00)
+
+IF YOU CANNOT LOG IN
+--------------------
+- Reinstalling the app (apex_customize.py) ends all open sessions: close the tab,
+  open the URL again, sign in fresh.
+- Username SBX, password Sbx#Tmp2026x9Q, case-sensitive.
+- New account: python factory\controldb.py users you@example.com
+  (prints a one-time password; you must change it at first login).

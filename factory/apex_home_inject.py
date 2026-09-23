@@ -21,6 +21,10 @@ HERO_RE = re.compile(
     r"wwv_flow_imp_page\.create_page_plug\(\s+p_id=>wwv_flow_imp\.id\(\d+\)\s+,p_plug_name=>'Sandbox Factory'.*?\n\);\n",
     re.S,
 )
+NAV_RE = re.compile(
+    r"wwv_flow_imp_page\.create_page_plug\(\s+p_id=>wwv_flow_imp\.id\(\d+\)\s+,p_plug_name=>'Page Navigation'.*?\n\);\n",
+    re.S,
+)
 PROC_RE = re.compile(
     r"wwv_flow_imp_page\.create_page_process\(\s+p_id=>wwv_flow_imp\.id\(\d+\)(?:.*?\n)*?,p_process_name=>'SF'.*?\n\);\n",
     re.S,
@@ -80,6 +84,7 @@ def rewrite_home(text: str) -> str:
         raise SystemExit("home page not found in export")
     page = text[start:end]
     page = HERO_RE.sub("", page)   # wizard hero region
+    page = NAV_RE.sub("", page)    # wizard "Requests / Sandboxes" card tiles (the side menu has them)
     page = PROC_RE.sub("", page)   # an earlier copy of our process
     marker = NL + "end;" + NL + "/"
     if marker not in page:

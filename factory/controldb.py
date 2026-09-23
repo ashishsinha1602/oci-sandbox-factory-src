@@ -130,6 +130,13 @@ def setup(argv: list[str]) -> None:
         print("table sandbox_requests created")
     cur.execute(VIEW)
     print("view sandboxes_v created")
+    if not exists("select count(*) from dba_tables where owner = :1 and table_name = 'FACTORY_CONFIG'", SCHEMA):
+        cur.execute(f"create table {SCHEMA}.factory_config (key varchar2(64) primary key, value varchar2(4000))")
+    cur.execute(f"""merge into {SCHEMA}.factory_config c
+        using (select 'compartment_ocid' key, json_value(cloud_identity, '$.COMPARTMENT_OCID') value from v$pdbs where rownum = 1) s
+        on (c.key = s.key) when matched then update set c.value = s.value
+        when not matched then insert (key, value) values (s.key, s.value)""")
+    print("factory_config: compartment_ocid set")
 
     # APEX workspace on the SBX schema + a workspace admin who must change password on first login.
     cur.execute("select count(*) from apex_workspaces where workspace = :1", [WORKSPACE])

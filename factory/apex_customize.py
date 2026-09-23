@@ -18,6 +18,7 @@ import re
 import sys
 
 import controldb
+from apex_home_inject import rewrite_home
 
 APP_NAME = "Sandbox Factory"
 FORM_PAGE = 3
@@ -184,7 +185,7 @@ def main():
     app = app_id()
     text = export_app(app)
     (HERE / "apex_export_original.sql").write_text(text, encoding="utf-8")
-    new = rewrite(text)
+    new = rewrite_home(rewrite(text))
     (HERE / "apex_export_customized.sql").write_text(new, encoding="utf-8")
     print(f"exported app {app}: {len(text)} chars -> customised {len(new)} chars")
     if a.dry_run:

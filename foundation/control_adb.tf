@@ -42,7 +42,8 @@ resource "oci_database_autonomous_database" "control" {
   freeform_tags = local.freeform_tags
 
   lifecycle {
-    ignore_changes = [admin_password]
+    # Always Free reports cpu_core_count 0 after creation; touching it is a 403.
+    ignore_changes = [admin_password, cpu_core_count]
   }
 }
 
@@ -60,4 +61,24 @@ output "control_adb" {
 output "control_adb_admin_password" {
   value     = var.enable_control_adb ? random_password.control_adb_admin[0].result : null
   sensitive = true
+}
+
+# Let the control database call OCI Generative AI as itself (resource
+# principal), so Select AI in APEX needs no API keys.
+resource "oci_identity_dynamic_group" "control_adb" {
+  count          = var.enable_control_adb ? 1 : 0
+  compartment_id = var.tenancy_ocid
+  name           = "${var.prefix}-control-adb-dg"
+  description    = "The sandbox factory control database."
+  matching_rule  = "resource.id = '${oci_database_autonomous_database.control[0].id}'"
+  freeform_tags  = local.freeform_tags
+}
+
+resource "oci_identity_policy" "control_adb_genai" {
+  count          = var.enable_control_adb ? 1 : 0
+  compartment_id = var.tenancy_ocid
+  name           = "${var.prefix}-control-adb-genai"
+  description    = "Control database may use Generative AI."
+  statements     = ["allow dynamic-group ${oci_identity_dynamic_group.control_adb[0].name} to manage generative-ai-family in tenancy"]
+  freeform_tags  = local.freeform_tags
 }

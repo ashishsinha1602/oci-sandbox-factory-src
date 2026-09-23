@@ -1,0 +1,171 @@
+<style>
+.sf{max-width:1080px;margin:0 auto;font-family:inherit}
+.sf-hero{margin:4px 0 18px}.sf-hero h1{font-size:28px;margin:0 0 4px}.sf-hero p{margin:0;color:#5f6b7a}
+.sf-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px}
+.sf-card{border:1px solid #e3e8ef;border-radius:14px;padding:18px 20px;cursor:pointer;background:#fff;transition:.15s}
+.sf-card:hover{border-color:#1a73e8}.sf-card.sel{border-color:#1a73e8;box-shadow:0 6px 22px rgba(26,115,232,.16)}
+.sf-card .ic{font-size:26px;margin-bottom:8px}.sf-card h3{margin:0 0 4px;font-size:17px}.sf-card p{margin:0;color:#6b7280;font-size:13px}
+.sf-panel{margin-top:18px;border-radius:14px;padding:22px;background:#fff;border:1px solid #e3e8ef}
+.sf-row{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px}.sf-field{flex:1 1 220px}
+.sf-field label{display:block;font-size:12px;color:#5f6b7a;margin-bottom:4px}
+.sf-field input,.sf-field textarea,.sf-field select{width:100%;padding:10px 12px;border:1px solid #cfd6df;border-radius:9px;font-size:14px;box-sizing:border-box;background:#fff}
+.sf-field textarea{min-height:96px;resize:vertical}
+.sf-toggles{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.sf-toggle{display:flex;align-items:center;gap:10px;padding:10px 14px;border:1px solid #d6dde6;border-radius:10px;cursor:pointer;user-select:none;font-size:14px}
+.sf-toggle .dot{width:12px;height:12px;border-radius:50%;background:#cbd5e1}.sf-toggle.on{border-color:#1a73e8;background:#eaf2fe}.sf-toggle.on .dot{background:#1a73e8}
+.sf-btn{background:#1a73e8;color:#fff;border:0;border-radius:10px;padding:11px 20px;font-size:14px;font-weight:600;cursor:pointer}
+.sf-btn.sec{background:#eef2f6;color:#1f2937}.sf-btn:disabled{opacity:.45;cursor:default}.sf-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.sf-ai{background:linear-gradient(135deg,#f5f3ff,#eaf4ff);border:1px solid #d9e4ff;border-radius:12px;padding:16px 18px;margin:12px 0}
+.sf-ai h4{margin:0 0 8px;font-size:14px;color:#3b4a6b}.sf-ai p{margin:0 0 8px;line-height:1.5}.sf-ai ol,.sf-ai ul{margin:6px 0 0 18px;padding:0}.sf-ai li{margin-bottom:4px}
+.sf-chip{display:inline-block;background:#fff;border:1px solid #d6dde6;border-radius:999px;padding:3px 10px;font-size:12px;margin:2px 4px 2px 0}
+.sf-status{margin-top:20px}.sf-status h3{font-size:16px;margin:0 0 10px}
+.sf-req{border:1px solid #e3e8ef;border-radius:12px;padding:12px 14px;margin-bottom:10px;background:#fff}
+.sf-req .hd{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.sf-req .hd b{font-size:15px}.sf-req .meta{color:#6b7280;font-size:12px;margin-left:auto}
+.sf-badge{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600}
+.sf-badge.QUEUED{background:#fff3cd;color:#7a5b00}.sf-badge.RUNNING{background:#cfe8ff;color:#0b4a8b}.sf-badge.DONE{background:#d4edda;color:#155724}.sf-badge.FAILED{background:#f8d7da;color:#721c24}
+.sf-log{background:#0f172a;color:#cbd5e1;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;padding:10px 12px;border-radius:8px;max-height:200px;overflow:auto;white-space:pre-wrap;margin-top:8px}
+.sf-links{margin-top:8px;font-size:14px}.sf-links a{margin-right:14px}.sf-links code{background:#f1f5f9;padding:2px 6px;border-radius:6px}
+.sf-spin{display:inline-block;width:14px;height:14px;border:2px solid #cbd5e1;border-top-color:#1a73e8;border-radius:50%;animation:sfspin .8s linear infinite;vertical-align:-2px;margin-right:6px}
+@keyframes sfspin{to{transform:rotate(360deg)}}
+.sf-err{color:#b91c1c;font-size:13px;margin-top:8px}.sf-hide{display:none}
+</style>
+
+<div class="sf">
+  <div class="sf-hero">
+    <h1>What do you want to build?</h1>
+    <p>Pick a path. Every sandbox is an isolated OCI compartment that deletes itself after 3 days.</p>
+  </div>
+
+  <div class="sf-cards">
+    <div class="sf-card" data-mode="describe"><div class="ic">&#10024;</div><h3>Describe it, AI plans it</h3><p>Say what you want in plain English. AI picks the pieces and tells you what to do next.</p></div>
+    <div class="sf-card" data-mode="build"><div class="ic">&#128295;</div><h3>Build an app</h3><p>Choose a database, Kafka, and a container. Connection details are injected into your app.</p></div>
+    <div class="sf-card" data-mode="deploy"><div class="ic">&#128230;</div><h3>Just deploy my container</h3><p>Give a public image or a Git repo with a Dockerfile. Get a public URL in minutes.</p></div>
+  </div>
+
+  <div class="sf-panel sf-hide" id="sf-panel">
+
+    <div id="sf-describe" class="sf-hide">
+      <div class="sf-row"><div class="sf-field"><label>Describe what you want</label>
+        <textarea id="sf-text" placeholder="e.g. A Python API that stores orders in a database and publishes events to Kafka. Code is at https://github.com/me/orders-api"></textarea></div></div>
+      <div class="sf-actions"><button class="sf-btn" id="sf-plan">&#10024; Ask AI to plan it</button><span id="sf-plan-wait" class="sf-hide"><span class="sf-spin"></span>Thinking...</span></div>
+      <div id="sf-ai" class="sf-ai sf-hide"></div>
+    </div>
+
+    <div id="sf-form" class="sf-hide">
+      <div class="sf-row">
+        <div class="sf-field"><label>Sandbox id</label><input id="sf-id" placeholder="my-app" maxlength="20"></div>
+        <div class="sf-field" style="flex:0 1 160px"><label>Lifetime</label>
+          <select id="sf-ttl"><option value="1">1 day</option><option value="2">2 days</option><option value="3" selected>3 days (max)</option></select></div>
+      </div>
+      <div class="sf-toggles" id="sf-toggles">
+        <div class="sf-toggle" data-k="enable_adb"><span class="dot"></span>Autonomous Database</div>
+        <div class="sf-toggle" data-k="enable_kafka"><span class="dot"></span>Kafka</div>
+        <div class="sf-toggle" data-k="enable_app"><span class="dot"></span>Containerised app</div>
+      </div>
+      <div id="sf-appfields">
+        <div class="sf-row">
+          <div class="sf-field"><label>Git repository (Dockerfile at root) &mdash; or leave empty and use an image</label><input id="sf-git" placeholder="https://github.com/you/repo"></div>
+        </div>
+        <div class="sf-row">
+          <div class="sf-field"><label>Container image</label><input id="sf-image" value="docker.io/library/nginx:alpine"></div>
+          <div class="sf-field" style="flex:0 1 140px"><label>Port</label><input id="sf-port" type="number" value="80"></div>
+        </div>
+      </div>
+      <div class="sf-actions">
+        <button class="sf-btn" id="sf-submit">Create sandbox</button>
+        <span id="sf-submit-wait" class="sf-hide"><span class="sf-spin"></span>Queueing...</span>
+      </div>
+      <div class="sf-err sf-hide" id="sf-err"></div>
+    </div>
+  </div>
+
+  <div class="sf-status" id="sf-status"></div>
+</div>
+
+<script>
+(function(){
+  var mode=null, plan=null, cfg={enable_adb:false,enable_kafka:false,enable_app:false}, timer=null;
+  var $=function(s){return document.querySelector(s)}, $$=function(s){return Array.prototype.slice.call(document.querySelectorAll(s))};
+  function call(action,payload){return apex.server.process('SF',{x01:action,x02:JSON.stringify(payload||{})},{dataType:'json'})}
+  function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+
+  $$('.sf-card').forEach(function(c){c.onclick=function(){
+    $$('.sf-card').forEach(function(x){x.classList.remove('sel')}); c.classList.add('sel');
+    mode=c.dataset.mode; $('#sf-panel').classList.remove('sf-hide');
+    $('#sf-describe').classList.toggle('sf-hide',mode!=='describe');
+    $('#sf-form').classList.toggle('sf-hide',mode==='describe');
+    $('#sf-toggles').classList.toggle('sf-hide',mode==='deploy');
+    if(mode==='deploy'){setCfg({enable_adb:false,enable_kafka:false,enable_app:true})}
+    if(mode==='build'){setCfg({enable_adb:true,enable_kafka:false,enable_app:true})}
+    $('#sf-id').focus();
+  }});
+
+  function setCfg(c){for(var k in c){cfg[k]=c[k]} $$('.sf-toggle').forEach(function(t){t.classList.toggle('on',!!cfg[t.dataset.k])}); $('#sf-appfields').classList.toggle('sf-hide',!cfg.enable_app)}
+  $$('.sf-toggle').forEach(function(t){t.onclick=function(){var k=t.dataset.k; var c={}; c[k]=!cfg[k]; setCfg(c)}});
+
+  $('#sf-plan').onclick=function(){
+    var text=$('#sf-text').value.trim(); if(!text){$('#sf-text').focus();return}
+    $('#sf-plan').disabled=true; $('#sf-plan-wait').classList.remove('sf-hide'); $('#sf-ai').classList.add('sf-hide');
+    call('plan',{text:text}).then(function(r){
+      $('#sf-plan').disabled=false; $('#sf-plan-wait').classList.add('sf-hide');
+      if(r.error){showAI('<p class="sf-err">'+esc(r.error)+'</p>');return}
+      var m=(r.raw||'').match(/\{[\s\S]*\}/); try{plan=m?JSON.parse(m[0]):null}catch(e){plan=null}
+      if(!plan){showAI('<h4>AI answer</h4><p>'+esc(r.raw)+'</p>');return}
+      var h='<h4>&#10024; Plan</h4><p>'+esc(plan.summary)+'</p><div>';
+      if(plan.enable_adb)h+='<span class="sf-chip">Autonomous Database</span>';
+      if(plan.enable_kafka)h+='<span class="sf-chip">Kafka</span>';
+      if(plan.enable_app)h+='<span class="sf-chip">App: '+esc(plan.git_url||plan.app_image)+' :'+esc(plan.app_port||80)+'</span>';
+      h+='<span class="sf-chip">3 days</span></div>';
+      if(plan.steps&&plan.steps.length){h+='<h4 style="margin-top:10px">What to do next</h4><ol>'+plan.steps.map(function(s){return '<li>'+esc(s)+'</li>'}).join('')+'</ol>'}
+      if(plan.tips&&plan.tips.length){h+='<ul>'+plan.tips.map(function(s){return '<li>'+esc(s)+'</li>'}).join('')+'</ul>'}
+      h+='<div class="sf-actions" style="margin-top:12px"><button class="sf-btn" id="sf-usePlan">Looks good, create it</button><button class="sf-btn sec" id="sf-editPlan">Adjust first</button></div>';
+      showAI(h);
+      $('#sf-usePlan').onclick=function(){applyPlan(); submit()};
+      $('#sf-editPlan').onclick=function(){applyPlan(); $('#sf-form').classList.remove('sf-hide'); $('#sf-toggles').classList.remove('sf-hide'); $('#sf-id').focus()};
+    }).catch(function(e){$('#sf-plan').disabled=false;$('#sf-plan-wait').classList.add('sf-hide');showAI('<p class="sf-err">'+esc(e.message||e)+'</p>')});
+  };
+  function showAI(h){$('#sf-ai').innerHTML=h;$('#sf-ai').classList.remove('sf-hide')}
+  function applyPlan(){ if(!plan)return; $('#sf-id').value=(plan.sandbox_id||'').toLowerCase().replace(/[^a-z0-9-]/g,'-').replace(/^-+/,'').slice(0,20)||'sandbox';
+    setCfg({enable_adb:!!plan.enable_adb,enable_kafka:!!plan.enable_kafka,enable_app:!!plan.enable_app});
+    if(plan.git_url)$('#sf-git').value=plan.git_url; if(plan.app_image)$('#sf-image').value=plan.app_image; if(plan.app_port)$('#sf-port').value=plan.app_port; $('#sf-ttl').value='3'}
+
+  $('#sf-submit').onclick=submit;
+  function submit(){
+    var id=$('#sf-id').value.trim().toLowerCase(); $('#sf-err').classList.add('sf-hide');
+    if(!/^[a-z][a-z0-9-]{1,19}$/.test(id)){err('Sandbox id: 2-20 chars, lowercase letters, digits, dashes, starting with a letter.');return}
+    if(!cfg.enable_adb&&!cfg.enable_kafka&&!cfg.enable_app){err('Pick at least one piece.');return}
+    var git=$('#sf-git').value.trim(), payload={sandbox_id:id, ttl_days:+$('#sf-ttl').value, enable_adb:cfg.enable_adb, enable_kafka:cfg.enable_kafka, enable_app:cfg.enable_app,
+      action:(cfg.enable_app&&git)?'DEPLOY':'CREATE', git_url:git||null, app_image:$('#sf-image').value.trim()||null, app_port:+$('#sf-port').value||80, text:mode==='describe'?$('#sf-text').value.trim():null};
+    $('#sf-submit').disabled=true; $('#sf-submit-wait').classList.remove('sf-hide');
+    call('submit',payload).then(function(r){
+      $('#sf-submit').disabled=false; $('#sf-submit-wait').classList.add('sf-hide');
+      if(r.error){err(r.error);return}
+      refresh(); window.scrollTo({top:$('#sf-status').offsetTop-20,behavior:'smooth'});
+    }).catch(function(e){$('#sf-submit').disabled=false;$('#sf-submit-wait').classList.add('sf-hide');err(e.message||e)});
+  }
+  function err(m){$('#sf-err').textContent=m;$('#sf-err').classList.remove('sf-hide')}
+
+  function refresh(){
+    call('status',{}).then(function(rows){
+      rows=rows||[]; var active=false, h=rows.length?'<h3>Your sandboxes</h3>':'';
+      rows.forEach(function(r){
+        if(r.status==='QUEUED'||r.status==='RUNNING')active=true;
+        var o=null; try{o=r.outputs?JSON.parse(r.outputs):null}catch(e){}
+        h+='<div class="sf-req"><div class="hd">'+(r.status==='RUNNING'?'<span class="sf-spin"></span>':'')+'<b>'+esc(r.sandbox_id)+'</b><span class="sf-badge '+esc(r.status)+'">'+esc(r.status)+'</span><span>'+esc(r.action)+'</span><span class="meta">'+esc(r.created)+' &middot; '+esc(r.elapsed)+'s</span></div>';
+        if(o&&r.status==='DONE'){ h+='<div class="sf-links">';
+          if(o.app&&o.app.urls)o.app.urls.forEach(function(u){h+='<a href="'+esc(u)+'" target="_blank">'+esc(u)+'</a>'});
+          if(o.adb)h+='<a href="'+esc(o.adb.sql_web_url)+'" target="_blank">SQL Developer Web</a><code>'+esc(o.adb.connect_string)+'</code>';
+          if(o.kafka)h+='<code>kafka: '+esc(o.kafka.bootstrap_servers)+'</code>';
+          if(o.destroyed)h+='destroyed';
+          h+='</div>'}
+        if(r.error)h+='<div class="sf-err">'+esc(r.error)+'</div>';
+        if(r.logtail&&r.status!=='DONE')h+='<div class="sf-log">'+esc(r.logtail)+'</div>';
+        h+='</div>';
+      });
+      $('#sf-status').innerHTML=h;
+      clearTimeout(timer); if(active)timer=setTimeout(refresh,5000);
+    });
+  }
+  refresh();
+})();
+</script>

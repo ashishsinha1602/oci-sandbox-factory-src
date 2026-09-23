@@ -26,6 +26,8 @@ import tempfile
 import time
 import traceback
 
+import oci
+
 import controldb
 import sandbox_factory as sf
 
@@ -150,6 +152,29 @@ def process_one(conn) -> bool:
     return True
 
 
+def reconcile(conn):
+    """Sandboxes destroyed outside the app (CLI, reaper) get a DESTROY/DONE row so the UI stops showing them."""
+    cfg = sf.config()
+    fnd = sf.foundation()
+    rm = oci.resource_manager.ResourceManagerClient(cfg)
+    live = {s.freeform_tags.get("sandbox_id") for s in rm.list_stacks(compartment_id=fnd["compartments"]["control"], lifecycle_state="ACTIVE").data
+            if s.freeform_tags.get("managed_by") == "sandbox-factory"}
+    cur = conn.cursor()
+    cur.execute("""
+        select sandbox_id, requester from (
+          select sandbox_id, requester, action, status,
+                 row_number() over (partition by sandbox_id order by id desc) rn
+          from sbx.sandbox_requests)
+        where rn = 1 and status = 'DONE' and action in ('CREATE', 'DEPLOY')""")
+    for sandbox_id, requester in cur.fetchall():
+        if sandbox_id not in live:
+            cur.execute("""insert into sbx.sandbox_requests (requester, sandbox_id, action, ttl_days, status, started_at, finished_at, outputs, request_text)
+                           values (:1, :2, 'DESTROY', 1, 'DONE', systimestamp, systimestamp, :3, 'destroyed outside the app (reaper or CLI)')""",
+                        [requester, sandbox_id, json.dumps({"destroyed": sandbox_id})])
+            print(f"reconcile: {sandbox_id} no longer exists; recorded as destroyed")
+    conn.commit()
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--once", action="store_true")
@@ -163,6 +188,7 @@ def main():
             try:
                 print(f"[{dt.datetime.now():%H:%M:%S}] reaper: checking for expired sandboxes")
                 sf.cmd_reap(argparse.Namespace(dry_run=False))
+                reconcile(conn)
             except Exception as e:  # noqa: BLE001
                 print(f"reaper error: {e}", file=sys.stderr)
         try:

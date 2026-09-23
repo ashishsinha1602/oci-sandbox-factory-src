@@ -104,18 +104,20 @@ module "app" {
   count  = var.enable_app ? 1 : 0
   source = "./modules/app"
 
-  compartment_id = local.compartment_id
-  name           = local.name
-  vcn_id         = var.vcn_id
-  subnet_id      = var.app_public ? var.public_subnet_id : var.private_subnet_id
-  public         = var.app_public
-  allowed_cidr   = var.allowed_cidr
-  containers     = local.app_containers
-  shape          = var.app_shape
-  ocpus          = var.app_ocpus
-  memory_gb      = var.app_memory_gb
-  defined_tags   = local.defined_tags
-  freeform_tags  = local.freeform_tags
+  compartment_id   = local.compartment_id
+  name             = local.name
+  vcn_id           = var.vcn_id
+  subnet_id        = var.app_public ? var.public_subnet_id : var.private_subnet_id
+  public           = var.app_public
+  allowed_cidr     = var.allowed_cidr
+  containers       = local.app_containers
+  shape            = var.app_shape
+  ocpus            = var.app_ocpus
+  memory_gb        = var.app_memory_gb
+  gateway          = var.app_gateway
+  public_subnet_id = var.public_subnet_id
+  defined_tags     = local.defined_tags
+  freeform_tags    = local.freeform_tags
 
   depends_on = [time_sleep.iam_propagation]
 }

@@ -187,6 +187,12 @@ variable "app_public" {
   description = "true = public subnet with a public IP. false = private subnet only."
 }
 
+variable "app_gateway" {
+  type        = bool
+  default     = true
+  description = "Put an API Gateway (Oracle-provided HTTPS hostname) in front of the app's main port."
+}
+
 variable "app_shape" {
   type    = string
   default = "CI.Standard.A1.Flex"

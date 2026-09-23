@@ -33,6 +33,7 @@ output "kafka" {
 
 output "app" {
   value = var.enable_app ? {
+    url        = coalesce(module.app[0].gateway_url, try(module.app[0].urls[0], null))
     public_ip  = module.app[0].public_ip
     private_ip = module.app[0].private_ip
     urls       = module.app[0].urls

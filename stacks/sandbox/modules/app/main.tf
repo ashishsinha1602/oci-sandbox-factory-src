@@ -15,6 +15,8 @@ variable "ocpus" { type = number }
 variable "memory_gb" { type = number }
 variable "defined_tags" { type = map(string) }
 variable "freeform_tags" { type = map(string) }
+variable "gateway" { type = bool }
+variable "public_subnet_id" { type = string }
 
 variable "containers" {
   type = list(object({
@@ -110,8 +112,72 @@ data "oci_core_vnic" "app" {
   vnic_id = oci_container_instances_container_instance.this.vnics[0].vnic_id
 }
 
+# --- API Gateway: an Oracle-provided HTTPS hostname in front of the app port
+# (Container Instances themselves only get an IP address).
+
+locals {
+  main_port = length(local.ports) > 0 ? sort(tolist(local.ports))[0] : "80"
+  backend   = "http://${data.oci_core_vnic.app.private_ip_address}:${local.main_port}"
+}
+
+resource "oci_apigateway_gateway" "app" {
+  count          = var.gateway ? 1 : 0
+  compartment_id = var.compartment_id
+  endpoint_type  = "PUBLIC"
+  subnet_id      = var.public_subnet_id
+  display_name   = "${var.name}-gw"
+  defined_tags   = var.defined_tags
+  freeform_tags  = var.freeform_tags
+}
+
+resource "oci_apigateway_deployment" "app" {
+  count          = var.gateway ? 1 : 0
+  compartment_id = var.compartment_id
+  gateway_id     = oci_apigateway_gateway.app[0].id
+  path_prefix    = "/"
+  display_name   = "${var.name}-app"
+  defined_tags   = var.defined_tags
+  freeform_tags  = var.freeform_tags
+
+  specification {
+    request_policies {
+      cors {
+        allowed_origins = ["*"]
+        allowed_methods = ["*"]
+        allowed_headers = ["*"]
+      }
+    }
+    routes {
+      path    = "/"
+      methods = ["ANY"]
+      backend {
+        type                       = "HTTP_BACKEND"
+        url                        = "${local.backend}/"
+        connect_timeout_in_seconds = 10
+        read_timeout_in_seconds    = 300
+        send_timeout_in_seconds    = 300
+      }
+    }
+    routes {
+      path    = "/{p*}"
+      methods = ["ANY"]
+      backend {
+        type                       = "HTTP_BACKEND"
+        url                        = "${local.backend}/$${request.path[p]}"
+        connect_timeout_in_seconds = 10
+        read_timeout_in_seconds    = 300
+        send_timeout_in_seconds    = 300
+      }
+    }
+  }
+}
+
 output "id" {
   value = oci_container_instances_container_instance.this.id
+}
+
+output "gateway_url" {
+  value = var.gateway ? "https://${oci_apigateway_gateway.app[0].hostname}" : null
 }
 
 output "public_ip" {
@@ -123,8 +189,8 @@ output "private_ip" {
 }
 
 output "urls" {
-  value = [
-    for p in local.ports :
-    "http://${coalesce(data.oci_core_vnic.app.public_ip_address, data.oci_core_vnic.app.private_ip_address)}:${p}"
-  ]
+  value = concat(
+    var.gateway ? ["https://${oci_apigateway_gateway.app[0].hostname}"] : [],
+    [for p in local.ports : "http://${coalesce(data.oci_core_vnic.app.public_ip_address, data.oci_core_vnic.app.private_ip_address)}:${p}"],
+  )
 }

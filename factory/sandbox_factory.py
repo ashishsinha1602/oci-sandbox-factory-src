@@ -177,7 +177,7 @@ def cmd_create(args, app_containers: list | None = None) -> dict:
         app_containers = [{"name": "web", "image": args.image, "port": args.port, "env": {}}]
 
     variables = build_variables(args, fnd, cfg, app_containers)
-    expires = (dt.date.today() + dt.timedelta(days=args.ttl)).isoformat()
+    expires = (dt.datetime.now(dt.timezone.utc).date() + dt.timedelta(days=args.ttl)).isoformat()
     tags = {"sandbox_id": args.sandbox_id, "owner": args.owner, "expires": expires, "managed_by": "sandbox-factory"}
 
     existing = find_stack(rm, control, args.sandbox_id)
@@ -254,7 +254,7 @@ def cmd_reap(args):
     cfg = config()
     fnd = foundation()
     rm = oci.resource_manager.ResourceManagerClient(cfg)
-    today = dt.date.today().isoformat()
+    today = dt.datetime.now(dt.timezone.utc).date().isoformat()
     victims = []
     for s in rm.list_stacks(compartment_id=fnd["compartments"]["control"], lifecycle_state="ACTIVE").data:
         exp = s.freeform_tags.get("expires")

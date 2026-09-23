@@ -100,7 +100,7 @@ def run_job(rm, stack_id: str, operation: str, label: str) -> oci.resource_manag
     }[operation]
     job = rm.create_job(rmm.CreateJobDetails(
         stack_id=stack_id,
-        display_name=f"{label}-{operation.lower()}-{dt.datetime.utcnow():%Y%m%d%H%M%S}",
+        display_name=f"{label}-{operation.lower()}-{dt.datetime.now(dt.timezone.utc):%Y%m%d%H%M%S}",
         job_operation_details=details,
     )).data
     print(f"  {operation} job {job.id.split('.')[-1][-8:]} started", flush=True)
@@ -327,7 +327,7 @@ def cmd_deploy(args):
 
     repo = f"sbx/{args.sandbox_id}/{args.name}"
     ensure_public_repo(cfg, fnd["compartments"]["control"], repo)
-    tag = args.tag or dt.datetime.utcnow().strftime("%Y%m%d%H%M%S")
+    tag = args.tag or dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d%H%M%S")
     image = f"{registry}/{namespace}/{repo}:{tag}"
 
     platform = "linux/arm64" if args.shape.startswith("CI.Standard.A1") else "linux/amd64"

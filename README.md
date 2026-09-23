@@ -1,8 +1,10 @@
 # OCI Sandbox Factory
 
 Self-service, auto-expiring sandboxes on Oracle Cloud. A user picks what they
-need (Autonomous Database, Kafka, a containerised app), gets an isolated
-compartment with those pieces, and the sandbox destroys itself after N days.
+need (Autonomous Database, Kafka, a containerised app), gets those pieces in
+the shared `sbx-sandboxes` compartment (or a compartment of their own with
+`per_sandbox_compartment = true`), and the sandbox destroys itself after at
+most 3 days.
 
 Everything is Terraform run by OCI Resource Manager. Nothing is hardcoded:
 moving from a personal tenancy to a company one is a new `.tfvars` file.
@@ -17,7 +19,7 @@ factory/sandbox_factory.py ──► OCI Resource Manager (managed Terraform)
    sbx                          ← budget + quotas
    ├── sbx-control              ← shared VCN, stacks, container images
    └── sbx-sandboxes
-       └── sbx-<id>             ← one compartment per sandbox
+       └── (shared) ADB, Kafka, containers per sandbox, told apart by name + sbx.* tags
            ├── ADB (free or ECPU)
            ├── Kafka (Streaming or managed cluster)
            └── Container Instance (1..n containers)

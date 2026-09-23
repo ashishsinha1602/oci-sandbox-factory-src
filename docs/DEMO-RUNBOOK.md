@@ -60,8 +60,8 @@ public repo `sbx/orders-demo/app`, and runs the same Terraform stack.
    the password from the outputs (`adb_admin_password` in Resource Manager →
    the stack's job outputs; or `terraform output` locally).
 3. Run `select * from orders;` — the rows you just added.
-4. In the OCI console: Identity → Compartments → sbx → sbx-sandboxes → `sbx-orders-demo`
-   shows the ADB, the container instance and the network security group.
+4. In the OCI console: Identity → Compartments → sbx → sbx-sandboxes shows the
+   ADB, the container instance and the network security group named `sbx-orders-demo-*`.
    Developer Services → Resource Manager → Stacks shows `sbx-orders-demo`
    and its apply job with the full Terraform plan.
 
@@ -73,8 +73,8 @@ In the chat: `destroy orders-demo` → **Destroy**. Or:
 python factory\sandbox_factory.py destroy orders-demo
 ```
 
-Resource Manager runs `terraform destroy`; the compartment, database,
-container and rules are gone in about 3 minutes. Without doing anything,
+Resource Manager runs `terraform destroy`; the database, container and
+rules are gone in about 3 minutes. Without doing anything,
 the reaper destroys it after the lifetime (max 3 days).
 
 ## 5. If something goes wrong

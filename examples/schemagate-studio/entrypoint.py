@@ -16,8 +16,11 @@ connect = os.environ.get("ADB_CONNECT_STRING", "")
 password = os.environ.get("ADB_ADMIN_PASSWORD", "")
 port = os.environ.get("STUDIO_PORT", "8770")
 if not connect or not password:
-    print("ADB_CONNECT_STRING / ADB_ADMIN_PASSWORD missing: request the sandbox with a database", flush=True)
-    sys.exit(1)
+    # No database in this sandbox: run Studio on schemagate's bundled demo database instead.
+    print("no ADB_CONNECT_STRING / ADB_ADMIN_PASSWORD: starting Studio on the bundled demo database "
+          "(request the sandbox with a database to reflect a real ATP)", flush=True)
+    sys.exit(subprocess.call([sys.executable, "-m", "schemagate.cli", "studio",
+                              "--host", "0.0.0.0", "--port", port, "--no-browser"]))
 
 host_port, service = connect.split("/", 1)
 host, dbport = host_port.split(":")

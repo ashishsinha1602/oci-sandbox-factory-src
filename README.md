@@ -169,7 +169,40 @@ The wizard-built app is reproducible: `apex_blueprint.json` is the wizard
 blueprint, `apex_customize.py` is idempotent. APEX has no create-app API, so
 `apex_builder.py` drives the UI with Playwright (verified on APEX 26.1).
 
-## 6. Chat agent
+## 6. Demo script: app + database, use it, destroy it
+
+`examples/orders-app` is a real app: it reads the injected `ADB_CONNECT_STRING`
+and `ADB_ADMIN_PASSWORD`, creates an `ORDERS` table on first start, and serves
+a page where you add orders that land in the sandbox's ATP.
+
+1. In the app's **Chat**: *"deploy my orders app with a database for 2 days"* →
+   the AI proposes a create with ADB + the image → **Create it**.
+   (Or from a terminal: `python factory/sandbox_factory.py deploy orders-demo ./examples/orders-app --port 8080 --adb --ttl 2`.)
+2. Watch the status card: QUEUED → RUNNING (Terraform log streams) → DONE with
+   the app URL and the SQL Developer Web link.
+3. Open the URL, add a few orders, then open SQL Developer Web and
+   `select * from orders` — same rows, in the Autonomous Database.
+4. In Chat: *"destroy orders-demo"* → **Destroy** → the compartment, database
+   and container are gone in about 3 minutes. The reaper would have done the
+   same after 2 days.
+
+Everything in that lifecycle is one Terraform stack in Resource Manager:
+compartment, ADB, container, network rules, tags.
+
+## 7. How a user deploys their own app
+
+| They have | They do |
+|---|---|
+| A public image | Chat: *"deploy nginx:alpine on port 80"* or the **Just deploy my container** card. |
+| A Dockerfile in a Git repo | Same, with the repo URL. The worker clones, builds for ARM, pushes to the tenancy registry (public repo `sbx/<sandbox>/app`), deploys. |
+| An image in the tenancy registry | Give the full name `phx.ocir.io/<namespace>/<repo>:<tag>`; the repo must be public or the sandbox needs a pull secret. |
+| Needs a database or Kafka | Add "with a database" / "with Kafka" to the request. Connection details arrive as environment variables in the container. |
+
+Ports: whatever the container listens on is the port to give; only that port
+is opened to the internet. Images must be `linux/arm64` (or multi-arch) for
+the default A1 shape; the deploy path builds them that way automatically.
+
+## 8. Chat agent (MCP)
 
 `factory/mcp_server.py` exposes `create_sandbox`, `deploy_app`,
 `list_sandboxes`, `destroy_sandbox` and `reap_sandboxes` as MCP tools.

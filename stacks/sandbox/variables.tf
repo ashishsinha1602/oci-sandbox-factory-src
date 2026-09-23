@@ -66,12 +66,12 @@ variable "team" {
 
 variable "ttl_days" {
   type        = number
-  default     = 7
-  description = "Days until the reaper destroys this sandbox."
+  default     = 3
+  description = "Days until the reaper destroys this sandbox. Hard cap: 3."
 
   validation {
-    condition     = var.ttl_days >= 1 && var.ttl_days <= 30
-    error_message = "ttl_days must be between 1 and 30."
+    condition     = var.ttl_days >= 1 && var.ttl_days <= 3
+    error_message = "ttl_days must be between 1 and 3."
   }
 }
 

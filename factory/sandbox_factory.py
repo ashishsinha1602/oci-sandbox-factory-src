@@ -353,7 +353,7 @@ def add_sandbox_options(p):
     p.add_argument("sandbox_id")
     p.add_argument("--owner", default=os.environ.get("SBX_OWNER", ""), help="email; SBX_OWNER env")
     p.add_argument("--team", default="personal")
-    p.add_argument("--ttl", type=int, default=7, help="days until auto-destroy")
+    p.add_argument("--ttl", type=int, default=3, choices=[1, 2, 3], help="days until auto-destroy (max 3)")
     p.add_argument("--allowed-cidr", default="0.0.0.0/0")
     p.add_argument("--adb", action="store_true")
     p.add_argument("--adb-tier", choices=["free", "paid"], default="free")

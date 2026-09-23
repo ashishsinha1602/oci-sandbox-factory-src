@@ -26,7 +26,7 @@ mcp = FastMCP("sandbox-factory")
 
 def _args(**kw) -> argparse.Namespace:
     base = dict(
-        owner=os.environ.get("SBX_OWNER", ""), team="personal", ttl=7, allowed_cidr="0.0.0.0/0",
+        owner=os.environ.get("SBX_OWNER", ""), team="personal", ttl=3, allowed_cidr="0.0.0.0/0",
         adb=False, adb_tier="free", adb_workload="OLTP",
         kafka=False, kafka_mode="streaming", topics="events",
         app=False, image="docker.io/library/nginx:alpine", shape="CI.Standard.A1.Flex", port=80,
@@ -51,7 +51,7 @@ def _capture(fn, *a, **kw) -> str:
 def create_sandbox(
     sandbox_id: str,
     owner: str,
-    ttl_days: int = 7,
+    ttl_days: int = 3,
     adb: bool = False,
     adb_tier: str = "free",
     kafka: bool = False,
@@ -67,10 +67,10 @@ def create_sandbox(
     adb: Autonomous Database (adb_tier free = Always Free, paid = ECPU private endpoint).
     kafka: Kafka (kafka_mode streaming = serverless Kafka-compatible, cluster = managed brokers).
     app: run a container image with a public IP on `port`.
-    Takes 3-8 minutes. Returns connection details.
+    ttl_days is capped at 3. Takes 3-8 minutes. Returns connection details.
     """
     return _capture(sf.cmd_create, _args(
-        sandbox_id=sandbox_id, owner=owner, ttl=ttl_days, team=team,
+        sandbox_id=sandbox_id, owner=owner, ttl=max(1, min(3, ttl_days)), team=team,
         adb=adb, adb_tier=adb_tier, kafka=kafka, kafka_mode=kafka_mode,
         app=app, image=image, port=port,
     ))
@@ -82,7 +82,7 @@ def deploy_app(
     path: str,
     owner: str,
     port: int = 8080,
-    ttl_days: int = 7,
+    ttl_days: int = 3,
     adb: bool = False,
     kafka: bool = False,
     name: str = "app",
@@ -94,7 +94,7 @@ def deploy_app(
     Needs an OCIR auth token in ~/.oci/ocir_token or OCIR_TOKEN.
     """
     return _capture(sf.cmd_deploy, _args(
-        sandbox_id=sandbox_id, path=path, owner=owner, port=port, ttl=ttl_days,
+        sandbox_id=sandbox_id, path=path, owner=owner, port=port, ttl=max(1, min(3, ttl_days)),
         adb=adb, kafka=kafka, name=name, shape=shape,
     ))
 

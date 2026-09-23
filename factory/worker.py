@@ -30,6 +30,7 @@ import controldb
 import sandbox_factory as sf
 
 POLL_SECONDS = 10
+REAP_SECONDS = 1800  # destroy expired sandboxes every 30 minutes
 
 
 class RowLog(io.TextIOBase):
@@ -145,7 +146,15 @@ def main():
     a = ap.parse_args()
     conn = controldb.connect("ADMIN")
     print("worker connected to control DB; polling sbx.sandbox_requests")
+    last_reap = 0.0
     while True:
+        if time.time() - last_reap > REAP_SECONDS:
+            last_reap = time.time()
+            try:
+                print(f"[{dt.datetime.now():%H:%M:%S}] reaper: checking for expired sandboxes")
+                sf.cmd_reap(argparse.Namespace(dry_run=False))
+            except Exception as e:  # noqa: BLE001
+                print(f"reaper error: {e}", file=sys.stderr)
         try:
             worked = process_one(conn)
         except oracledb.Error as e:

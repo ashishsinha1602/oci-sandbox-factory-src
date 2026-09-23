@@ -53,6 +53,13 @@
     <div id="sf-chat" class="sf-hide">
       <div class="sf-msgs" id="sf-msgs"><div class="sf-msg ai">Hi! Tell me what you want to build, or ask what you have running. For example: <i>deploy nginx for a day</i>, <i>I need a database and Kafka for my orders API at https://github.com/me/orders</i>, <i>destroy demo3</i>.</div></div>
       <div class="sf-row" style="margin:10px 0 0"><div class="sf-field"><input id="sf-chat-in" placeholder="Type a message and press Enter"></div>
+        <div class="sf-field" style="flex:0 1 230px"><select id="sf-model" title="AI model (OCI Generative AI, this region)">
+          <option value="google.gemini-2.5-flash">Gemini 2.5 Flash (fast)</option>
+          <option value="google.gemini-2.5-pro">Gemini 2.5 Pro</option>
+          <option value="xai.grok-4">Grok 4</option>
+          <option value="xai.grok-3">Grok 3</option>
+          <option value="cohere.command-a-03-2025">Cohere Command A</option>
+          <option value="openai.gpt-oss-120b">GPT-OSS 120B</option></select></div>
         <button type="button" class="sf-btn" id="sf-chat-send" style="flex:0 0 auto">Send</button></div>
       <div id="sf-chat-wait" class="sf-hide" style="margin-top:8px"><span class="sf-spin"></span>Thinking...</div>
     </div>
@@ -60,7 +67,7 @@
     <div id="sf-describe" class="sf-hide">
       <div class="sf-row"><div class="sf-field"><label>Describe what you want</label>
         <textarea id="sf-text" placeholder="e.g. A Python API that stores orders in a database and publishes events to Kafka. Code is at https://github.com/me/orders-api"></textarea></div></div>
-      <div class="sf-actions"><button type="button" class="sf-btn" id="sf-plan">&#10024; Ask AI to plan it</button><span id="sf-plan-wait" class="sf-hide"><span class="sf-spin"></span>Thinking...</span></div>
+      <div class="sf-actions"><button type="button" class="sf-btn" id="sf-plan">&#10024; Ask AI to plan it</button><span style="font-size:12px;color:#5f6b7a">model: <span id="sf-model-name">Gemini 2.5 Flash</span> (change it in Chat)</span><span id="sf-plan-wait" class="sf-hide"><span class="sf-spin"></span>Thinking...</span></div>
       <div id="sf-ai" class="sf-ai sf-hide"></div>
     </div>
 
@@ -99,7 +106,7 @@
 function sfInit(){
   var mode=null, plan=null, cfg={enable_adb:false,enable_kafka:false,enable_app:false}, timer=null;
   var $=function(s){return document.querySelector(s)}, $$=function(s){return Array.prototype.slice.call(document.querySelectorAll(s))};
-  function call(action,payload){return apex.server.process('SF',{x01:action,x02:JSON.stringify(payload||{})},{dataType:'json'})}
+  function call(action,payload){payload=payload||{}; var m=document.querySelector('#sf-model'); if(m&&!payload.model)payload.model=m.value; return apex.server.process('SF',{x01:action,x02:JSON.stringify(payload)},{dataType:'json'})}
   function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
 
   $$('.sf-card').forEach(function(c){c.onclick=function(){
@@ -214,7 +221,7 @@ function sfInit(){
       }
     }).catch(function(e){$('#sf-chat-wait').classList.add('sf-hide');$('#sf-chat-send').disabled=false;addMsg('ai','<span class="sf-err">'+esc(e&&e.statusText||e)+'</span>')});
   }
-  $('#sf-chat-send').onclick=sendChat; $('#sf-chat-in').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();sendChat()}});
+  $('#sf-chat-send').onclick=sendChat; $('#sf-model').onchange=function(){$('#sf-model-name').textContent=this.options[this.selectedIndex].text}; $('#sf-chat-in').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();sendChat()}});
   refresh();
 }
 (function(){ function go(){ if(window.apex&&apex.server){sfInit()} else {setTimeout(go,100)} } if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',go)} else {go()} })();

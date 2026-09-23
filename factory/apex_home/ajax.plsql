@@ -8,7 +8,8 @@ declare
   l_id     number;
 
   c_genai_url   constant varchar2(200) := 'https://inference.generativeai.us-phoenix-1.oci.oraclecloud.com/20231130/actions/chat';
-  c_genai_model constant varchar2(100) := 'google.gemini-2.5-flash';
+  -- Model: chosen per request by the page (x02.model); must be one served in this region.
+  c_genai_model varchar2(100) := 'google.gemini-2.5-flash';
 
   c_blocks constant varchar2(2000) :=
        'Building blocks available: an Autonomous Database (ATP, Always Free), Kafka (OCI Streaming with a Kafka-compatible endpoint), '
@@ -118,6 +119,9 @@ declare
 
 begin
   l_in := json_object_t.parse(nvl(apex_application.g_x02, '{}'));
+  if l_in.get_string('model') in ('google.gemini-2.5-flash', 'google.gemini-2.5-pro', 'xai.grok-4', 'xai.grok-3', 'cohere.command-a-03-2025', 'openai.gpt-oss-120b') then
+    c_genai_model := l_in.get_string('model');
+  end if;
 
   if l_action = 'plan' then
     declare

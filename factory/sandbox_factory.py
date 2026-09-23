@@ -322,7 +322,8 @@ def cmd_deploy(args):
         raise SystemExit(f"No Dockerfile in {path}")
 
     namespace = oci.object_storage.ObjectStorageClient(cfg).get_namespace().data
-    region_key = cfg["region"].split("-")[1][:3]  # us-phoenix-1 -> phx
+    region_key = next(r.key.lower() for r in oci.identity.IdentityClient(cfg).list_regions().data
+                      if r.name == cfg["region"])  # us-phoenix-1 -> phx
     registry = ocir_login(cfg, region_key, namespace)
 
     repo = f"sbx/{args.sandbox_id}/{args.name}"

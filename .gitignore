@@ -16,3 +16,4 @@ crash.log
 # Generated from foundation outputs (tenancy-specific)
 factory/foundation.json
 __pycache__/
+factory/shots/

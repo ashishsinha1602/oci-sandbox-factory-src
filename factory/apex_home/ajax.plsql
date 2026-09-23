@@ -61,7 +61,7 @@ declare
     l_req.put('servingMode', l_sm);
     l_cr.put('apiFormat', 'GENERIC');
     l_cr.put('messages', p_messages);
-    l_cr.put('maxTokens', 1500);
+    l_cr.put('maxTokens', 6000);
     l_cr.put('temperature', 0.2);
     l_req.put('chatRequest', l_cr);
 
@@ -78,6 +78,14 @@ declare
     l_j := json_object_t.parse(l_body);
     return treat(treat(l_j.get_object('chatResponse').get_array('choices').get(0) as json_object_t)
                    .get_object('message').get_array('content').get(0) as json_object_t).get_string('text');
+  end;
+
+  function templates return varchar2 is
+    l_t varchar2(4000);
+  begin
+    select value into l_t from factory_config where key = 'templates';
+    return l_t;
+  exception when no_data_found then return '';
   end;
 
   function msg(p_role varchar2, p_text clob) return json_object_t is
@@ -129,7 +137,7 @@ begin
     begin
       l_msgs.append(msg('USER',
            'You are the planner of the OCI Sandbox Factory. A user describes what they want to build in a sandbox on Oracle Cloud. '
-        || c_blocks
+        || c_blocks || templates() || ' '
         || 'Respond with ONLY one JSON object and no markdown fences, with exactly these keys: '
         || 'sandbox_id (2-20 chars, lowercase letters, digits, dashes, derived from the request), '
         || 'enable_adb (boolean), enable_kafka (boolean), enable_app (boolean), '
@@ -151,7 +159,7 @@ begin
     begin
       l_msgs.append(msg('SYSTEM',
            'You are the assistant of the OCI Sandbox Factory, a self-service tool that creates temporary sandboxes on Oracle Cloud. '
-        || c_blocks
+        || c_blocks || templates() || ' '
         || 'You help the user decide what to build and you can act for them. '
         || 'The user''s current sandbox requests (newest first) are: ' || my_sandboxes() || '. '
         || 'Statuses: QUEUED (waiting for the worker), RUNNING (Terraform in progress, 3-5 minutes), DONE (outputs contain URLs and connect strings), FAILED. '

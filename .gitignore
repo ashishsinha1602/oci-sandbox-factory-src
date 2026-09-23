@@ -1,0 +1,17 @@
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+
+# Environment-specific values (never commit)
+*.tfvars
+!*.tfvars.example
+
+# Credentials
+*.pem
+*.p12
+
+# Generated from foundation outputs (tenancy-specific)
+factory/foundation.json

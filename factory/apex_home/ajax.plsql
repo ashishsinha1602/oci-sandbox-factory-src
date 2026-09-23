@@ -34,7 +34,12 @@ declare
                returning clob)
              order by id desc returning clob)
       into l_json
-      from (select * from sandbox_requests where requester = :APP_USER order by id desc fetch first 8 rows only);
+      from (select * from (
+              select r.*, row_number() over (partition by sandbox_id order by id desc) rn
+              from sandbox_requests r where requester = :APP_USER)
+            where rn = 1
+              and not (action = 'DESTROY' and status = 'DONE' and finished_at < systimestamp - interval '1' hour)
+            order by id desc fetch first 8 rows only);
     return nvl(l_json, '[]');
   end;
 

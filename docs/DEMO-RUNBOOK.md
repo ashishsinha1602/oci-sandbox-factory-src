@@ -39,7 +39,7 @@ Option A, from the APEX app (what the audience sees):
 
 1. Open the app URL, sign in (`SBX` / your password).
 2. Card **Chat with the factory**. Type:
-   `deploy C:SERSSINHADOCUMENTSOCI-SANDBOX-FACTORYEXAMPLESORDERS-APP ON PORT 8080 WITH A DATABASE FOR 2 DAYS, CALL IT ORDERS-DEMO`
+   `deploy C:\Users\sinha\Documents\oci-sandbox-factory\examples\orders-app on port 8080 with a database for 2 days, call it orders-demo`
    The AI proposes the action. Click **Create it**.
 3. The status card shows QUEUED → RUNNING (Terraform log streams) → DONE with the app URL and the SQL Developer Web link. About 4 minutes.
 

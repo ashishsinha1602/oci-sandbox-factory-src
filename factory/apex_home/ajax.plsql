@@ -148,8 +148,8 @@ begin
         || 'Always respond with ONLY one JSON object, no markdown fences, with keys: '
         || 'reply (string, friendly, concise, may contain short line breaks; explain what and how, mention URLs from outputs when relevant), '
         || 'action (null, or an object when the user clearly wants something done: {type: "create"|"deploy"|"destroy", sandbox_id, ttl_days (1-3, default 3), '
-        || 'enable_adb, enable_kafka, enable_app (booleans), app_image (string or null), git_url (string or null), app_port (integer)}). '
-        || 'Use type "deploy" only when the user gives a Git repository URL; "create" with app_image for a public image; "destroy" to delete an existing sandbox by its sandbox_id. '
+        || 'enable_adb, enable_kafka, enable_app (booleans), app_image (string or null), git_url (string or null: a Git repository URL, or a local folder path the user gave such as C:\Users\me\myapp, kept exactly as given), app_port (integer)}). '
+        || 'Use type "deploy" when the user gives a Git repository URL or a local folder path (a folder with a Dockerfile; the worker builds it); "create" with app_image for a public image; "destroy" to delete an existing sandbox by its sandbox_id. '
         || 'Never invent a sandbox_id that does not exist for destroy. Ask a short question instead of guessing when something essential is missing. '
         || 'When you propose an action, describe it in reply and end with a question like "Shall I go ahead?".'));
       if l_hist is not null then

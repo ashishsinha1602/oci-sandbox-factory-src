@@ -169,7 +169,7 @@ function sfInit(){
         var o=null; try{o=r.outputs?JSON.parse(r.outputs):null}catch(e){}
         h+='<div class="sf-req"><div class="hd">'+(r.status==='RUNNING'?'<span class="sf-spin"></span>':'')+'<b>'+esc(r.sandbox_id)+'</b><span class="sf-badge '+esc(r.status)+'">'+esc(r.status)+'</span><span>'+esc(r.action)+'</span><span class="meta">'+esc(r.created)+' &middot; '+esc(r.elapsed)+'s</span></div>';
         if(o&&r.status==='DONE'){ h+='<div class="sf-links">';
-          if(o.app&&o.app.urls)o.app.urls.forEach(function(u){h+='<a href="'+esc(u)+'" target="_blank">'+esc(u)+'</a>'});
+          if(o.app&&o.app.urls){var us=o.app.urls.filter(function(u){return u.indexOf('https://')===0}); if(!us.length)us=o.app.urls; us.forEach(function(u){h+='<a href="'+esc(u)+'" target="_blank">'+esc(u)+'</a>'})}
           if(o.adb){h+='<div style="margin-top:6px"><a href="'+esc(o.adb.sql_web_url)+'" target="_blank">SQL Developer Web</a> &middot; user <code>'+esc(o.adb.admin_user||'ADMIN')+'</code>'
               +(o.adb.admin_password?' &middot; password <code>'+esc(o.adb.admin_password)+'</code> <button type="button" class="sf-btn sec" style="padding:2px 8px;font-size:12px" onclick="navigator.clipboard.writeText(this.previousElementSibling.textContent)">copy</button>':'')
               +'<br>connect string <code>'+esc(o.adb.connect_string)+'</code></div>'}

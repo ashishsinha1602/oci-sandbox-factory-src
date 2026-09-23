@@ -36,6 +36,10 @@ def _tf_output(name: str, raw: bool = False) -> str:
 
 
 def control_info() -> dict:
+    """Control ADB details. From SBX_CONTROL_CONNECT (host:port/service) on the
+    OCI-hosted worker, else from the foundation stack's outputs."""
+    if os.environ.get("SBX_CONTROL_CONNECT"):
+        return {"connect_string": os.environ["SBX_CONTROL_CONNECT"]}
     return json.loads(_tf_output("control_adb"))
 
 

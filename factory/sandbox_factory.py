@@ -30,6 +30,7 @@ import shutil
 import subprocess
 import sys
 import time
+import tempfile
 import zipfile
 
 import oci
@@ -48,12 +49,42 @@ ZIP_EXCLUDE = (".terraform", ".terraform.lock.hcl", ".tfstate", ".tfplan", ".tfv
 # OCI plumbing
 # ---------------------------------------------------------------------------
 
+_AUTH: dict | None = None
+
+
+def auth() -> dict:
+    """Keyword args for any OCI client.
+
+    Inside OCI (Container Instance, VM, Function) the resource principal is used:
+    no key file, the identity is the instance itself. Elsewhere ~/.oci/config.
+    """
+    global _AUTH
+    if _AUTH is None:
+        if os.environ.get("OCI_RESOURCE_PRINCIPAL_VERSION"):
+            signer = oci.auth.signers.get_resource_principals_signer()
+            _AUTH = {"config": {"region": signer.region, "tenancy": signer.tenancy_id}, "signer": signer}
+        else:
+            _AUTH = {"config": oci.config.from_file(profile_name=os.environ.get("OCI_CLI_PROFILE", "DEFAULT"))}
+    return _AUTH
+
+
 def config() -> dict:
-    return oci.config.from_file(profile_name=os.environ.get("OCI_CLI_PROFILE", "DEFAULT"))
+    return auth()["config"]
+
+
+def client(cls):
+    return cls(**auth())
+
+
+def in_oci() -> bool:
+    return "signer" in auth()
 
 
 def foundation() -> dict:
-    """OCIDs produced by the foundation stack. Cached in foundation.json."""
+    """OCIDs produced by the foundation stack. From SBX_FOUNDATION (JSON, set on the
+    OCI-hosted worker), else cached in foundation.json, else terraform output."""
+    if os.environ.get("SBX_FOUNDATION"):
+        return json.loads(os.environ["SBX_FOUNDATION"])
     if FOUNDATION_JSON.exists():
         return json.loads(FOUNDATION_JSON.read_text())
     tf = shutil.which("terraform") or str(pathlib.Path.home() / "bin" / "terraform.exe")
@@ -181,7 +212,7 @@ def build_variables(args, fnd: dict, cfg: dict, app_containers: list | None) -> 
 def cmd_create(args, app_containers: list | None = None) -> dict:
     cfg = config()
     fnd = foundation()
-    rm = oci.resource_manager.ResourceManagerClient(cfg)
+    rm = client(oci.resource_manager.ResourceManagerClient)
     control = fnd["compartments"]["control"]
 
     if args.app and app_containers is None:
@@ -229,7 +260,7 @@ def cmd_create(args, app_containers: list | None = None) -> dict:
 def cmd_list(args) -> list:
     cfg = config()
     fnd = foundation()
-    rm = oci.resource_manager.ResourceManagerClient(cfg)
+    rm = client(oci.resource_manager.ResourceManagerClient)
     rows = []
     for s in rm.list_stacks(compartment_id=fnd["compartments"]["control"], lifecycle_state="ACTIVE").data:
         if s.freeform_tags.get("managed_by") != "sandbox-factory":
@@ -259,7 +290,7 @@ def destroy_stack(rm, stack, keep_stack: bool = False):
 def cmd_destroy(args):
     cfg = config()
     fnd = foundation()
-    rm = oci.resource_manager.ResourceManagerClient(cfg)
+    rm = client(oci.resource_manager.ResourceManagerClient)
     stack = find_stack(rm, fnd["compartments"]["control"], args.sandbox_id)
     if not stack:
         raise SystemExit(f"No sandbox named {args.sandbox_id}")
@@ -271,7 +302,7 @@ def cmd_reap(args):
     """Destroy every sandbox whose expires tag is before today."""
     cfg = config()
     fnd = foundation()
-    rm = oci.resource_manager.ResourceManagerClient(cfg)
+    rm = client(oci.resource_manager.ResourceManagerClient)
     today = dt.datetime.now(dt.timezone.utc).date().isoformat()
     victims = []
     for s in rm.list_stacks(compartment_id=fnd["compartments"]["control"], lifecycle_state="ACTIVE").data:
@@ -309,8 +340,7 @@ def ocir_login(cfg: dict, region_key: str, namespace: str) -> str:
             "No OCIR auth token. Create one in the console (Profile > Auth tokens) and put it in\n"
             f"  {token_file}   or   OCIR_TOKEN env var"
         )
-    idc = oci.identity.IdentityClient(cfg)
-    user = idc.get_user(cfg["user"]).data.name
+    user = os.environ.get("OCIR_USER") or client(oci.identity.IdentityClient).get_user(cfg["user"]).data.name
     registry = f"{region_key}.ocir.io"
     tool = container_tool()
     subprocess.run(
@@ -322,7 +352,7 @@ def ocir_login(cfg: dict, region_key: str, namespace: str) -> str:
 
 def ensure_public_repo(cfg: dict, compartment_id: str, repo: str):
     """A public OCIR repo lets Container Instances pull without a pull secret."""
-    art = oci.artifacts.ArtifactsClient(cfg)
+    art = client(oci.artifacts.ArtifactsClient)
     existing = art.list_container_repositories(compartment_id=compartment_id, display_name=repo).data.items
     if existing:
         return existing[0]
@@ -333,30 +363,51 @@ def ensure_public_repo(cfg: dict, compartment_id: str, repo: str):
 
 
 def cmd_deploy(args):
+    """Build an image and run it in a sandbox.
+
+    args.path is a local folder (laptop worker, Docker) or a Git URL (any worker:
+    built inside OCI by a kaniko container, see oci_build.py). SBX_BUILD_MODE=kaniko
+    forces the OCI build even for a laptop run.
+    """
     cfg = config()
     fnd = foundation()
-    path = pathlib.Path(args.path).resolve()
-    if not (path / "Dockerfile").exists():
-        raise SystemExit(f"No Dockerfile in {path}")
+    src = str(args.path)
+    is_git = src.lower().startswith(("http://", "https://", "git@", "ssh://", "git://"))
+    if not is_git:
+        path = pathlib.Path(src).resolve()
+        if not (path / "Dockerfile").exists():
+            raise SystemExit(f"No Dockerfile in {path}")
 
-    namespace = oci.object_storage.ObjectStorageClient(cfg).get_namespace().data
-    region_key = next(r.key.lower() for r in oci.identity.IdentityClient(cfg).list_regions().data
+    namespace = client(oci.object_storage.ObjectStorageClient).get_namespace().data
+    region_key = next(r.key.lower() for r in client(oci.identity.IdentityClient).list_regions().data
                       if r.name == cfg["region"])  # us-phoenix-1 -> phx
-    registry = ocir_login(cfg, region_key, namespace)
+    registry = f"{region_key}.ocir.io"
 
     repo = f"sbx/{args.sandbox_id}/{args.name}"
     ensure_public_repo(cfg, fnd["compartments"]["control"], repo)
     tag = args.tag or dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d%H%M%S")
     image = f"{registry}/{namespace}/{repo}:{tag}"
-
     platform = "linux/arm64" if args.shape.startswith("CI.Standard.A1") else "linux/amd64"
-    tool = container_tool()
-    print(f"Building {image} for {platform}")
-    if tool == "docker":
-        subprocess.run(["docker", "buildx", "build", "--platform", platform, "-t", image, "--push", str(path)], check=True)
+
+    use_kaniko = is_git and (in_oci() or os.environ.get("SBX_BUILD_MODE") == "kaniko" or not shutil.which("docker"))
+    if use_kaniko:
+        import oci_build
+        print(f"Building {image} from {src} inside OCI (kaniko, {platform})")
+        oci_build.build_in_oci(git_url=src, image=image, registry=registry, namespace=namespace,
+                               sandbox_id=args.sandbox_id, platform=platform)
     else:
-        subprocess.run(["podman", "build", "--platform", platform, "-t", image, str(path)], check=True)
-        subprocess.run(["podman", "push", image], check=True)
+        if is_git:
+            tmp = pathlib.Path(tempfile.mkdtemp(prefix="sbx-src-"))
+            subprocess.run(["git", "clone", "--depth", "1", src, str(tmp)], check=True)
+            path = tmp
+        ocir_login(cfg, region_key, namespace)
+        tool = container_tool()
+        print(f"Building {image} for {platform}")
+        if tool == "docker":
+            subprocess.run(["docker", "buildx", "build", "--platform", platform, "-t", image, "--push", str(path)], check=True)
+        else:
+            subprocess.run(["podman", "build", "--platform", platform, "-t", image, str(path)], check=True)
+            subprocess.run(["podman", "push", image], check=True)
 
     env = dict(kv.split("=", 1) for kv in (args.env or []))
     containers = [{"name": args.name, "image": image, "port": args.port, "env": env}]

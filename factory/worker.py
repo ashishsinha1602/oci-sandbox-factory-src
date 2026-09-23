@@ -56,7 +56,13 @@ class RowLog(io.TextIOBase):
 
 def claim(conn):
     cur = conn.cursor()
-    cur.execute("select min(id) from sbx.sandbox_requests where status = 'QUEUED'")
+    # The OCI-hosted worker cannot see a laptop's folders: it only takes requests whose
+    # source is a Git URL or an image. A laptop worker (SBX_WORKER_KIND=laptop) takes everything.
+    if os.environ.get("SBX_WORKER_KIND", "laptop") == "oci":
+        cur.execute("""select min(id) from sbx.sandbox_requests where status = 'QUEUED'
+                       and (git_url is null or lower(git_url) like 'http%' or lower(git_url) like 'git%' or lower(git_url) like 'ssh%')""")
+    else:
+        cur.execute("select min(id) from sbx.sandbox_requests where status = 'QUEUED'")
     candidate = cur.fetchone()[0]
     if candidate is None:
         return None
@@ -109,6 +115,11 @@ def handle(req: dict) -> dict:
         if not req["git_url"]:
             raise ValueError("DEPLOY needs git_url")
         src = req["git_url"].strip()
+        if src.lower().startswith(("http://", "https://", "git@", "ssh://", "git://")):
+            # Git URL: sandbox_factory builds it (kaniko inside OCI, or local docker on a laptop)
+            args.path = src
+            args.app = True
+            return sf.cmd_deploy(args)
         if not src.lower().startswith(("http://", "https://", "git@", "ssh://")):
             # a folder on the worker machine (the laptop running this worker)
             local = pathlib.Path(src).expanduser()

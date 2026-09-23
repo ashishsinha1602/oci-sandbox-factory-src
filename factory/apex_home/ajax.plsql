@@ -132,7 +132,8 @@ begin
         || 'app_image (string or null), git_url (string or null, only if the user gave a repository URL), app_port (integer, 80 if unknown), '
         || 'summary (2-3 sentences: what will be created and how the pieces fit together), '
         || 'steps (array of 3-6 short strings: what the user should do next, e.g. how to connect, which env vars to read), '
-        || 'tips (array of 1-3 short strings). '
+        || 'tips (array of 1-3 short strings), '
+        || 'questions (array of 0-3 short questions the user should answer before creating when something essential is missing or ambiguous, e.g. which producer or consumer app, which image or repository, which port; empty array when nothing is missing). '
         || 'User request: ' || l_in.get_string('text')));
       l_out.put('raw', ai_chat(l_msgs));
     end;

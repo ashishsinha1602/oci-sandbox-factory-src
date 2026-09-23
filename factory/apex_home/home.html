@@ -129,10 +129,11 @@ function sfInit(){
       var h='<h4>&#10024; Plan</h4><p>'+esc(plan.summary)+'</p><div>';
       if(plan.enable_adb)h+='<span class="sf-chip">Autonomous Database</span>';
       if(plan.enable_kafka)h+='<span class="sf-chip">Kafka</span>';
-      if(plan.enable_app)h+='<span class="sf-chip">App: '+esc(plan.git_url||plan.app_image)+' :'+esc(plan.app_port||80)+'</span>';
+      if(plan.enable_app)h+='<span class="sf-chip">App: '+esc(plan.git_url||plan.app_image||'(image or repo needed)')+' on port '+esc(plan.app_port||80)+'</span>';
       h+='<span class="sf-chip">3 days</span></div>';
       if(plan.steps&&plan.steps.length){h+='<h4 style="margin-top:10px">What to do next</h4><ol>'+plan.steps.map(function(s){return '<li>'+esc(s)+'</li>'}).join('')+'</ol>'}
       if(plan.tips&&plan.tips.length){h+='<ul>'+plan.tips.map(function(s){return '<li>'+esc(s)+'</li>'}).join('')+'</ul>'}
+      if(plan.questions&&plan.questions.length){h+='<h4 style="margin-top:10px">Before I create it, tell me</h4><ol>'+plan.questions.map(function(s){return '<li>'+esc(s)+'</li>'}).join('')+'</ol><p class="sf-err">Add the answers to your description and ask again, or adjust the form.</p>'}
       h+='<div class="sf-actions" style="margin-top:12px"><button type="button" class="sf-btn" id="sf-usePlan">Looks good, create it</button><button type="button" class="sf-btn sec" id="sf-editPlan">Adjust first</button></div>';
       showAI(h);
       $('#sf-usePlan').onclick=function(){applyPlan(); submit()};

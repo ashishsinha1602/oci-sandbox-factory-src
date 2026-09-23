@@ -106,10 +106,20 @@ def handle(req: dict) -> dict:
     if req["action"] == "DEPLOY":
         if not req["git_url"]:
             raise ValueError("DEPLOY needs git_url")
+        src = req["git_url"].strip()
+        if not src.lower().startswith(("http://", "https://", "git@", "ssh://")):
+            # a folder on the worker machine (the laptop running this worker)
+            local = pathlib.Path(src).expanduser()
+            if not (local / "Dockerfile").exists():
+                raise ValueError(f"no Dockerfile in local folder {local}")
+            print(f"building local folder {local}")
+            args.path = str(local)
+            args.app = True
+            return sf.cmd_deploy(args)
         tmp = pathlib.Path(tempfile.mkdtemp(prefix="sbx-deploy-"))
         try:
-            print(f"cloning {req['git_url']}")
-            subprocess.run(["git", "clone", "--depth", "1", req["git_url"], str(tmp / "src")], check=True)
+            print(f"cloning {src}")
+            subprocess.run(["git", "clone", "--depth", "1", src, str(tmp / "src")], check=True)
             args.path = str(tmp / "src")
             args.app = True
             return sf.cmd_deploy(args)

@@ -143,10 +143,27 @@ python worker.py                                                # leave running
 ```
 
 URL: `<control ADB ORDS URL>/r/sbx/sandbox-factory`. Users sign in with an
-APEX account, open **Requests → Create**, pick Create / Deploy / Destroy and
-the switches, and submit. The row shows QUEUED → RUNNING → DONE with the
-outputs (URLs, connect strings) and the full Terraform log. **Sandboxes**
-lists what is live and when it expires.
+APEX account. The home page (all Ajax, no page reloads) offers four paths:
+
+| Path | What happens |
+|---|---|
+| **Chat with the factory** | Conversation with OCI Generative AI (Gemini 2.5 Flash). It knows the user's sandboxes, answers status questions, and proposes create / deploy / destroy actions that the user confirms with one click. |
+| **Describe it, AI plans it** | Plain-English request → the AI returns the pieces, a summary, next steps and tips → "Looks good, create it". |
+| **Build an app** | Switches for ADB, Kafka, app; image or Git URL; port; lifetime 1-3 days. |
+| **Just deploy my container** | Image or Git URL + port, nothing else. |
+
+Below the form, a live status panel polls every 5 s while a request is
+QUEUED or RUNNING and shows the log tail, then the URLs and connect strings.
+**Requests** and **Sandboxes** are the classic report pages.
+
+The AI runs inside the database: `DBMS_CLOUD.SEND_REQUEST` calls the
+Generative AI chat endpoint with the database's resource principal
+(`foundation/control_adb.tf` creates the dynamic group and policy), so there
+are no API keys anywhere. Lifetime is capped at 3 days by a check constraint.
+
+Home page source: `factory/apex_home/home.html` (region) and
+`factory/apex_home/ajax.plsql` (callback: plan, chat, submit, status);
+`apex_customize.py` injects both into the export on every run.
 
 The wizard-built app is reproducible: `apex_blueprint.json` is the wizard
 blueprint, `apex_customize.py` is idempotent. APEX has no create-app API, so

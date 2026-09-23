@@ -1,0 +1,70 @@
+HOW THE OCI SANDBOX FACTORY WORKS
+
+What it is
+A self-service tool on Oracle Cloud. A user says what they need, in a form or
+by chatting with an AI, and gets a temporary environment with an Autonomous
+Database, Kafka and their own container, reachable on an Oracle HTTPS hostname,
+in about five minutes. Every environment is created and removed by one
+Terraform stack in OCI Resource Manager and deletes itself after at most three
+days.
+
+The pieces
+1. Foundation. Applied once per tenancy: compartments (sbx, sbx-control,
+   sbx-sandboxes), a tag namespace (owner, sandbox id, team, expiry), a monthly
+   budget with alerts, quotas that cap cores and databases, one shared network,
+   and a small control database that hosts the app.
+2. The sandbox stack. One Terraform stack with three switches: database, Kafka,
+   app. It creates only what was switched on, tags everything with owner and
+   expiry, and injects the database and Kafka connection details into the
+   container as environment variables.
+3. The app. An Oracle APEX page on the control database. Four ways in: chat
+   with the AI, describe it and get a plan, a form with switches, or just deploy
+   a container. A live status card shows progress, the log, the URLs and the
+   database credentials.
+4. The worker. A small Python program that watches a queue table, builds images,
+   runs the Terraform stack through Resource Manager, writes results back, and
+   destroys anything older than its lifetime.
+5. The AI. OCI Generative AI (Gemini 2.5 Flash), called by the database with its
+   own cloud identity, so there are no API keys. It only proposes; a human click
+   is always required before anything is created.
+
+What happens when you ask for something
+Step 1. You type in the chat or fill the form.
+Step 2. The page calls a small procedure in the control database.
+Step 3. For chat, that procedure sends your words and your current sandboxes to
+        the AI and gets back a reply plus, when you clearly asked for something,
+        a proposed action.
+Step 4. You click the action button. One row is written to the queue table with
+        status QUEUED. Nothing exists in the cloud yet.
+Step 5. The worker picks up the row within ten seconds and marks it RUNNING.
+Step 6. If you gave a Git repository or a folder, the worker builds the image
+        for ARM and pushes it to your container registry. Then it uploads the
+        Terraform stack to Resource Manager and starts an apply job. Terraform
+        creates the database, the Kafka streaming pool, the container, the
+        network rule for its port, and an API Gateway with an Oracle hostname.
+Step 7. Each log line goes into the row while it runs. At the end the URLs, the
+        connect string and the ADMIN password are written and the row is DONE.
+Step 8. The page polls the row every five seconds and shows the result.
+
+What happens when you do nothing
+Every thirty minutes the worker checks every sandbox. Anything past its expiry
+date gets a destroy job, and the stack is deleted. A daily backstop task does
+the same. The three-day maximum is enforced in the database, in Terraform, in
+the command line tool and in the form, so it cannot be bypassed by mistake.
+
+Destroying on purpose
+Say "destroy <name>" in the chat and confirm, or use the command line tool. A
+Resource Manager destroy job removes the database, the container, the gateway
+and the rules in about three minutes.
+
+Where the credentials are
+Only the worker machine holds cloud credentials. The browser has none. The
+database calls the AI with its own identity. The database password of each
+sandbox is shown only to the person who requested it.
+
+Where to find things
+App URL:  https://g63702d3fbc0a2d-sbxctl.adb.us-phoenix-1.oraclecloudapps.com/ords/r/sbx/sandbox-factory
+Login:    SBX / Sbx#Tmp2026x9Q (change after first use)
+Code:     C:\Users\sinha\Documents\oci-sandbox-factory
+Docs:     docs/ARCHITECTURE.md (full detail), docs/DEMO-RUNBOOK.md (demo steps),
+          docs/FLOW.txt (diagram)

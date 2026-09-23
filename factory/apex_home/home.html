@@ -28,6 +28,11 @@
 .sf-spin{display:inline-block;width:14px;height:14px;border:2px solid #cbd5e1;border-top-color:#1a73e8;border-radius:50%;animation:sfspin .8s linear infinite;vertical-align:-2px;margin-right:6px}
 @keyframes sfspin{to{transform:rotate(360deg)}}
 .sf-err{color:#b91c1c;font-size:13px;margin-top:8px}.sf-hide{display:none}
+.sf-msgs{display:flex;flex-direction:column;gap:8px;max-height:420px;overflow:auto;padding:4px}
+.sf-msg{max-width:80%;padding:10px 14px;border-radius:14px;font-size:14px;line-height:1.5;white-space:pre-wrap}
+.sf-msg.me{align-self:flex-end;background:#1a73e8;color:#fff;border-bottom-right-radius:4px}
+.sf-msg.ai{align-self:flex-start;background:#f1f5f9;color:#111827;border-bottom-left-radius:4px}
+.sf-msg .sf-act{margin-top:8px;display:flex;gap:8px;flex-wrap:wrap}.sf-msg .sf-act .sf-btn{padding:7px 14px;font-size:13px}
 </style>
 
 <div class="sf">
@@ -37,6 +42,7 @@
   </div>
 
   <div class="sf-cards">
+    <div class="sf-card" data-mode="chat"><div class="ic">&#128172;</div><h3>Chat with the factory</h3><p>Ask anything, create, deploy or destroy by talking. The AI knows what you have running.</p></div>
     <div class="sf-card" data-mode="describe"><div class="ic">&#10024;</div><h3>Describe it, AI plans it</h3><p>Say what you want in plain English. AI picks the pieces and tells you what to do next.</p></div>
     <div class="sf-card" data-mode="build"><div class="ic">&#128295;</div><h3>Build an app</h3><p>Choose a database, Kafka, and a container. Connection details are injected into your app.</p></div>
     <div class="sf-card" data-mode="deploy"><div class="ic">&#128230;</div><h3>Just deploy my container</h3><p>Give a public image or a Git repo with a Dockerfile. Get a public URL in minutes.</p></div>
@@ -44,10 +50,17 @@
 
   <div class="sf-panel sf-hide" id="sf-panel">
 
+    <div id="sf-chat" class="sf-hide">
+      <div class="sf-msgs" id="sf-msgs"><div class="sf-msg ai">Hi! Tell me what you want to build, or ask what you have running. For example: <i>deploy nginx for a day</i>, <i>I need a database and Kafka for my orders API at https://github.com/me/orders</i>, <i>destroy demo3</i>.</div></div>
+      <div class="sf-row" style="margin:10px 0 0"><div class="sf-field"><input id="sf-chat-in" placeholder="Type a message and press Enter"></div>
+        <button type="button" class="sf-btn" id="sf-chat-send" style="flex:0 0 auto">Send</button></div>
+      <div id="sf-chat-wait" class="sf-hide" style="margin-top:8px"><span class="sf-spin"></span>Thinking...</div>
+    </div>
+
     <div id="sf-describe" class="sf-hide">
       <div class="sf-row"><div class="sf-field"><label>Describe what you want</label>
         <textarea id="sf-text" placeholder="e.g. A Python API that stores orders in a database and publishes events to Kafka. Code is at https://github.com/me/orders-api"></textarea></div></div>
-      <div class="sf-actions"><button class="sf-btn" id="sf-plan">&#10024; Ask AI to plan it</button><span id="sf-plan-wait" class="sf-hide"><span class="sf-spin"></span>Thinking...</span></div>
+      <div class="sf-actions"><button type="button" class="sf-btn" id="sf-plan">&#10024; Ask AI to plan it</button><span id="sf-plan-wait" class="sf-hide"><span class="sf-spin"></span>Thinking...</span></div>
       <div id="sf-ai" class="sf-ai sf-hide"></div>
     </div>
 
@@ -72,7 +85,7 @@
         </div>
       </div>
       <div class="sf-actions">
-        <button class="sf-btn" id="sf-submit">Create sandbox</button>
+        <button type="button" class="sf-btn" id="sf-submit">Create sandbox</button>
         <span id="sf-submit-wait" class="sf-hide"><span class="sf-spin"></span>Queueing...</span>
       </div>
       <div class="sf-err sf-hide" id="sf-err"></div>
@@ -83,7 +96,7 @@
 </div>
 
 <script>
-(function(){
+function sfInit(){
   var mode=null, plan=null, cfg={enable_adb:false,enable_kafka:false,enable_app:false}, timer=null;
   var $=function(s){return document.querySelector(s)}, $$=function(s){return Array.prototype.slice.call(document.querySelectorAll(s))};
   function call(action,payload){return apex.server.process('SF',{x01:action,x02:JSON.stringify(payload||{})},{dataType:'json'})}
@@ -92,8 +105,10 @@
   $$('.sf-card').forEach(function(c){c.onclick=function(){
     $$('.sf-card').forEach(function(x){x.classList.remove('sel')}); c.classList.add('sel');
     mode=c.dataset.mode; $('#sf-panel').classList.remove('sf-hide');
+    $('#sf-chat').classList.toggle('sf-hide',mode!=='chat');
     $('#sf-describe').classList.toggle('sf-hide',mode!=='describe');
-    $('#sf-form').classList.toggle('sf-hide',mode==='describe');
+    $('#sf-form').classList.toggle('sf-hide',mode==='describe'||mode==='chat');
+    if(mode==='chat'){$('#sf-chat-in').focus();return}
     $('#sf-toggles').classList.toggle('sf-hide',mode==='deploy');
     if(mode==='deploy'){setCfg({enable_adb:false,enable_kafka:false,enable_app:true})}
     if(mode==='build'){setCfg({enable_adb:true,enable_kafka:false,enable_app:true})}
@@ -108,7 +123,7 @@
     $('#sf-plan').disabled=true; $('#sf-plan-wait').classList.remove('sf-hide'); $('#sf-ai').classList.add('sf-hide');
     call('plan',{text:text}).then(function(r){
       $('#sf-plan').disabled=false; $('#sf-plan-wait').classList.add('sf-hide');
-      if(r.error){showAI('<p class="sf-err">'+esc(r.error)+'</p>');return}
+      if(r.err){showAI('<p class="sf-err">'+esc(r.err)+'</p>');return}
       var m=(r.raw||'').match(/\{[\s\S]*\}/); try{plan=m?JSON.parse(m[0]):null}catch(e){plan=null}
       if(!plan){showAI('<h4>AI answer</h4><p>'+esc(r.raw)+'</p>');return}
       var h='<h4>&#10024; Plan</h4><p>'+esc(plan.summary)+'</p><div>';
@@ -118,7 +133,7 @@
       h+='<span class="sf-chip">3 days</span></div>';
       if(plan.steps&&plan.steps.length){h+='<h4 style="margin-top:10px">What to do next</h4><ol>'+plan.steps.map(function(s){return '<li>'+esc(s)+'</li>'}).join('')+'</ol>'}
       if(plan.tips&&plan.tips.length){h+='<ul>'+plan.tips.map(function(s){return '<li>'+esc(s)+'</li>'}).join('')+'</ul>'}
-      h+='<div class="sf-actions" style="margin-top:12px"><button class="sf-btn" id="sf-usePlan">Looks good, create it</button><button class="sf-btn sec" id="sf-editPlan">Adjust first</button></div>';
+      h+='<div class="sf-actions" style="margin-top:12px"><button type="button" class="sf-btn" id="sf-usePlan">Looks good, create it</button><button type="button" class="sf-btn sec" id="sf-editPlan">Adjust first</button></div>';
       showAI(h);
       $('#sf-usePlan').onclick=function(){applyPlan(); submit()};
       $('#sf-editPlan').onclick=function(){applyPlan(); $('#sf-form').classList.remove('sf-hide'); $('#sf-toggles').classList.remove('sf-hide'); $('#sf-id').focus()};
@@ -139,7 +154,7 @@
     $('#sf-submit').disabled=true; $('#sf-submit-wait').classList.remove('sf-hide');
     call('submit',payload).then(function(r){
       $('#sf-submit').disabled=false; $('#sf-submit-wait').classList.add('sf-hide');
-      if(r.error){err(r.error);return}
+      if(r.err){err(r.err);return}
       refresh(); window.scrollTo({top:$('#sf-status').offsetTop-20,behavior:'smooth'});
     }).catch(function(e){$('#sf-submit').disabled=false;$('#sf-submit-wait').classList.add('sf-hide');err(e.message||e)});
   }
@@ -166,6 +181,38 @@
       clearTimeout(timer); if(active)timer=setTimeout(refresh,5000);
     });
   }
+
+  // ---- chat mode: conversation with the AI; it may propose one action to confirm
+  var hist=[];
+  function addMsg(cls,html){var d=document.createElement('div');d.className='sf-msg '+cls;d.innerHTML=html;$('#sf-msgs').appendChild(d);$('#sf-msgs').scrollTop=1e9;return d}
+  function sendChat(){
+    var t=$('#sf-chat-in').value.trim(); if(!t)return;
+    $('#sf-chat-in').value=''; addMsg('me',esc(t)); hist.push({role:'user',text:t});
+    $('#sf-chat-wait').classList.remove('sf-hide'); $('#sf-chat-send').disabled=true;
+    call('chat',{messages:hist.slice(-12)}).then(function(r){
+      $('#sf-chat-wait').classList.add('sf-hide'); $('#sf-chat-send').disabled=false;
+      if(r.err){addMsg('ai','<span class="sf-err">'+esc(r.err)+'</span>');return}
+      var m=(r.raw||'').match(/\{[\s\S]*\}/), j=null; try{j=m?JSON.parse(m[0]):null}catch(e){}
+      var reply=j&&j.reply?j.reply:(r.raw||''); hist.push({role:'assistant',text:reply});
+      var d=addMsg('ai',esc(reply));
+      var a=j&&j.action; if(a&&a.type){
+        var box=document.createElement('div'); box.className='sf-act';
+        var label=a.type==='destroy'?'Destroy '+a.sandbox_id:(a.type==='deploy'?'Deploy it':'Create it');
+        box.innerHTML='<button type="button" class="sf-btn">'+esc(label)+'</button><button type="button" class="sf-btn sec">Not now</button>';
+        d.appendChild(box);
+        box.children[0].onclick=function(){ box.innerHTML='<span class="sf-spin"></span>Queueing...';
+          var payload=a.type==='destroy'?{sandbox_id:a.sandbox_id,action:'DESTROY',ttl_days:1,enable_adb:false,enable_kafka:false,enable_app:false}
+            :{sandbox_id:a.sandbox_id,action:a.git_url?'DEPLOY':'CREATE',ttl_days:a.ttl_days||3,enable_adb:!!a.enable_adb,enable_kafka:!!a.enable_kafka,enable_app:!!a.enable_app||!!a.git_url||!!a.app_image,
+              app_image:a.app_image||null,git_url:a.git_url||null,app_port:a.app_port||80,text:t};
+          call('submit',payload).then(function(s){ if(s.err){box.innerHTML='<span class="sf-err">'+esc(s.err)+'</span>';return}
+            box.innerHTML='<span class="sf-chip">Queued as request #'+esc(s.id)+'</span>'; hist.push({role:'user',text:'(confirmed: '+a.type+' '+a.sandbox_id+' queued)'}); refresh(); });
+        };
+        box.children[1].onclick=function(){box.remove()};
+      }
+    }).catch(function(e){$('#sf-chat-wait').classList.add('sf-hide');$('#sf-chat-send').disabled=false;addMsg('ai','<span class="sf-err">'+esc(e&&e.statusText||e)+'</span>')});
+  }
+  $('#sf-chat-send').onclick=sendChat; $('#sf-chat-in').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();sendChat()}});
   refresh();
-})();
+}
+(function(){ function go(){ if(window.apex&&apex.server){sfInit()} else {setTimeout(go,100)} } if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',go)} else {go()} })();
 </script>

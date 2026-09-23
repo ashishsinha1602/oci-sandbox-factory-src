@@ -49,7 +49,7 @@ def home_blocks() -> str:
  p_id=>wwv_flow_imp.id({HOME_REGION_ID})
 ,p_plug_name=>'Sandbox Factory'
 ,p_static_id=>'factory'
-,p_region_template_options=>'#DEFAULT#:t-Region--noPadding:t-Region--hideHeader js-addHiddenHeadingRoleDesc:t-Region--noUI'
+,p_region_template_options=>'#DEFAULT#:t-Region--noPadding:t-Region--hideHeader:t-Region--noUI'
 ,p_plug_template=>{STANDARD_REGION_TEMPLATE}
 ,p_plug_display_sequence=>5
 ,p_plug_item_display_point=>'ABOVE'

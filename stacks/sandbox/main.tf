@@ -22,7 +22,11 @@ locals {
   }
 }
 
+# By default every sandbox lives in the shared sbx-sandboxes compartment
+# (resources are told apart by name and by the sbx.* tags). Set
+# per_sandbox_compartment = true to give each sandbox its own compartment.
 resource "oci_identity_compartment" "sandbox" {
+  count          = var.per_sandbox_compartment ? 1 : 0
   compartment_id = var.sandboxes_compartment_ocid
   name           = local.name
   description    = "Sandbox ${var.sandbox_id} for ${var.owner}. Expires ${local.expires}."
@@ -34,14 +38,18 @@ resource "oci_identity_compartment" "sandbox" {
 # A new compartment takes a little while to become visible to every service.
 resource "time_sleep" "iam_propagation" {
   depends_on      = [oci_identity_compartment.sandbox]
-  create_duration = "60s"
+  create_duration = var.per_sandbox_compartment ? "60s" : "1s"
+}
+
+locals {
+  compartment_id = var.per_sandbox_compartment ? oci_identity_compartment.sandbox[0].id : var.sandboxes_compartment_ocid
 }
 
 module "adb" {
   count  = var.enable_adb ? 1 : 0
   source = "./modules/adb"
 
-  compartment_id = oci_identity_compartment.sandbox.id
+  compartment_id = local.compartment_id
   name           = local.name
   tier           = var.adb_tier
   workload       = var.adb_workload
@@ -60,7 +68,7 @@ module "kafka" {
   count  = var.enable_kafka ? 1 : 0
   source = "./modules/kafka"
 
-  compartment_id = oci_identity_compartment.sandbox.id
+  compartment_id = local.compartment_id
   name           = local.name
   mode           = var.kafka_mode
   topics         = var.kafka_topics
@@ -96,7 +104,7 @@ module "app" {
   count  = var.enable_app ? 1 : 0
   source = "./modules/app"
 
-  compartment_id = oci_identity_compartment.sandbox.id
+  compartment_id = local.compartment_id
   name           = local.name
   vcn_id         = var.vcn_id
   subnet_id      = var.app_public ? var.public_subnet_id : var.private_subnet_id

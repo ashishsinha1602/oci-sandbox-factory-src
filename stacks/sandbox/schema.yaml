@@ -28,6 +28,7 @@ variableGroups:
       - owner
       - team
       - ttl_days
+      - per_sandbox_compartment
       - allowed_cidr
 
   - title: Autonomous Database
@@ -107,6 +108,11 @@ variables:
     minimum: 1
     maximum: 3
     default: 3
+
+  per_sandbox_compartment:
+    type: boolean
+    title: Own compartment per sandbox
+    default: false
 
   allowed_cidr:
     type: string

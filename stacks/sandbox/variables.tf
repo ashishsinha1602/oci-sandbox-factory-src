@@ -75,6 +75,12 @@ variable "ttl_days" {
   }
 }
 
+variable "per_sandbox_compartment" {
+  type        = bool
+  default     = false
+  description = "true = create a child compartment per sandbox (strong isolation). false = everything in sbx-sandboxes."
+}
+
 variable "allowed_cidr" {
   type        = string
   default     = "0.0.0.0/0"

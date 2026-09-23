@@ -1,7 +1,7 @@
 output "sandbox" {
   value = {
     id             = var.sandbox_id
-    compartment_id = oci_identity_compartment.sandbox.id
+    compartment_id = local.compartment_id
     owner          = var.owner
     expires        = local.expires
   }

@@ -17,3 +17,4 @@ crash.log
 factory/foundation.json
 __pycache__/
 factory/shots/
+factory/apex_export_*.sql

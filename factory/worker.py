@@ -53,10 +53,11 @@ class RowLog(io.TextIOBase):
 
 def claim(conn):
     cur = conn.cursor()
-    cur.execute("""
-        select id from sbx.sandbox_requests
-        where status = 'QUEUED' order by id
-        fetch first 1 rows only for update skip locked""")
+    cur.execute("select min(id) from sbx.sandbox_requests where status = 'QUEUED'")
+    candidate = cur.fetchone()[0]
+    if candidate is None:
+        return None
+    cur.execute("select id from sbx.sandbox_requests where id = :1 and status = 'QUEUED' for update skip locked", [candidate])
     row = cur.fetchone()
     if not row:
         conn.rollback()
@@ -147,7 +148,9 @@ def main():
     while True:
         try:
             worked = process_one(conn)
-        except oracledb.Error:
+        except oracledb.Error as e:
+            print(f"db error: {e}; reconnecting", file=sys.stderr)
+            time.sleep(POLL_SECONDS)
             conn = controldb.connect("ADMIN")
             worked = False
         if a.once and not worked:

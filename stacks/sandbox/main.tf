@@ -131,7 +131,11 @@ module "adb_extra" {
 # Connection details of the other pieces are injected into every container.
 locals {
   injected_env = merge(
-    { SANDBOX_ID = var.sandbox_id, SANDBOX_EXPIRES = local.expires },
+    # The compartment is needed by anything that calls OCI from inside the
+    # sandbox. DBMS_VECTOR's Generative AI provider rejects a request without it
+    # ("Compartment ID must be provided"), which is how embedding failed.
+    { SANDBOX_ID = var.sandbox_id, SANDBOX_EXPIRES = local.expires,
+      SANDBOX_COMPARTMENT_OCID = local.compartment_id },
     var.enable_adb ? {
       ADB_DB_NAME        = module.adb[0].db_name
       ADB_CONNECT_STRING = module.adb[0].connect_string

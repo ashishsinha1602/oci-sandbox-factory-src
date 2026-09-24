@@ -147,9 +147,11 @@ def embed_params() -> str:
     region = sf.config().get("region", "us-phoenix-1")
     cred = "GENAI_CRED" if os.environ.get("GENAI_USER_OCID") else "OCI$RESOURCE_PRINCIPAL"
     model = os.environ.get("EMBED_MODEL", "cohere.embed-multilingual-v3.0")
+    comp = (sf.foundation().get("compartments") or {}).get("sandboxes", "")
     return json.dumps({
         "provider": "OCIGenAI",
         "credential_name": cred,
+        **({"compartmentId": comp} if comp else {}),
         "url": f"https://inference.generativeai.{region}.oci.oraclecloud.com/20231130/actions/embedText",
         "model": model,
     })

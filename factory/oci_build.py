@@ -82,7 +82,14 @@ def _source_volume(src_dir: str):
 
 
 def build_in_oci(git_url: str | None, image: str, registry: str, namespace: str, sandbox_id: str,
-                 platform: str = "linux/arm64", src_dir: str | None = None) -> None:
+                 platform: str = "linux/arm64", src_dir: str | None = None,
+                 dockerfile: str | None = None) -> None:
+    """Build an image inside OCI with kaniko.
+
+    dockerfile is relative to the context root; kaniko looks for "Dockerfile"
+    there unless told otherwise, so a repository that keeps its Dockerfile in a
+    subdirectory needs it named explicitly.
+    """
     fnd = sf.foundation()
     ci = sf.client(oci.container_instances.ContainerInstanceClient)
     idc = sf.client(oci.identity.IdentityClient)
@@ -119,7 +126,8 @@ def build_in_oci(git_url: str | None, image: str, registry: str, namespace: str,
             display_name="kaniko",
             image_url=KANIKO_IMAGE,
             arguments=[f"--context={'dir:///workspace' if src_dir else git_context(git_url)}",
-                       f"--destination={image}", "--cache=false", "--snapshot-mode=redo"],
+                       f"--destination={image}", "--cache=false", "--snapshot-mode=redo"]
+                      + ([f"--dockerfile={dockerfile}"] if dockerfile else []),
             volume_mounts=[cim.CreateVolumeMountDetails(volume_name="docker-config", mount_path="/kaniko/.docker")]
                           + ([cim.CreateVolumeMountDetails(volume_name="source", mount_path="/workspace")] if src_dir else []),
         )],

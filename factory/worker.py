@@ -146,7 +146,7 @@ def embed_params() -> str:
     """
     region = sf.config().get("region", "us-phoenix-1")
     cred = "GENAI_CRED" if os.environ.get("GENAI_USER_OCID") else "OCI$RESOURCE_PRINCIPAL"
-    model = os.environ.get("EMBED_MODEL", "cohere.embed-english-v3.0")
+    model = os.environ.get("EMBED_MODEL", "cohere.embed-multilingual-v3.0")
     return json.dumps({
         "provider": "OCIGenAI",
         "credential_name": cred,

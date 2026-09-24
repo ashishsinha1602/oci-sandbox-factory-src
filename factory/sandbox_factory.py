@@ -52,6 +52,16 @@ ZIP_EXCLUDE = (".terraform", ".terraform.lock.hcl", ".tfstate", ".tfplan", ".tfv
 _AUTH: dict | None = None
 
 
+def _metadata_reachable(timeout: float = 0.4) -> bool:
+    """Is the OCI instance metadata service one hop away? Cheap yes/no."""
+    import socket
+    try:
+        with socket.create_connection(("169.254.169.254", 80), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
 def auth() -> dict:
     """Keyword args for any OCI client.
 
@@ -70,6 +80,13 @@ def auth() -> dict:
             # container has no ~/.oci/config, so without this it fell back to the
             # config file and every OCI call failed with key_file/user "missing".
             errors = []
+            if not _metadata_reachable():
+                # Off an OCI instance the SDK still retries 169.254.169.254 for
+                # tens of seconds before giving up, which makes every local
+                # command crawl. Probe once, cheaply, and skip straight to the
+                # config file.
+                _AUTH = {"config": oci.config.from_file(profile_name=os.environ.get("OCI_CLI_PROFILE", "DEFAULT"))}
+                return _AUTH
             for label, make in (
                 ("instance-principal", oci.auth.signers.InstancePrincipalsSecurityTokenSigner),
                 ("resource-principal", oci.auth.signers.get_resource_principals_signer),

@@ -49,7 +49,7 @@ factory/sandbox_factory.py ──► OCI Resource Manager (managed Terraform)
 The foundation is a Resource Manager stack, so a tenancy admin can install it
 without cloning anything or running Terraform locally:
 
-[![Deploy to Oracle Cloud](https://oci-resourcemanager-plugin.plugins.oci.oraclecloud.com/latest/deploy-to-oracle-cloud.svg)](https://cloud.oracle.com/resourcemanager/stacks/create?zipUrl=https://github.com/OWNER/oci-sandbox-factory/releases/latest/download/sandbox-factory-foundation.zip)
+[![Deploy to Oracle Cloud](https://oci-resourcemanager-plugin.plugins.oci.oraclecloud.com/latest/deploy-to-oracle-cloud.svg)](https://cloud.oracle.com/resourcemanager/stacks/create?zipUrl=https://github.com/ashishsinha1602/oci-sandbox-factory/releases/latest/download/sandbox-factory-foundation.zip)
 
 It asks for a parent compartment, a budget and an alert email, then creates the
 compartment tree, the `sbx` tag namespace, the budget and alerts, the optional

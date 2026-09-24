@@ -152,6 +152,48 @@ variable "adb_databases" {
   default = []
 }
 
+variable "functions" {
+  description = <<-EOT
+    OCI Functions for this sandbox. Serverless, billed per invocation, so they
+    cost nothing idle and do not consume the A1 core quota. Each image must
+    already be in a registry the tenancy can pull from.
+  EOT
+  type = list(object({
+    name        = string
+    image       = string
+    memory_mbs  = optional(number, 256)
+    timeout_sec = optional(number, 30)
+    env         = optional(map(string), {})
+  }))
+  default = []
+}
+
+variable "app_instances" {
+  description = <<-EOT
+    Extra container instances beyond the first. Use these when workloads need to
+    be isolated from one another - separate shapes, separate lifecycles, or
+    simply not sharing a host. Containers listed inside ONE instance share a
+    host and reach each other on localhost; separate instances do not.
+  EOT
+  type = list(object({
+    name      = string
+    public    = optional(bool, false)
+    shape     = optional(string, "CI.Standard.A1.Flex")
+    ocpus     = optional(number, 1)
+    memory_gb = optional(number, 4)
+    gateway   = optional(bool, true)
+    containers = list(object({
+      name    = string
+      image   = string
+      port    = optional(number)
+      env     = optional(map(string), {})
+      command = optional(list(string))
+      args    = optional(list(string))
+    }))
+  }))
+  default = []
+}
+
 variable "enable_nosql" {
   type    = bool
   default = false

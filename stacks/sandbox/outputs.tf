@@ -22,6 +22,19 @@ output "adb_admin_password" {
   sensitive = true
 }
 
+output "functions" {
+  value = length(var.functions) > 0 ? module.functions[0].functions : []
+}
+
+output "app_instances" {
+  value = [
+    for k, m in module.app_extra : {
+      name = k
+      urls = m.urls
+    }
+  ]
+}
+
 output "databases" {
   description = "Every database in this sandbox: the primary one plus any extras."
   value = concat(

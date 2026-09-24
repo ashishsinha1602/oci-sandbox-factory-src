@@ -101,6 +101,8 @@ create table {SCHEMA}.sandbox_requests (
   app_containers clob,
   app_files     clob,
   adb_databases clob,
+  functions     clob,
+  app_instances clob,
   seed_key      varchar2(40),
   app_template  varchar2(40)
 )
@@ -191,7 +193,8 @@ def setup(argv: list[str]) -> None:
         for col, kind in (("seed_sql", "clob"), ("app_containers", "clob"), ("app_files", "clob"),
                           ("seed_key", "varchar2(40)"), ("app_template", "varchar2(40)"),
                           ("enable_nosql", "varchar2(1) default 'N' not null"),
-                          ("adb_databases", "clob")):
+                          ("adb_databases", "clob"), ("functions", "clob"),
+                          ("app_instances", "clob")):
             if not exists("select count(*) from dba_tab_columns where owner = :1 and table_name = 'SANDBOX_REQUESTS' and column_name = :2",
                           SCHEMA, col.upper()):
                 cur.execute(f"alter table {SCHEMA}.sandbox_requests add ({col} {kind})")

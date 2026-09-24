@@ -267,6 +267,10 @@ def build_variables(args, fnd: dict, cfg: dict, app_containers: list | None) -> 
         "app_public": json.dumps(not (bool(args.adb) and args.adb_tier == "paid")),
         "enable_app": json.dumps(app_containers is not None),
     }
+    if getattr(args, "functions", None):
+        v["functions"] = json.dumps(args.functions)
+    if getattr(args, "app_instances", None):
+        v["app_instances"] = json.dumps(args.app_instances)
     if getattr(args, "adb_databases", None):
         v["adb_databases"] = json.dumps(args.adb_databases)
     if getattr(args, "nosql_tables", None):

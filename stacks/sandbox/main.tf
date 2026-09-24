@@ -163,6 +163,45 @@ locals {
   ]
 }
 
+# Each entry is its own container instance: a separate host, so these workloads
+# do not share localhost or a lifecycle with the primary app.
+module "app_extra" {
+  for_each = { for a in var.app_instances : a.name => a }
+  source   = "./modules/app"
+
+  compartment_id   = local.compartment_id
+  name             = "${local.name}-${each.value.name}"
+  vcn_id           = var.vcn_id
+  subnet_id        = each.value.public ? var.public_subnet_id : var.private_subnet_id
+  public           = each.value.public
+  allowed_cidr     = var.allowed_cidr
+  containers       = [for c in each.value.containers : merge(c, { env = merge(local.injected_env, c.env) })]
+  shape            = each.value.shape
+  ocpus            = each.value.ocpus
+  memory_gb        = each.value.memory_gb
+  gateway          = each.value.gateway
+  public_subnet_id = var.public_subnet_id
+  defined_tags     = local.defined_tags
+  freeform_tags    = local.freeform_tags
+
+  depends_on = [time_sleep.iam_propagation]
+}
+
+module "functions" {
+  count  = length(var.functions) > 0 ? 1 : 0
+  source = "./modules/functions"
+
+  compartment_id = local.compartment_id
+  name           = local.name
+  subnet_id      = var.private_subnet_id
+  functions      = var.functions
+  injected_env   = local.injected_env
+  defined_tags   = local.defined_tags
+  freeform_tags  = local.freeform_tags
+
+  depends_on = [time_sleep.iam_propagation]
+}
+
 module "app" {
   count  = var.enable_app ? 1 : 0
   source = "./modules/app"

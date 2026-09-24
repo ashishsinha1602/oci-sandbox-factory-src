@@ -85,11 +85,12 @@ def claim(conn):
     cur.execute("""
         select id, requester, sandbox_id, action, ttl_days, enable_adb, adb_tier, enable_kafka,
                kafka_mode, enable_app, app_image, git_url, app_port, request_text, seed_sql, app_containers, app_files,
-               seed_key, app_template, enable_nosql, adb_databases
+               seed_key, app_template, enable_nosql, adb_databases, functions, app_instances
         from sbx.sandbox_requests where id = :1""", [row[0]])
     cols = [d[0].lower() for d in cur.description]
     row = dict(zip(cols, cur.fetchone()))
-    for k in ("seed_sql", "app_containers", "app_files", "adb_databases", "request_text"):
+    for k in ("seed_sql", "app_containers", "app_files", "adb_databases",
+              "functions", "app_instances", "request_text"):
         if hasattr(row.get(k), "read"):
             row[k] = row[k].read()
     return row
@@ -118,6 +119,8 @@ def factory_args(req: dict) -> argparse.Namespace:
         shape="CI.Standard.A1.Flex", port=int(req["app_port"] or 80),
         name="app", tag=None, env=None, keep_stack=False, dry_run=False, path=None,
         adb_databases=json.loads(req["adb_databases"]) if req.get("adb_databases") else None,
+        functions=json.loads(req["functions"]) if req.get("functions") else None,
+        app_instances=json.loads(req["app_instances"]) if req.get("app_instances") else None,
     )
 
 
@@ -476,6 +479,10 @@ def handle(req: dict) -> dict:
             return sf.cmd_deploy(args)
         finally:
             shutil.rmtree(built, ignore_errors=True)
+    if (req.get("functions") or req.get("app_instances")) and not req.get("app_files")             and not req.get("git_url") and req["enable_app"] != "Y":
+        # Functions and extra instances are stack variables, not the primary app,
+        # so a sandbox made only of them still goes through the plain create path.
+        return sf.cmd_create(args)
     explicit = containers_for(req)
     if explicit and not req.get("git_url"):
         args.app = True

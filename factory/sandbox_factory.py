@@ -61,10 +61,30 @@ def auth() -> dict:
     global _AUTH
     if _AUTH is None:
         if os.environ.get("OCI_RESOURCE_PRINCIPAL_VERSION"):
+            # Functions
             signer = oci.auth.signers.get_resource_principals_signer()
             _AUTH = {"config": {"region": signer.region, "tenancy": signer.tenancy_id}, "signer": signer}
         else:
-            _AUTH = {"config": oci.config.from_file(profile_name=os.environ.get("OCI_CLI_PROFILE", "DEFAULT"))}
+            # Container Instances and VMs authenticate as the instance itself.
+            # This is an INSTANCE principal, not a resource principal - the worker
+            # container has no ~/.oci/config, so without this it fell back to the
+            # config file and every OCI call failed with key_file/user "missing".
+            errors = []
+            for label, make in (
+                ("instance-principal", oci.auth.signers.InstancePrincipalsSecurityTokenSigner),
+                ("resource-principal", oci.auth.signers.get_resource_principals_signer),
+            ):
+                try:
+                    signer = make()
+                    _AUTH = {"config": {"region": signer.region, "tenancy": signer.tenancy_id}, "signer": signer}
+                    print(f"auth: using {label}", flush=True)
+                    break
+                except Exception as e:  # noqa: BLE001
+                    errors.append(f"{label}: {type(e).__name__}: {e}")
+            else:
+                for e in errors:
+                    print(f"auth: {e}", flush=True)
+                _AUTH = {"config": oci.config.from_file(profile_name=os.environ.get("OCI_CLI_PROFILE", "DEFAULT"))}
     return _AUTH
 
 
@@ -121,6 +141,28 @@ def find_stack(rm, control_compartment: str, sandbox_id: str):
         lifecycle_state="ACTIVE",
     ).data
     return stacks[0] if stacks else None
+
+
+def assert_owner(stack, owner: str | None, action: str) -> None:
+    """A sandbox may only be changed by the person who created it.
+
+    Every stack carries an `owner` freeform tag. Checking it here, rather than only
+    in the APEX page, covers every route to these commands - the MCP server and the
+    CLI never touch SBX.SANDBOX_REQUESTS and so never see that guard. Pass
+    owner=None (the reaper, an administrator) to skip the check deliberately.
+    """
+    if stack is None or owner is None:
+        return
+    if not owner.strip():
+        raise SystemExit(
+            f"Refusing to {action} {stack.display_name}: the caller is not identified. "
+            "Set SBX_OWNER to the person acting."
+        )
+    actual = (stack.freeform_tags or {}).get("owner")
+    if actual and actual.casefold() != owner.casefold():
+        raise SystemExit(
+            f"Sandbox {stack.display_name} belongs to {actual}, not {owner}; refusing to {action} it."
+        )
 
 
 def run_job(rm, stack_id: str, operation: str, label: str) -> oci.resource_manager.models.Job:
@@ -201,8 +243,17 @@ def build_variables(args, fnd: dict, cfg: dict, app_containers: list | None) -> 
         "enable_kafka": json.dumps(bool(args.kafka)),
         "kafka_mode": args.kafka_mode,
         "kafka_topics": json.dumps(args.topics.split(",")),
+        "enable_nosql": json.dumps(bool(getattr(args, "nosql", False))),
+        # A paid database is reachable only on its private endpoint, which lives in
+        # the private subnet. Put the app there too, beside it - the API Gateway
+        # still gives the sandbox a public HTTPS URL, so nothing is lost.
+        "app_public": json.dumps(not (bool(args.adb) and args.adb_tier == "paid")),
         "enable_app": json.dumps(app_containers is not None),
     }
+    if getattr(args, "adb_databases", None):
+        v["adb_databases"] = json.dumps(args.adb_databases)
+    if getattr(args, "nosql_tables", None):
+        v["nosql_tables"] = json.dumps(args.nosql_tables)
     if app_containers is not None:
         v["app_containers"] = json.dumps(app_containers)
         v["app_shape"] = args.shape
@@ -223,6 +274,7 @@ def cmd_create(args, app_containers: list | None = None) -> dict:
     tags = {"sandbox_id": args.sandbox_id, "owner": args.owner, "expires": expires, "managed_by": "sandbox-factory"}
 
     existing = find_stack(rm, control, args.sandbox_id)
+    assert_owner(existing, getattr(args, "owner", None), "update")
     if existing:
         print(f"Updating stack {existing.display_name}")
         rm.update_stack(existing.id, rmm.UpdateStackDetails(
@@ -294,6 +346,7 @@ def cmd_destroy(args):
     stack = find_stack(rm, fnd["compartments"]["control"], args.sandbox_id)
     if not stack:
         raise SystemExit(f"No sandbox named {args.sandbox_id}")
+    assert_owner(stack, getattr(args, "owner", None), "destroy")
     print(f"Destroying {stack.display_name}")
     destroy_stack(rm, stack, keep_stack=args.keep_stack)
 
@@ -429,6 +482,7 @@ def add_sandbox_options(p):
     p.add_argument("--adb-tier", choices=["free", "paid"], default="free")
     p.add_argument("--adb-workload", choices=["OLTP", "DW", "AJD", "APEX"], default="OLTP")
     p.add_argument("--kafka", action="store_true")
+    p.add_argument("--nosql", action="store_true", help="add OCI NoSQL tables to the sandbox")
     p.add_argument("--kafka-mode", choices=["streaming", "cluster"], default="streaming")
     p.add_argument("--topics", default="events", help="comma-separated")
     p.add_argument("--shape", default="CI.Standard.A1.Flex")

@@ -31,6 +31,26 @@ os.environ["SCHEMAGATE_CONNECT_ARGS"] = json.dumps({"user": "ADMIN", "password":
 
 import oracledb  # noqa: E402
 
+def run_seed(cur):
+    """SEED_SQL (base64 of ';'-separated Oracle statements) is loaded when the schema has no tables."""
+    import base64 as _b64
+    raw = os.environ.get("SEED_SQL", "")
+    if not raw:
+        return False
+    try:
+        sql = _b64.b64decode(raw).decode()
+    except Exception:  # noqa: BLE001
+        sql = raw
+    n = 0
+    for stmt in [s.strip() for s in sql.split(";") if s.strip()]:
+        try:
+            cur.execute(stmt)
+            n += 1
+        except Exception as e:  # noqa: BLE001
+            print(f"seed statement failed ({e}): {stmt[:80]}", flush=True)
+    print(f"seeded {n} statements from SEED_SQL", flush=True)
+    return n > 0
+
 SEED = [
     """create table customers (id number generated always as identity primary key,
        name varchar2(100) not null, email varchar2(200), country varchar2(60), created_at date default sysdate)""",
@@ -58,7 +78,10 @@ for attempt in range(30):
             cur = c.cursor()
             cur.execute("select count(*) from user_tables")
             n = cur.fetchone()[0]
-            if n == 0 and os.environ.get("SEED_DEMO", "yes").lower() != "no":
+            if n == 0 and os.environ.get("SEED_SQL"):
+                run_seed(cur)
+                c.commit()
+            elif n == 0 and os.environ.get("SEED_DEMO", "yes").lower() != "no":
                 for stmt in SEED:
                     cur.execute(stmt)
                 c.commit()

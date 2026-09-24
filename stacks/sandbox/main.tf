@@ -53,6 +53,7 @@ module "adb" {
   name           = local.name
   tier           = var.adb_tier
   workload       = var.adb_workload
+  db_version     = var.adb_version
   ecpu_count     = var.adb_ecpu_count
   storage_gb     = var.adb_storage_gb
   vcn_id         = var.vcn_id
@@ -81,6 +82,52 @@ module "kafka" {
   depends_on = [time_sleep.iam_propagation]
 }
 
+module "nosql" {
+  count  = var.enable_nosql ? 1 : 0
+  source = "./modules/nosql"
+
+  compartment_id = local.compartment_id
+  name           = local.name
+  tables         = length(var.nosql_tables) > 0 ? var.nosql_tables : local.default_nosql_tables
+  defined_tags   = local.defined_tags
+  freeform_tags  = local.freeform_tags
+
+  depends_on = [time_sleep.iam_propagation]
+}
+
+# A sandbox asking for NoSQL with nothing specified still gets something to use.
+locals {
+  default_nosql_tables = [{
+    name    = "events"
+    ddl     = "CREATE TABLE IF NOT EXISTS {name} (id STRING, created_at TIMESTAMP(3), kind STRING, payload JSON, PRIMARY KEY (id))"
+    read    = 5
+    write   = 5
+    storage = 1
+  }]
+}
+
+# Additional databases. The first one stays module.adb so every existing output and
+# injected variable keeps its meaning; these are siblings with their own credentials.
+module "adb_extra" {
+  for_each = { for d in var.adb_databases : d.name => d }
+  source   = "./modules/adb"
+
+  compartment_id = local.compartment_id
+  name           = "${local.name}-${each.value.name}"
+  tier           = each.value.tier
+  workload       = each.value.workload
+  db_version     = var.adb_version
+  ecpu_count     = each.value.ecpu_count
+  storage_gb     = each.value.storage_gb
+  vcn_id         = var.vcn_id
+  subnet_id      = var.private_subnet_id
+  allowed_cidrs  = [var.allowed_cidr]
+  defined_tags   = local.defined_tags
+  freeform_tags  = local.freeform_tags
+
+  depends_on = [time_sleep.iam_propagation]
+}
+
 # Connection details of the other pieces are injected into every container.
 locals {
   injected_env = merge(
@@ -92,6 +139,18 @@ locals {
     } : {},
     var.enable_kafka ? {
       KAFKA_BOOTSTRAP_SERVERS = module.kafka[0].bootstrap_servers
+    } : {},
+    # Each extra database is injected as ADB_<NAME>_CONNECT_STRING / _ADMIN_PASSWORD,
+    # so an app can talk to several of them at once.
+    merge([for k, m in module.adb_extra : {
+      "ADB_${upper(replace(k, "-", "_"))}_CONNECT_STRING" = m.connect_string
+      "ADB_${upper(replace(k, "-", "_"))}_ADMIN_PASSWORD" = m.admin_password
+      "ADB_${upper(replace(k, "-", "_"))}_DB_NAME"        = m.db_name
+    }]...),
+    var.enable_nosql ? {
+      NOSQL_COMPARTMENT_OCID = local.compartment_id
+      NOSQL_TABLES           = join(",", module.nosql[0].tables)
+      NOSQL_REGION           = var.region
     } : {},
   )
 

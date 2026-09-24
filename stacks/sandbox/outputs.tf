@@ -22,6 +22,33 @@ output "adb_admin_password" {
   sensitive = true
 }
 
+output "databases" {
+  description = "Every database in this sandbox: the primary one plus any extras."
+  value = concat(
+    var.enable_adb ? [{
+      name           = "primary"
+      db_name        = module.adb[0].db_name
+      tier           = var.adb_tier
+      connect_string = module.adb[0].connect_string
+      sql_web_url    = module.adb[0].sql_web_url
+    }] : [],
+    [for k, m in module.adb_extra : {
+      name           = k
+      db_name        = m.db_name
+      tier           = try([for d in var.adb_databases : d.tier if d.name == k][0], "free")
+      connect_string = m.connect_string
+      sql_web_url    = m.sql_web_url
+    }]
+  )
+}
+
+output "nosql" {
+  value = var.enable_nosql ? {
+    tables         = module.nosql[0].tables
+    compartment_id = local.compartment_id
+  } : null
+}
+
 output "kafka" {
   value = var.enable_kafka ? {
     mode              = var.kafka_mode

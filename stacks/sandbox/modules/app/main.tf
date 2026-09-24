@@ -116,8 +116,15 @@ data "oci_core_vnic" "app" {
 # (Container Instances themselves only get an IP address).
 
 locals {
-  main_port = length(local.ports) > 0 ? sort(tolist(local.ports))[0] : "80"
-  backend   = "http://${data.oci_core_vnic.app.private_ip_address}:${local.main_port}"
+  # The first container's port is served at "/"; every other container with a
+  # port is served under "/<container name>" on the same Oracle hostname
+  # (e.g. an MCP server named "mcp" on 8765 answers at https://<host>/mcp).
+  main_port = try(tostring(var.containers[0].port), null) != null ? tostring(var.containers[0].port) : (length(local.ports) > 0 ? sort(tolist(local.ports))[0] : "80")
+  ip        = data.oci_core_vnic.app.private_ip_address
+  backend   = "http://${local.ip}:${local.main_port}"
+  extra_routes = {
+    for c in slice(var.containers, 1, length(var.containers)) : c.name => c.port if c.port != null
+  }
 }
 
 resource "oci_apigateway_gateway" "app" {
@@ -156,6 +163,34 @@ resource "oci_apigateway_deployment" "app" {
         connect_timeout_in_seconds = 10
         read_timeout_in_seconds    = 300
         send_timeout_in_seconds    = 300
+      }
+    }
+    dynamic "routes" {
+      for_each = local.extra_routes
+      content {
+        path    = "/${routes.key}"
+        methods = ["ANY"]
+        backend {
+          type                       = "HTTP_BACKEND"
+          url                        = "http://${local.ip}:${routes.value}/${routes.key}"
+          connect_timeout_in_seconds = 10
+          read_timeout_in_seconds    = 300
+          send_timeout_in_seconds    = 300
+        }
+      }
+    }
+    dynamic "routes" {
+      for_each = local.extra_routes
+      content {
+        path    = "/${routes.key}/{p*}"
+        methods = ["ANY"]
+        backend {
+          type                       = "HTTP_BACKEND"
+          url                        = "http://${local.ip}:${routes.value}/${routes.key}/$${request.path[p]}"
+          connect_timeout_in_seconds = 10
+          read_timeout_in_seconds    = 300
+          send_timeout_in_seconds    = 300
+        }
       }
     }
     routes {

@@ -13,6 +13,7 @@ OCI credentials live (your laptop today, a VM later).
 from __future__ import annotations
 
 import argparse
+import base64
 import contextlib
 import datetime as dt
 import io
@@ -28,6 +29,7 @@ import traceback
 
 import oci
 
+import app_templates
 import controldb
 import sandbox_factory as sf
 
@@ -58,27 +60,39 @@ def claim(conn):
     cur = conn.cursor()
     # The OCI-hosted worker cannot see a laptop's folders: it only takes requests whose
     # source is a Git URL or an image. A laptop worker (SBX_WORKER_KIND=laptop) takes everything.
+    # Take the oldest queued request this worker is allowed to run. Several workers
+    # run at once, so walk a window of candidates rather than fighting over min(id):
+    # with a single candidate every extra worker would lose the skip-locked race and
+    # idle, and the queue would drain one request at a time no matter how many run.
     if os.environ.get("SBX_WORKER_KIND", "laptop") == "oci":
-        cur.execute("""select min(id) from sbx.sandbox_requests where status = 'QUEUED'
-                       and (git_url is null or lower(git_url) like 'http%' or lower(git_url) like 'git%' or lower(git_url) like 'ssh%')""")
+        cur.execute("""select id from sbx.sandbox_requests where status = 'QUEUED'
+                       and (git_url is null or lower(git_url) like 'http%' or lower(git_url) like 'git%' or lower(git_url) like 'ssh%')
+                       order by id fetch first 25 rows only""")
     else:
-        cur.execute("select min(id) from sbx.sandbox_requests where status = 'QUEUED'")
-    candidate = cur.fetchone()[0]
-    if candidate is None:
-        return None
-    cur.execute("select id from sbx.sandbox_requests where id = :1 and status = 'QUEUED' for update skip locked", [candidate])
-    row = cur.fetchone()
-    if not row:
+        cur.execute("select id from sbx.sandbox_requests where status = 'QUEUED' order by id fetch first 25 rows only")
+    candidates = [r[0] for r in cur.fetchall()]
+    row = None
+    for candidate in candidates:
+        cur.execute("select id from sbx.sandbox_requests where id = :1 and status = 'QUEUED' for update skip locked", [candidate])
+        row = cur.fetchone()
+        if row:
+            break
         conn.rollback()
+    if not row:
         return None
     cur.execute("update sbx.sandbox_requests set status = 'RUNNING', started_at = systimestamp where id = :1", [row[0]])
     conn.commit()
     cur.execute("""
         select id, requester, sandbox_id, action, ttl_days, enable_adb, adb_tier, enable_kafka,
-               kafka_mode, enable_app, app_image, git_url, app_port, request_text
+               kafka_mode, enable_app, app_image, git_url, app_port, request_text, seed_sql, app_containers, app_files,
+               seed_key, app_template, enable_nosql, adb_databases
         from sbx.sandbox_requests where id = :1""", [row[0]])
     cols = [d[0].lower() for d in cur.description]
-    return dict(zip(cols, cur.fetchone()))
+    row = dict(zip(cols, cur.fetchone()))
+    for k in ("seed_sql", "app_containers", "app_files", "adb_databases", "request_text"):
+        if hasattr(row.get(k), "read"):
+            row[k] = row[k].read()
+    return row
 
 
 def finish(conn, request_id, ok: bool, outputs=None, error=None):
@@ -97,20 +111,369 @@ def finish(conn, request_id, ok: bool, outputs=None, error=None):
 def factory_args(req: dict) -> argparse.Namespace:
     return argparse.Namespace(
         sandbox_id=req["sandbox_id"], owner=req["requester"], team="hackathon",
-        ttl=int(req["ttl_days"] or 7), allowed_cidr="0.0.0.0/0",
+        ttl=int(req["ttl_days"] or 3), allowed_cidr="0.0.0.0/0",
         adb=req["enable_adb"] == "Y", adb_tier=req["adb_tier"] or "free", adb_workload="OLTP",
-        kafka=req["enable_kafka"] == "Y", kafka_mode=req["kafka_mode"] or "streaming", topics="events",
+        kafka=req["enable_kafka"] == "Y", nosql=req.get("enable_nosql") == "Y", kafka_mode=req["kafka_mode"] or "streaming", topics="events",
         app=req["enable_app"] == "Y", image=req["app_image"] or "docker.io/library/nginx:alpine",
         shape="CI.Standard.A1.Flex", port=int(req["app_port"] or 80),
         name="app", tag=None, env=None, keep_stack=False, dry_run=False, path=None,
+        adb_databases=json.loads(req["adb_databases"]) if req.get("adb_databases") else None,
     )
 
 
+def containers_for(req: dict) -> list | None:
+    """Explicit container list (planner/chat 'containers') plus SEED_SQL for every container."""
+    seed = (req.get("seed_sql") or "").strip()
+    env = {"SEED_SQL": base64.b64encode(seed.encode()).decode()} if seed else {}
+    if req.get("app_containers"):
+        items = json.loads(req["app_containers"])
+        return [{"name": c.get("name") or f"app{i}", "image": c["image"], "port": c.get("port"), "env": {**env, **(c.get("env") or {})}}
+                for i, c in enumerate(items)]
+    if req["enable_app"] == "Y" and not req.get("git_url") and env:
+        return [{"name": "web", "image": req["app_image"] or "docker.io/library/nginx:alpine", "port": int(req["app_port"] or 80), "env": env}]
+    return None
+
+
+def embed_params() -> str:
+    """Parameters DBMS_VECTOR uses to embed text with OCI Generative AI.
+
+    Seeds that build a vector corpus write {{EMBED_PARAMS}} and this fills in the
+    region, credential and model, so the SQL itself carries no tenancy.
+    """
+    region = sf.config().get("region", "us-phoenix-1")
+    cred = "GENAI_CRED" if os.environ.get("GENAI_USER_OCID") else "OCI$RESOURCE_PRINCIPAL"
+    model = os.environ.get("EMBED_MODEL", "cohere.embed-english-v3.0")
+    return json.dumps({
+        "provider": "OCIGenAI",
+        "credential_name": cred,
+        "url": f"https://inference.generativeai.{region}.oci.oraclecloud.com/20231130/actions/embedText",
+        "model": model,
+    })
+
+
+def seed_database(outputs: dict, seed_sql: str) -> None:
+    """Run SEED_SQL against the ADB this sandbox just created in OCI.
+
+    Done here, not in an app container, so every OCI database gets its sample
+    schema no matter what runs on top of it (MCP, agent, Grafana, nothing).
+    """
+    adb = outputs.get("adb") or {}
+    connect, pw = adb.get("connect_string"), adb.get("admin_password")
+    if not (connect and pw):
+        print("seed skipped: no ADB connect string / password in outputs", flush=True)
+        return
+    import oracledb
+    seed_sql = seed_sql.replace("{{EMBED_PARAMS}}", embed_params())
+    if len(seed_sql) > 256 * 1024:
+        print(f"seed skipped: {len(seed_sql)} bytes exceeds the 256 KB limit", flush=True)
+        return
+    stmts = [x.strip().rstrip(";") for x in seed_sql.split(";") if x.strip()]
+    if not stmts:
+        return
+    if len(stmts) > 200:
+        print(f"seed skipped: {len(stmts)} statements exceeds the 200 limit", flush=True)
+        return
+    with oracledb.connect(user="ADMIN", password=pw, dsn=connect,
+                          ssl_server_dn_match=True) as db:
+        cur = db.cursor()
+        done = 0
+        for st in stmts:
+            try:
+                cur.execute(st)
+                done += 1
+            except Exception as e:  # noqa: BLE001 - one bad statement must not lose the rest
+                print(f"seed statement failed ({type(e).__name__}): {st[:120]}", flush=True)
+        db.commit()
+    print(f"seeded {done}/{len(stmts)} statements into {adb.get('db_name')}", flush=True)
+
+
+SELECT_AI_MODEL = os.environ.get("SELECT_AI_MODEL", "meta.llama-3.3-70b-instruct")
+
+
+def _dedicated_genai_credential() -> tuple[str, dict] | None:
+    """A DEDICATED, inference-only OCI key, if one is configured.
+
+    Never the worker's own key: the sandbox ADMIN password is handed to the
+    requester, so anything stored as a DBMS_CLOUD credential inside their
+    database is effectively theirs. Only a principal whose policy is limited to
+    `use generative-ai-family` may go in here.
+    """
+    user = os.environ.get("GENAI_USER_OCID")
+    tenancy = os.environ.get("GENAI_TENANCY_OCID")
+    fp = os.environ.get("GENAI_FINGERPRINT")
+    key = os.environ.get("GENAI_KEY_FILE")
+    if not (user and tenancy and fp and key):
+        return None
+    body = "".join(l for l in pathlib.Path(key).expanduser().read_text().splitlines()
+                   if not l.startswith("-----"))
+    return ("""
+        begin
+          begin dbms_cloud.drop_credential('GENAI_CRED'); exception when others then null; end;
+          dbms_cloud.create_credential(
+            credential_name => 'GENAI_CRED',
+            user_ocid       => :user_ocid,
+            tenancy_ocid    => :tenancy_ocid,
+            private_key     => :private_key,
+            fingerprint     => :fingerprint);
+        end;
+    """, {"user_ocid": user, "tenancy_ocid": tenancy,
+          "private_key": body, "fingerprint": fp})
+
+
+def enable_select_ai(outputs: dict, region: str, cfg: dict) -> None:
+    """Turn on Oracle's own NL2SQL (Select AI) on the ADB this sandbox created.
+
+    Gives every OCI database a `SELECT AI <question>` agent with no container:
+    DBMS_CLOUD_AI drives OCI Generative AI and reads the live data dictionary,
+    so the agent stays correct as the schema changes. Best effort - a sandbox is
+    never failed because Select AI could not be configured.
+    """
+    adb = outputs.get("adb") or {}
+    connect, pw = adb.get("connect_string"), adb.get("admin_password")
+    if not (connect and pw):
+        return
+    import oracledb
+    try:
+        with oracledb.connect(user="ADMIN", password=pw, dsn=connect,
+                              ssl_server_dn_match=True) as db:
+            cur = db.cursor()
+            # Resource principal first: the database authenticates as itself and no
+            # key material of any kind is stored in the sandbox.
+            cred = "OCI$RESOURCE_PRINCIPAL"
+            try:
+                cur.execute("begin dbms_cloud_admin.enable_resource_principal(); end;")
+            except Exception as e:  # noqa: BLE001
+                dedicated = _dedicated_genai_credential()
+                if not dedicated:
+                    print(f"Select AI skipped: resource principal unavailable ({type(e).__name__}) and no "
+                          f"dedicated GENAI_* credential configured. Refusing to store the worker's own "
+                          f"OCI key in a sandbox database.", flush=True)
+                    return
+                sql, binds = dedicated
+                cur.execute(sql, binds)
+                cred = "GENAI_CRED"
+            # Every non-Oracle schema in this database, so the agent covers whatever
+            # the user creates - not just what the factory seeded into ADMIN.
+            cur.execute("""
+                select username from all_users
+                 where oracle_maintained = 'N'
+                    or username = 'ADMIN'
+                 order by decode(username, 'ADMIN', 0, 1), username
+            """)
+            owners = [r[0] for r in cur.fetchall()] or ["ADMIN"]
+            object_list = [{"owner": o} for o in owners]
+            cur.execute("""
+                begin
+                  begin dbms_cloud_ai.drop_profile('SANDBOX_AI'); exception when others then null; end;
+                  dbms_cloud_ai.create_profile(
+                    profile_name => 'SANDBOX_AI',
+                    attributes   => :attrs);
+                  dbms_cloud_ai.set_profile('SANDBOX_AI');
+                end;
+            """, attrs=json.dumps({
+                "provider": "oci",
+                "credential_name": cred,
+                "region": region,
+                "model": SELECT_AI_MODEL,
+                "comments": "true",
+                "object_list": object_list,
+            }))
+            # Persist the profile so every new session can just say SELECT AI ...
+            cur.execute("""
+                begin
+                  execute immediate q'[
+                    create or replace trigger admin.sandbox_ai_logon
+                    after logon on database
+                    begin
+                      dbms_cloud_ai.set_profile('SANDBOX_AI');
+                    exception when others then null;
+                    end;]';
+                exception when others then null;
+                end;
+            """)
+            # Oracle's own AI cataloguing: GENERATE_SYNONYMS writes natural-language
+            # aliases for tables and columns into the dictionary, which is what the
+            # schemagate catalogue did by hand. Only on ADB versions that ship it.
+            catalogued = False
+            try:
+                cur.execute("""
+                    begin
+                      dbms_cloud_ai.generate_synonyms(
+                        profile_name => 'SANDBOX_AI',
+                        object_list  => :objs);
+                    end;
+                """, objs=json.dumps(object_list))
+                catalogued = True
+            except Exception as e:  # noqa: BLE001 - not on every ADB version yet
+                print(f"AI cataloguing not available here ({type(e).__name__}); Select AI falls back to comments", flush=True)
+            # Schemas created after provisioning: refresh the profile and the
+            # catalogue nightly so a database that grows later stays covered.
+            try:
+                cur.execute("""
+                    begin
+                      begin dbms_scheduler.drop_job('ADMIN.SANDBOX_AI_REFRESH', true); exception when others then null; end;
+                      dbms_scheduler.create_job(
+                        job_name   => 'ADMIN.SANDBOX_AI_REFRESH',
+                        job_type   => 'PLSQL_BLOCK',
+                        start_date => systimestamp + interval '1' hour,
+                        repeat_interval => 'FREQ=HOURLY;INTERVAL=6',
+                        enabled    => true,
+                        job_action => q'[
+                          declare
+                            l_objs clob := '[';
+                          begin
+                            for u in (select username from all_users
+                                       where oracle_maintained = 'N' or username = 'ADMIN') loop
+                              l_objs := l_objs || case when length(l_objs) > 1 then ',' end
+                                        || '{\"owner\":\"' || u.username || '\"}';
+                            end loop;
+                            l_objs := l_objs || ']';
+                            dbms_cloud_ai.set_attribute('SANDBOX_AI', 'object_list', l_objs);
+                            begin dbms_cloud_ai.generate_synonyms(profile_name => 'SANDBOX_AI', object_list => l_objs);
+                            exception when others then null; end;
+                          end;]');
+                    end;
+                """)
+            except Exception as e:  # noqa: BLE001
+                print(f"Select AI refresh job not scheduled ({type(e).__name__})", flush=True)
+            db.commit()
+        print(f"Select AI enabled on {adb.get('db_name')} over {len(owners)} schema(s) (model {SELECT_AI_MODEL}"
+              f"{', AI catalogue generated' if catalogued else ''}) - try: select ai what are my top customers", flush=True)
+    except Exception as e:  # noqa: BLE001
+        print(f"Select AI setup skipped ({type(e).__name__}: {e})", flush=True)
+
+
+def enable_low_code(outputs: dict) -> None:
+    """Turn the new database into something you can build an app on immediately.
+
+    Two things every Autonomous Database already ships, switched on for you:
+      * ORDS auto-REST - every seeded table gets a working REST endpoint, no code.
+      * an APEX workspace on the ADMIN schema - open the APEX URL and click
+        Create App to get a low-code CRUD app over the same tables.
+    Best effort: a sandbox is never failed because these could not be enabled.
+    """
+    adb = outputs.get("adb") or {}
+    connect, pw = adb.get("connect_string"), adb.get("admin_password")
+    if not (connect and pw):
+        return
+    import oracledb
+    try:
+        with oracledb.connect(user="ADMIN", password=pw, dsn=connect,
+                              ssl_server_dn_match=True) as db:
+            cur = db.cursor()
+            cur.execute("""
+                begin
+                  ords_admin.enable_schema(
+                    p_enabled             => true,
+                    p_schema              => 'ADMIN',
+                    p_url_mapping_type    => 'BASE_PATH',
+                    p_url_mapping_pattern => 'admin',
+                    p_auto_rest_auth      => true);
+                end;
+            """)
+            cur.execute("""
+                select table_name from user_tables
+                 where table_name not like 'DEF$%' and table_name not like 'SYS%'
+                   and table_name not like 'AQ$%' and table_name not like 'MVIEW$%'
+                   and table_name not like 'LOGMNR%' and table_name not like 'SCHEDULER%'
+            """)
+            tables = [r[0] for r in cur.fetchall()]
+            rested = 0
+            for t in tables:
+                try:
+                    cur.execute("""
+                        begin
+                          ords.enable_object(
+                            p_enabled        => true,
+                            p_schema         => 'ADMIN',
+                            p_object         => :t,
+                            p_object_type    => 'TABLE',
+                            p_object_alias   => lower(:t),
+                            p_auto_rest_auth => true);
+                        end;
+                    """, t=t)
+                    rested += 1
+                except Exception:  # noqa: BLE001 - skip what will not REST
+                    pass
+            db.commit()
+        if rested:
+            base = (adb.get("sql_web_url") or "").split("/ords/")[0]
+            outputs.setdefault("low_code", {})["rest_base"] = f"{base}/ords/admin/" if base else "(see ADB REST endpoint)"
+            outputs["low_code"]["rest_tables"] = sorted(t.lower() for t in tables)
+        print(f"ORDS auto-REST on for {rested}/{len(tables)} table(s), authenticated (basic auth as ADMIN); "
+              f"APEX is ready at the APEX URL", flush=True)
+    except Exception as e:  # noqa: BLE001
+        print(f"Low-code setup skipped ({type(e).__name__}: {e})", flush=True)
+
+
+def materialise_app(req: dict) -> pathlib.Path | None:
+    """app_files is {filename: content} - a small app shipped with the request.
+
+    Written to a temp folder and built exactly like a local folder deploy, so a
+    Python starter needs no repository and nothing pushed to a registry.
+    """
+    raw = req.get("app_files")
+    if not raw:
+        return None
+    files = json.loads(raw)
+    if not files:
+        return None
+    if len(files) > 40:
+        raise ValueError(f"app_files has {len(files)} entries; 40 is the limit")
+    total = sum(len(v) for v in files.values())
+    if total > 512 * 1024:
+        raise ValueError(f"app_files is {total} bytes; 512 KB is the limit")
+    root = pathlib.Path(tempfile.mkdtemp(prefix="sbx-app-"))
+    for name, body in files.items():
+        # keep everything inside the temp root
+        dest = (root / name).resolve()
+        if not str(dest).startswith(str(root.resolve())):
+            raise ValueError(f"app_files entry escapes the build folder: {name}")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_text(body, encoding="utf-8")
+    if not (root / "Dockerfile").exists():
+        raise ValueError("app_files needs a Dockerfile")
+    print(f"app_files: {len(files)} file(s) written to {root}", flush=True)
+    return root
+
+
+def expand_templates(req: dict) -> None:
+    """Turn the short keys the browser sends into the real seed SQL and app files.
+
+    The page ships only a key ("react", "sales"): an APEX region source is capped
+    at 32767 bytes and the full templates do not fit. Free-text seed_sql/app_files
+    from chat still pass straight through and win over a key.
+    """
+    if not req.get("seed_sql"):
+        seed = app_templates.seed_for(req.get("seed_key"))
+        if seed:
+            req["seed_sql"] = seed
+            print(f"seed template '{req['seed_key']}' expanded ({len(seed)} chars)", flush=True)
+    if not req.get("app_files"):
+        app = app_templates.app_for(req.get("app_template"))
+        if app:
+            req["app_files"] = json.dumps(app)
+            print(f"app template '{req['app_template']}' expanded ({len(app)} files)", flush=True)
+
+
 def handle(req: dict) -> dict:
+    expand_templates(req)
     args = factory_args(req)
     if req["action"] == "DESTROY":
         sf.cmd_destroy(args)
         return {"destroyed": req["sandbox_id"]}
+    built = materialise_app(req)
+    if built:
+        try:
+            args.path = str(built)
+            args.app = True
+            return sf.cmd_deploy(args)
+        finally:
+            shutil.rmtree(built, ignore_errors=True)
+    explicit = containers_for(req)
+    if explicit and not req.get("git_url"):
+        args.app = True
+        return sf.cmd_create(args, app_containers=explicit)
     if req["action"] == "DEPLOY":
         if not req["git_url"]:
             raise ValueError("DEPLOY needs git_url")
@@ -150,6 +513,15 @@ def process_one(conn) -> bool:
     try:
         with contextlib.redirect_stdout(log):
             outputs = handle(req)
+            if req["action"] != "DESTROY" and isinstance(outputs, dict) and (outputs.get("adb") or {}).get("connect_string"):
+                # Select AI first: it creates the credential that a seed needs in
+                # order to embed anything with DBMS_VECTOR.
+                cfg = sf.config()
+                enable_select_ai(outputs, cfg.get("region", "us-phoenix-1"), cfg)
+                seed = (req.get("seed_sql") or "").strip()
+                if seed:
+                    seed_database(outputs, seed)
+                enable_low_code(outputs)
         finish(conn, req["id"], True, outputs)
         print(f"  request {req['id']} DONE")
     except SystemExit as e:
@@ -167,7 +539,9 @@ def reconcile(conn):
     """Sandboxes destroyed outside the app (CLI, reaper) get a DESTROY/DONE row so the UI stops showing them."""
     cfg = sf.config()
     fnd = sf.foundation()
-    rm = oci.resource_manager.ResourceManagerClient(cfg)
+    # sf.client() carries the instance-principal signer; passing cfg alone makes the
+    # SDK validate it as an API-key config and fail with user/key_file 'missing'.
+    rm = sf.client(oci.resource_manager.ResourceManagerClient)
     live = {s.freeform_tags.get("sandbox_id") for s in rm.list_stacks(compartment_id=fnd["compartments"]["control"], lifecycle_state="ACTIVE").data
             if s.freeform_tags.get("managed_by") == "sandbox-factory"}
     cur = conn.cursor()

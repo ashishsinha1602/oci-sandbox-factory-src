@@ -13,12 +13,16 @@ no timestamp columns), and installs the result over the same application id.
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import pathlib
 import re
 import sys
 
+import hashlib
+import json
+
 import controldb
-from apex_home_inject import rewrite_home
+from apex_home_inject import rewrite_home, split_home
 
 APP_NAME = "Sandbox Factory"
 FORM_PAGE = 3
@@ -64,127 +68,33 @@ def app_id() -> int:
     row = cur.fetchone()
     conn.close()
     if not row:
-        raise SystemExit("application not found; run apex_builder.py first")
-    return row[0]
-
-
-def export_app(app: int) -> str:
-    conn = controldb.connect("ADMIN")
-    cur = conn.cursor()
-    cur.execute("begin apex_util.set_workspace(p_workspace => :1); end;", [controldb.WORKSPACE])
-    cur.execute("select contents from table(apex_export.get_application(p_application_id => :1))", [app])
-    contents = cur.fetchone()[0]
-    text = contents.read() if hasattr(contents, "read") else contents
-    conn.close()
-    return text
-
-
-def set_param(body: str, name: str, value: str) -> str:
-    """Set p_<name>=>value inside one create_page_item parameter list (replace or append)."""
-    if name == "p_attributes":  # multi-line value ending in )).to_clob
-        pat = re.compile(r"^,p_attributes=>wwv_flow_t_plugin_attributes\(.*?\)\)\.to_clob$", re.M | re.S)
-    else:
-        pat = re.compile(rf"^,{name}=>.*$", re.M)
-    line = f",{name}=>{value}"
-    return pat.sub(line, body, count=1) if pat.search(body) else body + "\n" + line
-
-
-def q(s: str) -> str:
-    return "'" + s.replace("'", "''") + "'"
-
-
-def attrs(pairs: list[tuple[str, str]]) -> str:
-    inner = ",\n".join(f"  {q(k)}, {q(v)}" for k, v in pairs)
-    return f"wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(\n{inner})).to_clob"
-
-
-def rewrite_item(body: str) -> str | None:
-    name = re.search(r",p_name=>'([^']+)'", body).group(1)
-    if name in DROP:
-        return None
-    if name in LABELS:
-        body = set_param(body, "p_prompt", q(LABELS[name]))
-    if name in HELP:
-        body = set_param(body, "p_help_text", q(HELP[name]))
-    if name in YES_NO:
-        body = set_param(body, "p_display_as", "'NATIVE_YES_NO'")
-        body = re.sub(r"^,p_cSize=>.*\n|^,p_cMaxlength=>.*\n", "", body, flags=re.M)
-        body = set_param(body, "p_item_default", "'N'")
-        body = set_param(body, "p_item_default_type", "'STATIC_TEXT_WITH_SUBSTITUTIONS'")
-        body = set_param(body, "p_attributes", attrs([
-            ("off_label", "No"), ("off_value", "N"), ("on_label", "Yes"), ("on_value", "Y"), ("use_defaults", "N")]))
-    if name in SELECT_LISTS:
-        lov, default = SELECT_LISTS[name]
-        body = set_param(body, "p_display_as", "'NATIVE_SELECT_LIST'")
-        body = re.sub(r"^,p_cSize=>.*\n|^,p_cMaxlength=>.*\n", "", body, flags=re.M)
-        body = set_param(body, "p_lov", q(lov))
-        body = set_param(body, "p_lov_display_null", "'NO'")
-        body = set_param(body, "p_item_default", q(default))
-        body = set_param(body, "p_item_default_type", "'STATIC_TEXT_WITH_SUBSTITUTIONS'")
-        body = set_param(body, "p_attributes", attrs([("page_action_on_selection", "NONE")]))
-    if name in DEFAULTS:
-        body = set_param(body, "p_item_default", q(DEFAULTS[name]))
-        body = set_param(body, "p_item_default_type", "'STATIC_TEXT_WITH_SUBSTITUTIONS'")
-    if name == "P3_REQUESTER":
-        body = set_param(body, "p_item_default", "'&APP_USER.'")
-        body = set_param(body, "p_item_default_type", "'STATIC_TEXT_WITH_SUBSTITUTIONS'")
-    if name in ("P3_APP_IMAGE", "P3_GIT_URL"):
-        body = set_param(body, "p_display_as", "'NATIVE_TEXT_FIELD'")
-        body = re.sub(r"^,p_cHeight=>.*\n", "", body, flags=re.M)
-        body = set_param(body, "p_cSize", "60")
-        body = set_param(body, "p_attributes", attrs([
-            ("disabled", "N"), ("submit_when_enter_pressed", "N"), ("subtype", "TEXT"), ("trim_spaces", "BOTH")]))
-    if name in READ_ONLY:
-        body = set_param(body, "p_read_only_when_type", "'ALWAYS'")
-    return body
-
-
-def rewrite(text: str) -> str:
-    start = text.find(f"prompt --application/pages/page_{FORM_PAGE:05d}")
-    end = text.find("prompt --application/pages/page_", start + 10)
-    if start < 0:
-        raise SystemExit("form page not found in export")
-    page = text[start:end]
-
-    def repl(m):
-        new = rewrite_item(m.group(1))
-        return "" if new is None else f"wwv_flow_imp_page.create_page_item(\n{new}\n);"
-
-    page = ITEM_RE.sub(repl, page)
-    return text[:start] + page + text[end:]
-
-
-def install(text: str, app: int) -> None:
-    conn = controldb.connect("ADMIN")
-    cur = conn.cursor()
-    cur.execute(f"""
-        begin
-          apex_application_install.set_workspace(:ws);
-          apex_application_install.set_application_id(:app);
-          apex_application_install.set_schema(:schema);
-          apex_application_install.set_application_alias('SANDBOX-FACTORY');
-        end;""", ws=controldb.WORKSPACE, app=app, schema=controldb.SCHEMA)
-    blocks = re.split(r"^/\s*$", text, flags=re.M)
-    n = 0
-    for block in blocks:
-        lines = [l for l in block.splitlines() if not re.match(r"^(prompt|set |whenever|@)", l)]
-        code = "\n".join(lines).strip()
-        if not re.search(r"\bbegin\b", code, re.I):
-            continue
-        cur.execute(code)
-        n += 1
-    conn.commit()
-    conn.close()
-    print(f"installed {n} blocks into application {app}")
+        raise SystemExit(
+            "The live page looks different from what this script last deployed. "
+            "Someone may have edited it in the APEX builder, and deploying would discard it. "
+            "Recover their version with a flashback query on "
+            "apex_application_page_regions (application_id=112, page_id=1), merge it into "
+            "apex_home/home.html, then re-run with --force."
+        )
+    STATE.write_text(json.dumps({"markup_sha": now, "live_len": live_len}), encoding="utf-8")
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--force", action="store_true",
+                    help="deploy even if the live page changed since the last deploy")
     a = ap.parse_args()
     app = app_id()
     text = export_app(app)
+    # Keep every export, not just the latest: the previous behaviour overwrote the
+    # only copy of the live page on each run, so a mistaken deploy was unrecoverable
+    # from disk.
+    stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+    backups = HERE / "apex_backups"
+    backups.mkdir(exist_ok=True)
+    (backups / f"app{app}-{stamp}.sql").write_text(text, encoding="utf-8")
     (HERE / "apex_export_original.sql").write_text(text, encoding="utf-8")
+    guard_live_changes(text, a.force)
     new = rewrite_home(rewrite(text))
     (HERE / "apex_export_customized.sql").write_text(new, encoding="utf-8")
     print(f"exported app {app}: {len(text)} chars -> customised {len(new)} chars")

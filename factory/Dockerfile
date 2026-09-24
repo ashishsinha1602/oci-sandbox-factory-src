@@ -4,7 +4,7 @@ FROM python:3.12-slim
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates && rm -rf /var/lib/apt/lists/* \
  && pip install --no-cache-dir oci oracledb
 WORKDIR /app
-COPY factory/sandbox_factory.py factory/worker.py factory/controldb.py factory/oci_build.py factory/
+COPY factory/sandbox_factory.py factory/worker.py factory/controldb.py factory/oci_build.py factory/app_templates.py factory/
 COPY stacks/sandbox/ stacks/sandbox/
 ENV SBX_WORKER_KIND=oci SBX_BUILD_MODE=kaniko PYTHONUNBUFFERED=1
 WORKDIR /app/factory

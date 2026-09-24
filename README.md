@@ -44,6 +44,39 @@ factory/sandbox_factory.py ──► OCI Resource Manager (managed Terraform)
 | `factory/worker.py` | Turns queued rows into sandboxes; streams the log back into the row |
 | `examples/hello-app/` | Sample Dockerfile for `deploy` |
 
+## Install it
+
+The foundation is a Resource Manager stack, so a tenancy admin can install it
+without cloning anything or running Terraform locally:
+
+[![Deploy to Oracle Cloud](https://oci-resourcemanager-plugin.plugins.oci.oraclecloud.com/latest/deploy-to-oracle-cloud.svg)](https://cloud.oracle.com/resourcemanager/stacks/create?zipUrl=https://github.com/OWNER/oci-sandbox-factory/releases/latest/download/sandbox-factory-foundation.zip)
+
+It asks for a parent compartment, a budget and an alert email, then creates the
+compartment tree, the `sbx` tag namespace, the budget and alerts, the optional
+quotas and the VCN. Leave **Create hard quotas** off on the first install: quota
+names differ per region, and you can turn them on once you have confirmed them.
+
+Then point the factory at it and install the self-service page:
+
+```bash
+export SBX_ADMIN_PASSWORD=...              # control database ADMIN
+export SBX_REGISTRY_PREFIX=phx.ocir.io/<your-namespace>/sbx/
+export SBX_GENAI_REGION=us-phoenix-1       # a region that serves OCI Generative AI
+cd factory
+python controldb.py setup                  # schema, tables, APEX workspace
+python apex_customize.py                   # install the home page
+python worker.py                           # the request worker
+```
+
+`SBX_REGISTRY_PREFIX` and `SBX_GENAI_REGION` are stored in `SBX.FACTORY_CONFIG`
+and read by the page at runtime, so nothing in the application carries a
+tenancy, a region or a registry of its own.
+
+To build the zips yourself: `python release.py` writes both into `dist/`.
+Tagging `v*` does it in CI and attaches them to the GitHub release.
+
+Everything below is the manual path, and what each piece actually does.
+
 ## 1. Foundation (once per tenancy)
 
 ```bash

@@ -130,6 +130,45 @@ variable "enable_kafka" {
   default = false
 }
 
+variable "adb_version" {
+  type        = string
+  default     = "23ai"
+  description = "Autonomous Database version. 23ai or later is required for the VECTOR datatype."
+}
+
+variable "adb_databases" {
+  description = <<-EOT
+    Extra Autonomous Databases for this sandbox, beyond the first one. Each entry is a
+    real database with its own ADMIN credential, not a schema. Every entry consumes a
+    tenancy ADB slot, so check adb-free-count before asking for several free ones.
+  EOT
+  type = list(object({
+    name       = string
+    tier       = optional(string, "free")
+    workload   = optional(string, "OLTP")
+    ecpu_count = optional(number, 2)
+    storage_gb = optional(number, 20)
+  }))
+  default = []
+}
+
+variable "enable_nosql" {
+  type    = bool
+  default = false
+}
+
+variable "nosql_tables" {
+  description = "NoSQL tables for this sandbox. {name} in ddl is replaced by the prefixed table name."
+  type = list(object({
+    name    = string
+    ddl     = string
+    read    = optional(number, 5)
+    write   = optional(number, 5)
+    storage = optional(number, 1)
+  }))
+  default = []
+}
+
 variable "kafka_mode" {
   type        = string
   default     = "streaming"

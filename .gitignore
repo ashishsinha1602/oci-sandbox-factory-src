@@ -18,3 +18,10 @@ factory/foundation.json
 __pycache__/
 factory/shots/
 factory/apex_export_*.sql
+
+# Build artifacts and recovery copies
+dist/
+factory/apex_backups/
+factory/RECOVERED_*.html
+factory/_*.json
+factory/_*.html

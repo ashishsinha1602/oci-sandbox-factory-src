@@ -14,6 +14,13 @@ variable "storage_gb" { type = number }
 variable "vcn_id" { type = string }
 variable "subnet_id" { type = string }
 variable "allowed_cidrs" { type = list(string) }
+# Oracle defaults a new Autonomous Database to 19c, which has no VECTOR datatype -
+# AI Vector Search, and therefore every RAG starter, needs 23ai. Available on free
+# tier too, so this costs nothing.
+variable "db_version" {
+  type    = string
+  default = "23ai"
+}
 variable "defined_tags" { type = map(string) }
 variable "freeform_tags" { type = map(string) }
 
@@ -68,6 +75,7 @@ resource "oci_database_autonomous_database" "this" {
   admin_password = random_password.admin.result
   license_model  = "LICENSE_INCLUDED"
 
+  db_version               = var.db_version
   is_free_tier             = local.free
   cpu_core_count           = local.free ? 1 : null
   data_storage_size_in_tbs = local.free ? 1 : null
@@ -106,8 +114,18 @@ output "admin_password" {
 }
 
 # The "_low" service is the right default for app connections.
+#
+# A paid database sits on a private endpoint, but all_connection_strings still
+# reports the public regional host, which resets the connection. Swap in the
+# private endpoint FQDN so anything inside the VCN can actually connect.
+locals {
+  low_connect = try(oci_database_autonomous_database.this.connection_strings[0].all_connection_strings["LOW"], "")
+  low_host    = length(split("/", local.low_connect)) > 1 ? split("/", local.low_connect)[0] : ""
+  private_fqdn = local.free ? "" : try(oci_database_autonomous_database.this.private_endpoint, "")
+}
+
 output "connect_string" {
-  value = try(oci_database_autonomous_database.this.connection_strings[0].all_connection_strings["LOW"], "")
+  value = (local.free || local.private_fqdn == "" || local.low_host == "") ? local.low_connect : replace(local.low_connect, local.low_host, "${local.private_fqdn}:1522")
 }
 
 output "sql_web_url" {

@@ -113,6 +113,8 @@ def destroy_sandbox(sandbox_id: str) -> str:
 
 @mcp.tool()
 def reap_sandboxes(dry_run: bool = True) -> str:
+    # The reaper acts on expiry, not ownership, and destroys stacks directly
+    # rather than through cmd_destroy, so it is unaffected by the owner check.
     """Destroy every sandbox past its expiry date. dry_run lists them without destroying."""
     return _capture(sf.cmd_reap, _args(dry_run=dry_run))
 

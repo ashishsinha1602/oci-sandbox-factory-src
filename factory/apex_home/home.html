@@ -1,5 +1,5 @@
 <style>
-.sf{max-width:1080px;margin:0 auto;font-family:inherit}
+.sf{max-width:1180px;margin:0 auto;font-family:inherit}
 .sf-hero{margin:4px 0 18px}.sf-hero h1{font-size:28px;margin:0 0 4px}.sf-hero p{margin:0;color:#5f6b7a}
 .sf-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px}
 .sf-card{border:1px solid #e3e8ef;border-radius:14px;padding:18px 20px;cursor:pointer;background:#fff;transition:.15s}
@@ -18,6 +18,21 @@
 .sf-ai{background:linear-gradient(135deg,#f5f3ff,#eaf4ff);border:1px solid #d9e4ff;border-radius:12px;padding:16px 18px;margin:12px 0}
 .sf-ai h4{margin:0 0 8px;font-size:14px;color:#3b4a6b}.sf-ai p{margin:0 0 8px;line-height:1.5}.sf-ai ol,.sf-ai ul{margin:6px 0 0 18px;padding:0}.sf-ai li{margin-bottom:4px}
 .sf-chip{display:inline-block;background:#fff;border:1px solid #d6dde6;border-radius:999px;padding:3px 10px;font-size:12px;margin:2px 4px 2px 0}
+.sf-sugg{margin:12px 0 0}
+.sf-sugg h5{margin:10px 0 4px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#7b8794;font-weight:600}
+.sf-sugg b{display:inline-block;background:#fff;border:1px solid #d6dde6;border-radius:999px;padding:5px 12px;font-size:12px;font-weight:400;margin:3px 5px 3px 0;cursor:pointer;transition:background .12s,border-color .12s}
+.sf-sugg b:hover{background:#eef4fb;border-color:#9fb6cd}
+.sf-recs{display:grid;grid-template-columns:repeat(auto-fill,minmax(228px,1fr));gap:10px;margin:6px 0 2px}
+.sf-rec{border:1px solid #dde4ec;border-radius:12px;padding:11px 13px;background:#fff;cursor:pointer;transition:.13s}
+.sf-rec:hover{border-color:#1a73e8;box-shadow:0 4px 14px rgba(26,115,232,.13)}
+.sf-rec .t{font-size:13px;font-weight:600;margin-bottom:3px;color:#111827}
+.sf-rec .d{font-size:12px;color:#6b7280;line-height:1.4}
+.sf-rec .p{margin-top:7px}.sf-rec .p span{display:inline-block;background:#f1f5f9;border-radius:5px;padding:1px 6px;font-size:10.5px;color:#475569;margin:0 4px 0 0}
+.sf-form{margin-top:10px;border:1px solid #dde4ec;border-radius:11px;padding:12px 13px;background:#fff}
+.sf-form .sf-field{margin-bottom:9px}.sf-form label{font-weight:500}
+.sf-tabs{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap}
+.sf-tabs button{border:1px solid #d6dde6;background:#fff;border-radius:8px;padding:6px 11px;font-size:12px;cursor:pointer}
+.sf-tabs button.on{border-color:#1a73e8;background:#eaf2fe;color:#0b4a8b;font-weight:600}
 .sf-status{margin-top:20px}.sf-status h3{font-size:16px;margin:0 0 10px}
 .sf-req{border:1px solid #e3e8ef;border-radius:12px;padding:12px 14px;margin-bottom:10px;background:#fff}
 .sf-req .hd{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.sf-req .hd b{font-size:15px}.sf-req .meta{color:#6b7280;font-size:12px;margin-left:auto}
@@ -28,8 +43,8 @@
 .sf-spin{display:inline-block;width:14px;height:14px;border:2px solid #cbd5e1;border-top-color:#1a73e8;border-radius:50%;animation:sfspin .8s linear infinite;vertical-align:-2px;margin-right:6px}
 @keyframes sfspin{to{transform:rotate(360deg)}}
 .sf-err{color:#b91c1c;font-size:13px;margin-top:8px}.sf-hide{display:none}
-.sf-msgs{display:flex;flex-direction:column;gap:8px;max-height:420px;overflow:auto;padding:4px}
-.sf-msg{max-width:80%;padding:10px 14px;border-radius:14px;font-size:14px;line-height:1.5;white-space:pre-wrap}
+.sf-msgs{display:flex;flex-direction:column;gap:10px;height:min(64vh,720px);min-height:360px;overflow:auto;padding:6px 4px}
+.sf-msg{max-width:88%;padding:11px 15px;border-radius:14px;font-size:14px;line-height:1.55;white-space:pre-wrap}
 .sf-msg.me{align-self:flex-end;background:#1a73e8;color:#fff;border-bottom-right-radius:4px}
 .sf-msg.ai{align-self:flex-start;background:#f1f5f9;color:#111827;border-bottom-left-radius:4px}
 .sf-msg .sf-act{margin-top:8px;display:flex;gap:8px;flex-wrap:wrap}.sf-msg .sf-act .sf-btn{padding:7px 14px;font-size:13px}
@@ -38,21 +53,38 @@
 <div class="sf">
   <div class="sf-hero">
     <h1>What do you want to build?</h1>
-    <p>Pick a path. Every sandbox is an isolated OCI compartment that deletes itself after 3 days.</p>
+    <p id="sf-who" class="sf-hide" style="float:right;font-size:12px;color:#5f6b7a;margin:0"></p>
+    <p>Pick a path. Every sandbox is tagged, budgeted and owned by you, and the reaper destroys it when its time is up &mdash; 3 days at most.</p>
   </div>
 
   <div class="sf-cards">
     <div class="sf-card" data-mode="chat"><div class="ic">&#128172;</div><h3>Chat with the factory</h3><p>Ask anything, create, deploy or destroy by talking. The AI knows what you have running.</p></div>
     <div class="sf-card" data-mode="describe"><div class="ic">&#10024;</div><h3>Describe it, AI plans it</h3><p>Say what you want in plain English. AI picks the pieces and tells you what to do next.</p></div>
-    <div class="sf-card" data-mode="build"><div class="ic">&#128295;</div><h3>Build an app</h3><p>Choose a database, Kafka, and a container. Connection details are injected into your app.</p></div>
-    <div class="sf-card" data-mode="deploy"><div class="ic">&#128230;</div><h3>Just deploy my container</h3><p>Give a public image or a Git repo with a Dockerfile. Get a public URL in minutes.</p></div>
+    <div class="sf-card" data-mode="build"><div class="ic">&#128295;</div><h3>Build it yourself</h3><p>Pick the pieces by hand: a database, Kafka, and your own image or Git repo. Connection details are injected for you.</p></div>
   </div>
 
   <div class="sf-panel sf-hide" id="sf-panel">
 
     <div id="sf-chat" class="sf-hide">
-      <div class="sf-msgs" id="sf-msgs"><div class="sf-msg ai">Hi! Tell me what you want to build, or ask what you have running. For example: <i>deploy nginx for a day</i>, <i>I need a database and Kafka for my orders API at https://github.com/me/orders</i>, <i>destroy demo3</i>.</div></div>
+      <div class="sf-msgs" id="sf-msgs"><div class="sf-msg ai">Hi! Tell me what you want to build, or ask what you have running. For example: <i>deploy nginx for a day</i>, <i>I need a database and Kafka for my orders API at https://github.com/me/orders</i>, <i>destroy demo3</i>.</div>
+        <div class="sf-sugg" id="sf-sugg">
+          <h5>Build it now &mdash; one click, nothing to fill in</h5>
+          <div class="sf-recs" id="sf-recs"></div>
+          <h5>Deploy something of your own</h5>
+          <b data-form="deploy">Deploy a Docker image or a Git repo&hellip;</b>
+          <b data-form="sql">Load my own SQL / schema into a new database&hellip;</b>
+          <h5>Or just ask for it</h5>
+          <b>A database with sample sales data and a Select AI agent I can ask questions in plain English</b>
+          <b>Telemetry sandbox: sensor readings seeded, ask it "which sensors ran hot last week"</b>
+          <b>An MCP endpoint over an empty database I will load myself, AI catalogue on</b>
+          <b>A knowledge base where I can upload documents and ask questions of them</b>
+          <b>Kafka, a database with sensor readings, and a dashboard, for 3 days</b>
+          <b>A NoSQL table for device events plus Kafka to feed it</b>
+          <b>What do I have running?</b>
+          <b>Destroy my oldest sandbox</b>
+        </div></div>
       <div class="sf-row" style="margin:10px 0 0"><div class="sf-field"><input id="sf-chat-in" placeholder="Type a message and press Enter"></div>
+        <div class="sf-field" style="flex:0 0 auto"><button type="button" class="sf-btn sec sf-hide" id="sf-starters" title="Show the starter catalogue again">&#9776; Starters</button></div>
         <div class="sf-field" style="flex:0 1 230px"><select id="sf-model" title="AI model (OCI Generative AI, this region)">
           <option value="google.gemini-2.5-flash">Gemini 2.5 Flash (fast)</option>
           <option value="google.gemini-2.5-pro">Gemini 2.5 Pro</option>
@@ -80,6 +112,7 @@
       <div class="sf-toggles" id="sf-toggles">
         <div class="sf-toggle" data-k="enable_adb"><span class="dot"></span>Autonomous Database</div>
         <div class="sf-toggle" data-k="enable_kafka"><span class="dot"></span>Kafka</div>
+        <div class="sf-toggle" data-k="enable_nosql"><span class="dot"></span>NoSQL</div>
         <div class="sf-toggle" data-k="enable_app"><span class="dot"></span>Containerised app</div>
       </div>
       <div id="sf-appfields">
@@ -104,7 +137,7 @@
 
 <script>
 function sfInit(){
-  var mode=null, plan=null, cfg={enable_adb:false,enable_kafka:false,enable_app:false}, timer=null;
+  var mode=null, plan=null, cfg={enable_adb:false,enable_kafka:false,enable_nosql:false,enable_app:false}, timer=null;
   var $=function(s){return document.querySelector(s)}, $$=function(s){return Array.prototype.slice.call(document.querySelectorAll(s))};
   function call(action,payload){payload=payload||{}; var m=document.querySelector('#sf-model'); if(m&&!payload.model)payload.model=m.value; return apex.server.process('SF',{x01:action,x02:JSON.stringify(payload)},{dataType:'json'})}
   function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
@@ -116,8 +149,7 @@ function sfInit(){
     $('#sf-describe').classList.toggle('sf-hide',mode!=='describe');
     $('#sf-form').classList.toggle('sf-hide',mode==='describe'||mode==='chat');
     if(mode==='chat'){$('#sf-chat-in').focus();return}
-    $('#sf-toggles').classList.toggle('sf-hide',mode==='deploy');
-    if(mode==='deploy'){setCfg({enable_adb:false,enable_kafka:false,enable_app:true})}
+    $('#sf-toggles').classList.remove('sf-hide');
     if(mode==='build'){setCfg({enable_adb:true,enable_kafka:false,enable_app:true})}
     $('#sf-id').focus();
   }});
@@ -136,9 +168,12 @@ function sfInit(){
       var h='<h4>&#10024; Plan</h4><p>'+esc(plan.summary)+'</p><div>';
       if(plan.enable_adb)h+='<span class="sf-chip">Autonomous Database</span>';
       if(plan.enable_kafka)h+='<span class="sf-chip">Kafka</span>';
-      if(plan.enable_app)h+='<span class="sf-chip">App: '+esc(plan.git_url||plan.app_image||'(image or repo needed)')+' on port '+esc(plan.app_port||80)+'</span>';
+      if(plan.containers&&plan.containers.length){plan.containers.forEach(function(c){h+='<span class="sf-chip">'+esc(c.name)+': '+esc(c.image)+' :'+esc(c.port)+'</span>'})}
+      else if(plan.enable_app)h+='<span class="sf-chip">App: '+esc(plan.git_url||plan.app_image||'(image or repo needed)')+' on port '+esc(plan.app_port||80)+'</span>';
+      if(plan.seed_sql)h+='<span class="sf-chip">sample data: '+esc(String(plan.seed_sql).split(';').filter(function(x){return x.trim()}).length)+' SQL statements</span>';
       h+='<span class="sf-chip">3 days</span></div>';
       if(plan.steps&&plan.steps.length){h+='<h4 style="margin-top:10px">What to do next</h4><ol>'+plan.steps.map(function(s){return '<li>'+esc(s)+'</li>'}).join('')+'</ol>'}
+      h+=infraHtml(plan);
       if(plan.tips&&plan.tips.length){h+='<ul>'+plan.tips.map(function(s){return '<li>'+esc(s)+'</li>'}).join('')+'</ul>'}
       if(plan.questions&&plan.questions.length){h+='<h4 style="margin-top:10px">Before I create it, tell me</h4><ol>'+plan.questions.map(function(s){return '<li>'+esc(s)+'</li>'}).join('')+'</ol><p class="sf-err">Add the answers to your description and ask again, or adjust the form.</p>'}
       h+='<div class="sf-actions" style="margin-top:12px"><button type="button" class="sf-btn" id="sf-usePlan">Looks good, create it</button><button type="button" class="sf-btn sec" id="sf-editPlan">Adjust first</button></div>';
@@ -149,16 +184,17 @@ function sfInit(){
   };
   function showAI(h){$('#sf-ai').innerHTML=h;$('#sf-ai').classList.remove('sf-hide')}
   function applyPlan(){ if(!plan)return; $('#sf-id').value=(plan.sandbox_id||'').toLowerCase().replace(/[^a-z0-9-]/g,'-').replace(/^-+/,'').slice(0,20)||'sandbox';
-    setCfg({enable_adb:!!plan.enable_adb,enable_kafka:!!plan.enable_kafka,enable_app:!!plan.enable_app});
+    setCfg({enable_adb:!!plan.enable_adb,enable_kafka:!!plan.enable_kafka,enable_nosql:!!plan.enable_nosql,enable_app:!!plan.enable_app});
     if(plan.git_url)$('#sf-git').value=plan.git_url; if(plan.app_image)$('#sf-image').value=plan.app_image; if(plan.app_port)$('#sf-port').value=plan.app_port; $('#sf-ttl').value='3'}
 
   $('#sf-submit').onclick=submit;
   function submit(){
     var id=$('#sf-id').value.trim().toLowerCase(); $('#sf-err').classList.add('sf-hide');
     if(!/^[a-z][a-z0-9-]{1,19}$/.test(id)){err('Sandbox id: 2-20 chars, lowercase letters, digits, dashes, starting with a letter.');return}
-    if(!cfg.enable_adb&&!cfg.enable_kafka&&!cfg.enable_app){err('Pick at least one piece.');return}
-    var git=$('#sf-git').value.trim(), payload={sandbox_id:id, ttl_days:+$('#sf-ttl').value, enable_adb:cfg.enable_adb, enable_kafka:cfg.enable_kafka, enable_app:cfg.enable_app,
+    if(!cfg.enable_adb&&!cfg.enable_kafka&&!cfg.enable_nosql&&!cfg.enable_app){err('Pick at least one piece.');return}
+    var git=$('#sf-git').value.trim(), payload={sandbox_id:id, ttl_days:+$('#sf-ttl').value, enable_adb:cfg.enable_adb, enable_kafka:cfg.enable_kafka, enable_nosql:cfg.enable_nosql, enable_app:cfg.enable_app,
       action:(cfg.enable_app&&git)?'DEPLOY':'CREATE', git_url:git||null, app_image:$('#sf-image').value.trim()||null, app_port:+$('#sf-port').value||80, text:mode==='describe'?$('#sf-text').value.trim():null};
+    if(mode==='describe'&&plan){ if(plan.containers&&plan.containers.length)payload.containers=plan.containers; if(plan.seed_sql)payload.seed_sql=plan.seed_sql; }
     $('#sf-submit').disabled=true; $('#sf-submit-wait').classList.remove('sf-hide');
     call('submit',payload).then(function(r){
       $('#sf-submit').disabled=false; $('#sf-submit-wait').classList.add('sf-hide');
@@ -176,10 +212,15 @@ function sfInit(){
         var o=null; try{o=r.outputs?JSON.parse(r.outputs):null}catch(e){}
         h+='<div class="sf-req"><div class="hd">'+(r.status==='RUNNING'?'<span class="sf-spin"></span>':'')+'<b>'+esc(r.sandbox_id)+'</b><span class="sf-badge '+esc(r.status)+'">'+esc(r.status)+'</span><span>'+esc(r.action)+'</span><span class="meta">'+esc(r.created)+' &middot; '+esc(r.elapsed)+'s</span></div>';
         if(o&&r.status==='DONE'){ h+='<div class="sf-links">';
-          if(o.app&&o.app.urls){var us=o.app.urls.filter(function(u){return u.indexOf('https://')===0}); if(!us.length)us=o.app.urls; us.forEach(function(u){h+='<a href="'+esc(u)+'" target="_blank">'+esc(u)+'</a>'})}
+          if(o.app&&o.app.urls){var us=o.app.urls.filter(function(u){return u.indexOf('https://')===0}); if(!us.length)us=o.app.urls; us.forEach(function(u){h+='<a href="'+esc(u)+'" target="_blank">'+esc(u)+'</a>'});
+            if(o.app.containers&&o.app.containers.length>1&&us.length){o.app.containers.slice(1).forEach(function(n){h+='<a href="'+esc(us[0])+'/'+esc(n)+'" target="_blank">'+esc(us[0])+'/'+esc(n)+'</a>'})}}
           if(o.adb){h+='<div style="margin-top:6px"><a href="'+esc(o.adb.sql_web_url)+'" target="_blank">SQL Developer Web</a> &middot; user <code>'+esc(o.adb.admin_user||'ADMIN')+'</code>'
               +(o.adb.admin_password?' &middot; password <code>'+esc(o.adb.admin_password)+'</code> <button type="button" class="sf-btn sec" style="padding:2px 8px;font-size:12px" onclick="navigator.clipboard.writeText(this.previousElementSibling.textContent)">copy</button>':'')
               +'<br>connect string <code>'+esc(o.adb.connect_string)+'</code></div>'}
+          if(o.databases&&o.databases.length>1){o.databases.slice(1).forEach(function(d){
+            h+='<code>'+esc(d.name)+': '+esc(d.db_name)+'</code>'})}
+          if(o.nosql&&o.nosql.tables&&o.nosql.tables.length)h+='<code>nosql: '+esc(o.nosql.tables.join(', '))+'</code>';
+          if(o.low_code&&o.low_code.rest_base)h+='<code>REST: '+esc(o.low_code.rest_base)+'</code>';
           if(o.kafka)h+='<code>kafka: '+esc(o.kafka.bootstrap_servers)+'</code>';
           if(o.destroyed)h+='destroyed';
           h+='</div>'}
@@ -195,8 +236,227 @@ function sfInit(){
   // ---- chat mode: conversation with the AI; it may propose one action to confirm
   var hist=[];
   function addMsg(cls,html){var d=document.createElement('div');d.className='sf-msg '+cls;d.innerHTML=html;$('#sf-msgs').appendChild(d);$('#sf-msgs').scrollTop=1e9;return d}
+  document.addEventListener('click',function(e){
+    if(!e.target.closest)return;
+    var rec=e.target.closest('#sf-recs .sf-rec');
+    if(rec){var keys=($('#sf-recs').getAttribute('data-keys')||'').split(',');
+      offerRecipe(RECIPES[+keys[+rec.getAttribute('data-i')]]);return}
+    var b=e.target.closest('#sf-sugg b'); if(!b)return;
+    if(b.getAttribute('data-form')){openForm(b.getAttribute('data-form'));return}
+    $('#sf-chat-in').value=b.textContent.trim(); sendChat();
+  });
+
+  // ---- One-click recipes -------------------------------------------------
+  // Each is a complete submit payload: click it, glance at what it builds, Build.
+  // Filled from SBX.FACTORY_CONFIG.registry_prefix so this page carries no
+  // tenancy of its own. Recipes write {R} and it is substituted at build time.
+  var OCIR='';
+  // Sample schemas and starter apps live in factory/app_templates.py; the page
+  // only names them (seed_key / app_template) because an APEX region caps at 32767 bytes.
+
+  // ---- Seeded starter apps -----------------------------------------------
+  // Shipped with the request as app_files {name: contents}. The worker writes
+  // them to a folder and builds them, so there is no repo and nothing to push.
+
+
+
+
+
+
+
+  var RECIPES=[
+    {k:'reactapp', t:'React explorer + Python API', d:'A React UI and a FastAPI backend on seeded data, with a plain-English question box. Deploy and look at it.',
+     p:{enable_adb:true,seed_key:'sales',app_template:'react',app_port:8080}, tags:['React','FastAPI','Select AI']},
+    {k:'pyapi', t:'Python REST API (FastAPI)', d:'A FastAPI service over the sandbox database, with /docs and a Select AI endpoint.',
+     p:{enable_adb:true,seed_key:'sales',app_template:'api',app_port:8080}, tags:['Python','FastAPI','OpenAPI']},
+    {k:'streamlit', t:'Python dashboard (Streamlit)', d:'Browse every table and chart it, straight from the database. No front-end code to write.',
+     p:{enable_adb:true,seed_key:'iot',app_template:'streamlit',app_port:8080}, tags:['Python','Streamlit','charts']},
+    {k:'apex', t:'Low-code app (APEX)', d:'Sample tables plus an APEX workspace. Open it, click Create App, and you have a working CRUD app.',
+     p:{enable_adb:true,seed_key:'sales'}, tags:['APEX','no code','Select AI']},
+    {k:'ords', t:'Instant REST API (ORDS)', d:'Every seeded table gets a REST endpoint automatically. No container, nothing to write.',
+     p:{enable_adb:true,seed_key:'sales'}, tags:['ORDS','REST','no code']},
+    {k:'sales', t:'Sales database + Select AI', d:'Customers, products and orders, then ask questions in plain English. No container needed.',
+     p:{enable_adb:true,seed_key:'sales'}, tags:['Autonomous DB','Select AI','seeded']},
+    {k:'hr', t:'HR database + Select AI', d:'Departments, employees and salaries. "Who earns the most in Engineering?"',
+     p:{enable_adb:true,seed_key:'hr'}, tags:['Autonomous DB','Select AI','seeded']},
+    {k:'iot', t:'IoT telemetry + Select AI', d:'Sensors and readings with warn and alarm states, ready to interrogate.',
+     p:{enable_adb:true,seed_key:'iot'}, tags:['Autonomous DB','Select AI','seeded']},
+    {k:'iotk', t:'IoT + Kafka end to end', d:'The telemetry schema plus a Kafka cluster to stream new readings into.',
+     p:{enable_adb:true,enable_kafka:true,seed_key:'iot'}, tags:['Autonomous DB','Kafka','Select AI']},
+    {k:'rag', t:'Knowledge base (upload, crawl, ask)', d:'Upload PDFs or crawl a URL. Oracle parses, chunks and embeds them, then you ask the documents or the database itself.',
+     p:{enable_adb:true,seed_key:'rag',app_template:'rag',app_port:8080}, tags:['23ai','AI Vector Search','RAG']},
+    {k:'mcp', t:'MCP server + Studio', d:'An MCP endpoint over seeded sales data, with a chat UI served at /studio.',
+     p:{enable_adb:true,seed_key:'sales',containers:[{name:'studio',image:'{R}studio/app:latest',port:8770},{name:'mcp',image:'{R}schemagate/app:latest',port:8765}]}, tags:['MCP','Studio','Select AI']},
+    {k:'mcponly', t:'MCP endpoint only', d:'Just the MCP server over a seeded database, to point Claude or your own agent at.',
+     p:{enable_adb:true,seed_key:'sales',containers:[{name:'mcp',image:'{R}schemagate/app:latest',port:8765}]}, tags:['MCP','Autonomous DB']},
+    {k:'api', t:'Orders REST API', d:'A small REST service on top of the orders schema, on a public HTTPS URL.',
+     p:{enable_adb:true,seed_key:'sales',containers:[{name:'api',image:'{R}orders-demo/app:latest',port:8080}]}, tags:['REST API','Autonomous DB']},
+    {k:'empty', t:'Empty 23ai database', d:'A clean Autonomous Database with Select AI and AI cataloguing already switched on.',
+     p:{enable_adb:true}, tags:['Autonomous DB','Select AI']},
+    {k:'nosql', t:'NoSQL event store', d:'Serverless OCI NoSQL JSON tables. Nothing to size, nothing running when idle.',
+     p:{enable_nosql:true}, tags:['NoSQL','serverless']},
+    {k:'nosqlk', t:'NoSQL + Kafka pipeline', d:'Stream events through Kafka and land them in NoSQL JSON tables.',
+     p:{enable_nosql:true,enable_kafka:true}, tags:['NoSQL','Kafka','events']},
+    {k:'multidb', t:'Two databases in one sandbox', d:'A primary database plus a second one, each a real Autonomous Database with its own ADMIN credential. Needs a free tenancy slot for each.',
+     p:{enable_adb:true,seed_key:'sales',databases:[{name:'reporting',tier:'free'}]}, tags:['2 databases','isolated']},
+    {k:'polyglot', t:'Polyglot: SQL + NoSQL + Kafka', d:'One sandbox with all three, to compare them or build something that spans them.',
+     p:{enable_adb:true,enable_nosql:true,enable_kafka:true,seed_key:'sales'}, tags:['Autonomous DB','NoSQL','Kafka']},
+    {k:'kafka', t:'Kafka cluster only', d:'A broker and an events topic, for producing and consuming.',
+     p:{enable_kafka:true}, tags:['Kafka']},
+    {k:'grafana', t:'Grafana on a database', d:'Grafana wired to a fresh database with the telemetry schema loaded.',
+     p:{enable_adb:true,seed_key:'iot',containers:[{name:'grafana',image:'docker.io/grafana/grafana:latest',port:3000}]}, tags:['Grafana','Autonomous DB']},
+    {k:'jupyter', t:'Jupyter on a database', d:'A notebook with the sales schema already there to poke at from Python.',
+     p:{enable_adb:true,seed_key:'sales',containers:[{name:'lab',image:'docker.io/jupyter/minimal-notebook:latest',port:8888}]}, tags:['Jupyter','Autonomous DB']},
+    {k:'n8n', t:'n8n automation', d:'Workflow automation with a database behind it to store runs.',
+     p:{enable_adb:true,containers:[{name:'n8n',image:'docker.io/n8nio/n8n:latest',port:5678}]}, tags:['n8n','Autonomous DB']},
+    {k:'nginx', t:'nginx smoke test', d:'One container and a public URL, to check the plumbing end to end.',
+     p:{enable_app:true,app_image:'docker.io/library/nginx:alpine',app_port:80,ttl_days:1}, tags:['container','1 day']}
+  ];
+  function newId(pfx){return (pfx||'sbx')+'-'+Math.random().toString(36).slice(2,7)}
+  function needsRegistry(r){return JSON.stringify(r.p.containers||[]).indexOf('{R}')>=0}
+  function recipePayload(r){
+    var p=r.p, cs=(p.containers||[]).map(function(c){
+      return {name:c.name, image:String(c.image).replace('{R}',OCIR), port:c.port};
+    });
+    return {sandbox_id:newId(r.k), action:'CREATE', ttl_days:p.ttl_days||3,
+      enable_adb:!!p.enable_adb, enable_kafka:!!p.enable_kafka, enable_nosql:!!p.enable_nosql,
+      enable_app:!!p.enable_app||cs.length>0, app_image:p.app_image||null, git_url:null,
+      app_port:p.app_port||80, text:'one-click recipe: '+r.t,
+      containers:cs.length?cs:undefined, seed_sql:p.seed_sql||undefined,
+      app_files:p.app_files?JSON.stringify(p.app_files):undefined,
+      databases:(p.databases&&p.databases.length)?p.databases:undefined};
+  }
+  function drawRecipes(){
+    var el=$('#sf-recs'); if(!el)return;
+    var list=RECIPES.filter(function(r){return OCIR||!needsRegistry(r)});
+    el.innerHTML=list.map(function(r,i){
+      return '<div class="sf-rec" data-i="'+i+'"><div class="t">'+esc(r.t)+'</div><div class="d">'+esc(r.d)+'</div>'
+        +'<div class="p">'+r.tags.map(function(x){return '<span>'+esc(x)+'</span>'}).join('')+'</div></div>';
+    }).join('');
+    el.setAttribute('data-keys', list.map(function(r){return RECIPES.indexOf(r)}).join(','));
+  }
+  function submitPayload(box,payload,note){
+    box.innerHTML='<span class="sf-spin"></span>Queueing...';
+    call('submit',payload).then(function(s){
+      if(s.err){box.innerHTML='<span class="sf-err">'+esc(s.err)+'</span>';return}
+      box.innerHTML='<span class="sf-chip">Queued as request #'+esc(s.id)+'</span>'
+        +'<span class="sf-chip">'+esc(payload.sandbox_id)+'</span>';
+      hist.push({role:'user',text:note||('(queued '+payload.sandbox_id+')')});
+      refresh();
+    });
+  }
+  function hideSugg(){var g=$('#sf-sugg'); if(g)g.classList.add('sf-hide'); var t=$('#sf-starters'); if(t)t.classList.remove('sf-hide')}
+  function offerRecipe(r){
+    var payload=recipePayload(r);
+    hideSugg();
+    addMsg('me',esc(r.t));
+    var d=addMsg('ai','<b>'+esc(r.t)+'</b> &mdash; '+esc(r.d));
+    d.insertAdjacentHTML('beforeend',infraHtml({enable_adb:payload.enable_adb,enable_kafka:payload.enable_kafka,
+      enable_app:payload.enable_app,containers:payload.containers,app_image:payload.app_image,
+      app_port:payload.app_port,seed_sql:payload.seed_sql,app_files:payload.app_files,ttl_days:payload.ttl_days}));
+    var box=document.createElement('div'); box.className='sf-act';
+    box.innerHTML='<button type="button" class="sf-btn">Build it now</button><button type="button" class="sf-btn sec">Not now</button>';
+    d.appendChild(box);
+    box.children[0].onclick=function(){submitPayload(box,payload,'(building '+r.t+' as '+payload.sandbox_id+')')};
+    box.children[1].onclick=function(){box.remove()};
+  }
+
+
+  // ---- Bring your own image, repo or SQL, without leaving the chat --------
+  var SRC_HELP={
+    image:'Any image a public registry will serve, or one you have already pushed to our OCIR namespace.<br>Examples: <code>docker.io/library/nginx:alpine</code> &middot; <code>ghcr.io/you/app:latest</code> &middot; <code>'+OCIR+'yourapp/app:latest</code>',
+    git:'A public Git repository with a <code>Dockerfile</code> at its root. The factory clones it and builds the image for you.<br>Example: <code>https://github.com/you/yourapp</code>',
+    path:'A folder on the machine running the worker, with a <code>Dockerfile</code> in it. Useful for code that is not pushed anywhere yet.<br>Example: <code>C:\\Users\\you\\projects\\yourapp</code>'
+  };
+  function openForm(kind){
+    hideSugg();
+    addMsg('me', kind==='deploy'?'Deploy something of my own':'Load my own SQL');
+    var d=addMsg('ai', kind==='deploy'
+      ? 'Tell me where the code lives and I will build it, put it on a public HTTPS URL and wire a database into it if you want one.'
+      : 'Paste the SQL you want in the new database. It runs once, before anything starts, and Select AI picks the schema up automatically.');
+    var f=document.createElement('div'); f.className='sf-form'; d.appendChild(f);
+    if(kind==='sql'){
+      f.innerHTML='<div class="sf-field"><label>SQL to run in the new database</label>'
+        +'<textarea id="sf-f-sql" style="min-height:130px" placeholder="create table ...;&#10;insert into ... values (...);"></textarea></div>'
+        +'<div class="sf-row"><div class="sf-field" style="flex:0 1 150px"><label>Keep it for</label>'
+        +'<select id="sf-f-ttl"><option value="1">1 day</option><option value="2">2 days</option><option value="3" selected>3 days (max)</option></select></div>'
+        +'<div class="sf-field" style="flex:0 1 220px"><label>Also give me</label>'
+        +'<select id="sf-f-extra"><option value="">just the database</option><option value="mcp">an MCP endpoint</option>'
+        +'<option value="both">MCP + the Studio chat UI</option></select></div></div>'
+        +'<div class="sf-act"><button type="button" class="sf-btn">Create it</button><button type="button" class="sf-btn sec">Cancel</button></div>';
+      var act=f.querySelector('.sf-act');
+      act.children[1].onclick=function(){f.remove()};
+      act.children[0].onclick=function(){
+        var sql=f.querySelector('#sf-f-sql').value.trim();
+        if(!sql){f.querySelector('#sf-f-sql').focus();return}
+        var extra=f.querySelector('#sf-f-extra').value, cs=[];
+        if(extra==='mcp'||extra==='both')cs.push({name:'mcp',image:'{R}schemagate/app:latest',port:8765});
+        if(extra==='both')cs.unshift({name:'studio',image:'{R}studio/app:latest',port:8770});
+        submitPayload(act,{sandbox_id:newId('sql'),action:'CREATE',ttl_days:+f.querySelector('#sf-f-ttl').value,
+          enable_adb:true,enable_kafka:false,enable_app:cs.length>0,app_image:null,git_url:null,app_port:80,
+          text:'own SQL loaded from chat',containers:cs.length?cs:undefined,seed_sql:sql},'(created a database with my own SQL)');
+      };
+      return;
+    }
+    f.innerHTML='<div class="sf-tabs"><button type="button" data-s="image" class="on">Public image</button>'
+      +'<button type="button" data-s="git">Git repo</button><button type="button" data-s="path">Folder on the worker</button></div>'
+      +'<p id="sf-f-help" style="margin:0 0 10px;font-size:12px;color:#6b7280;line-height:1.5">'+SRC_HELP.image+'</p>'
+      +'<div class="sf-row"><div class="sf-field"><label id="sf-f-lab">Image</label>'
+      +'<input id="sf-f-src" placeholder="docker.io/library/nginx:alpine"></div>'
+      +'<div class="sf-field" style="flex:0 1 120px"><label>Port</label><input id="sf-f-port" value="80"></div></div>'
+      +'<div class="sf-row"><div class="sf-field" style="flex:0 1 150px"><label>Keep it for</label>'
+      +'<select id="sf-f-ttl"><option value="1">1 day</option><option value="2">2 days</option><option value="3" selected>3 days (max)</option></select></div>'
+      +'<div class="sf-field" style="flex:0 1 250px"><label>Database</label>'
+      +'<select id="sf-f-db"><option value="">no database</option><option value="empty">empty database, Select AI on</option>'
+      +'<option value="sales">database + sample sales data</option></select></div></div>'
+      +'<div class="sf-act"><button type="button" class="sf-btn">Build and deploy</button><button type="button" class="sf-btn sec">Cancel</button></div>';
+    var src='image';
+    f.querySelectorAll('.sf-tabs button').forEach(function(b){
+      b.onclick=function(){
+        src=b.getAttribute('data-s');
+        f.querySelectorAll('.sf-tabs button').forEach(function(x){x.classList.toggle('on',x===b)});
+        f.querySelector('#sf-f-help').innerHTML=SRC_HELP[src];
+        f.querySelector('#sf-f-lab').textContent=src==='image'?'Image':(src==='git'?'Repository URL':'Folder path');
+        f.querySelector('#sf-f-src').placeholder=src==='image'?'docker.io/library/nginx:alpine'
+          :(src==='git'?'https://github.com/you/yourapp':'C:\\Users\\you\\projects\\yourapp');
+      };
+    });
+    var act=f.querySelector('.sf-act');
+    act.children[1].onclick=function(){f.remove()};
+    act.children[0].onclick=function(){
+      var v=f.querySelector('#sf-f-src').value.trim();
+      if(!v){f.querySelector('#sf-f-src').focus();return}
+      var db=f.querySelector('#sf-f-db').value, isImg=(src==='image');
+      submitPayload(act,{sandbox_id:newId('app'),action:isImg?'CREATE':'DEPLOY',
+        ttl_days:+f.querySelector('#sf-f-ttl').value,
+        enable_adb:!!db, enable_kafka:false, enable_app:true,
+        app_image:isImg?v:null, git_url:isImg?null:v, app_port:+f.querySelector('#sf-f-port').value||80,
+        text:'deployed from chat: '+v,
+        seed_key:db==='sales'?'sales':undefined},'(deploying '+v+')');
+    };
+  }
+
+  // What a plan or a chat action will actually build in OCI, in plain words.
+  function infraHtml(a){
+    var L=[];
+    if(a.enable_adb)L.push('<li><b>Autonomous Database</b> &mdash; '+esc(a.adb_tier||'always free')+' tier, Oracle 23ai, private subnet. Select AI (plain-English queries) and AI cataloguing are switched on for you. Every table is also published as a REST endpoint through ORDS, and an APEX workspace is waiting if you want to click a low-code app together. You get SQL Developer Web and APEX URLs.</li>');
+    if(a.databases&&a.databases.length)L.push('<li><b>'+(a.databases.length+1)+' separate databases</b> &mdash; the primary one plus '
+      +a.databases.map(function(d){return '<code>'+esc(d.name)+'</code>'}).join(', ')
+      +'. Each is a real Autonomous Database with its own ADMIN credential, injected as ADB_&lt;NAME&gt;_CONNECT_STRING.</li>');
+    if(a.enable_nosql)L.push('<li><b>OCI NoSQL</b> &mdash; serverless JSON tables with on-demand capacity. You get the table names and the compartment; no cluster to size and nothing running when idle.</li>');
+    if(a.enable_kafka)L.push('<li><b>Kafka</b> &mdash; '+esc(a.kafka_mode||'OCI Streaming')+', topic <code>events</code>. You get a bootstrap server address.</li>');
+    var cs=(a.containers&&a.containers.length)?a.containers:((a.enable_app||a.git_url||a.app_image)?[{name:'web',image:a.git_url||a.app_image||'nginx:alpine',port:a.app_port||80}]:[]);
+    if(cs.length)L.push('<li><b>'+(cs.length>1?cs.length+' containers in one instance':'1 container')+'</b> on CI.Standard.A1.Flex (Arm)'
+      +(cs.length>1?' &mdash; they share a host and reach each other on localhost':'')+', behind a public HTTPS URL: '+cs.map(function(c){return '<code>'+esc(c.name||'web')+'</code> &rarr; '+esc(c.image)+':'+esc(c.port||80)}).join(', ')+'.</li>');
+    if(a.app_files){var n=Object.keys(JSON.parse(a.app_files)).length;
+      L.push('<li><b>Your app, built here</b> &mdash; '+n+' source files are sent with the request, built into an image in OCI and deployed. Nothing to push to a registry.</li>')}
+    if(a.seed_sql)L.push('<li><b>Sample data</b> &mdash; '+esc(String(a.seed_sql).split(';').filter(function(x){return x.trim()}).length)+' SQL statements loaded into the new database before anything starts.</li>');
+    L.push('<li>Everything is tagged with your sandbox id and <b>auto-destroyed after '+esc(a.ttl_days||3)+' day'+((a.ttl_days||3)==1?'':'s')+'</b>.</li>');
+    return '<h4 style="margin:10px 0 4px">What this builds in OCI</h4><ul style="margin:0;padding-left:18px">'+L.join('')+'</ul>';
+  }
   function sendChat(){
     var t=$('#sf-chat-in').value.trim(); if(!t)return;
+    hideSugg();
     $('#sf-chat-in').value=''; addMsg('me',esc(t)); hist.push({role:'user',text:t});
     $('#sf-chat-wait').classList.remove('sf-hide'); $('#sf-chat-send').disabled=true;
     call('chat',{messages:hist.slice(-12)}).then(function(r){
@@ -205,15 +465,22 @@ function sfInit(){
       var m=(r.raw||'').match(/\{[\s\S]*\}/), j=null; try{j=m?JSON.parse(m[0]):null}catch(e){}
       var reply=j&&j.reply?j.reply:(r.raw||''); hist.push({role:'assistant',text:reply});
       var d=addMsg('ai',esc(reply));
+      var qs=j&&j.questions; if(qs&&qs.length){
+        d.insertAdjacentHTML('beforeend','<h4 style="margin:10px 0 4px">A couple of things first</h4><ol style="margin:0;padding-left:18px">'
+          +qs.map(function(q){return '<li>'+esc(q)+'</li>'}).join('')+'</ol>');
+        return;   // hold the action until they answer
+      }
       var a=j&&j.action; if(a&&a.type){
         var box=document.createElement('div'); box.className='sf-act';
+        if(a.type!=='destroy')d.insertAdjacentHTML('beforeend',infraHtml(a));
         var label=a.type==='destroy'?'Destroy '+a.sandbox_id:(a.type==='deploy'?'Deploy it':'Create it');
         box.innerHTML='<button type="button" class="sf-btn">'+esc(label)+'</button><button type="button" class="sf-btn sec">Not now</button>';
         d.appendChild(box);
         box.children[0].onclick=function(){ box.innerHTML='<span class="sf-spin"></span>Queueing...';
           var payload=a.type==='destroy'?{sandbox_id:a.sandbox_id,action:'DESTROY',ttl_days:1,enable_adb:false,enable_kafka:false,enable_app:false}
-            :{sandbox_id:a.sandbox_id,action:a.git_url?'DEPLOY':'CREATE',ttl_days:a.ttl_days||3,enable_adb:!!a.enable_adb,enable_kafka:!!a.enable_kafka,enable_app:!!a.enable_app||!!a.git_url||!!a.app_image,
-              app_image:a.app_image||null,git_url:a.git_url||null,app_port:a.app_port||80,text:t};
+            :{sandbox_id:a.sandbox_id,action:a.git_url?'DEPLOY':'CREATE',ttl_days:a.ttl_days||3,enable_adb:!!a.enable_adb,enable_kafka:!!a.enable_kafka,enable_nosql:!!a.enable_nosql,enable_app:!!a.enable_app||!!a.git_url||!!a.app_image||!!(a.containers&&a.containers.length),
+              app_image:a.app_image||null,git_url:a.git_url||null,app_port:a.app_port||80,text:t,containers:(a.containers&&a.containers.length)?a.containers:undefined,seed_sql:a.seed_sql||undefined,
+              databases:(a.databases&&a.databases.length)?a.databases:undefined};
           call('submit',payload).then(function(s){ if(s.err){box.innerHTML='<span class="sf-err">'+esc(s.err)+'</span>';return}
             box.innerHTML='<span class="sf-chip">Queued as request #'+esc(s.id)+'</span>'; hist.push({role:'user',text:'(confirmed: '+a.type+' '+a.sandbox_id+' queued)'}); refresh(); });
         };
@@ -222,6 +489,19 @@ function sfInit(){
     }).catch(function(e){$('#sf-chat-wait').classList.add('sf-hide');$('#sf-chat-send').disabled=false;addMsg('ai','<span class="sf-err">'+esc(e&&e.statusText||e)+'</span>')});
   }
   $('#sf-chat-send').onclick=sendChat; $('#sf-model').onchange=function(){$('#sf-model-name').textContent=this.options[this.selectedIndex].text}; $('#sf-chat-in').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();sendChat()}});
+  $('#sf-starters').onclick=function(){
+    var g=$('#sf-sugg'); if(!g)return;
+    g.classList.remove('sf-hide'); this.classList.add('sf-hide');
+    g.scrollIntoView({block:'start',behavior:'smooth'});
+  };
+  call('config',{}).then(function(c){
+    if(!c)return;
+    if(c.registry_prefix)OCIR=c.registry_prefix;
+    if(c.user){var w=$('#sf-who');
+      w.textContent='Signed in as '+c.user+' · '+(c.live||0)+' of '+(c.cap||3)+' sandboxes';
+      w.classList.remove('sf-hide');}
+  })
+    .catch(function(){}).then(drawRecipes);
   refresh();
 }
 (function(){ function go(){ if(window.apex&&apex.server){sfInit()} else {setTimeout(go,100)} } if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',go)} else {go()} })();

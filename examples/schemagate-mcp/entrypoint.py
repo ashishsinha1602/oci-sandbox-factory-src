@@ -29,10 +29,34 @@ os.environ.setdefault("SCHEMAGATE_CONNECT_ARGS", json.dumps({"user": "ADMIN", "p
 # Wait for the database to accept connections (it can still be finishing up).
 import oracledb  # noqa: E402
 
+def run_seed(cur):
+    """SEED_SQL (base64 of ';'-separated Oracle statements) is loaded when the schema has no tables."""
+    import base64 as _b64
+    raw = os.environ.get("SEED_SQL", "")
+    if not raw:
+        return False
+    try:
+        sql = _b64.b64decode(raw).decode()
+    except Exception:  # noqa: BLE001
+        sql = raw
+    n = 0
+    for stmt in [s.strip() for s in sql.split(";") if s.strip()]:
+        try:
+            cur.execute(stmt)
+            n += 1
+        except Exception as e:  # noqa: BLE001
+            print(f"seed statement failed ({e}): {stmt[:80]}", flush=True)
+    print(f"seeded {n} statements from SEED_SQL", flush=True)
+    return n > 0
+
 for attempt in range(30):
     try:
         with oracledb.connect(user="ADMIN", password=password, dsn=dsn) as c:
-            c.cursor().execute("select 1 from dual")
+            cur = c.cursor()
+            cur.execute("select count(*) from user_tables")
+            if cur.fetchone()[0] == 0 and os.environ.get("SEED_SQL"):
+                run_seed(cur)
+                c.commit()
         break
     except Exception as e:  # noqa: BLE001
         print(f"database not ready ({e}); retry {attempt}", flush=True)

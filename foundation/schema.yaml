@@ -1,0 +1,134 @@
+# Resource Manager form for the one-time tenancy install.
+#
+# This is what makes the project adoptable: someone clicks "Deploy to Oracle
+# Cloud", fills in three fields and gets the compartments, tags, budget, quotas
+# and network the sandboxes need. No clone, no terraform on a laptop.
+title: Sandbox Factory - Foundation
+description: >-
+  One-time setup for a tenancy: compartment tree, sbx tag namespace, monthly budget
+  with alerts, optional hard quotas, and a VCN with public and private subnets.
+  Install this once, then create sandboxes from the Sandbox Factory stack or the
+  APEX self-service page.
+schemaVersion: 1.1.0
+version: "1.0"
+locale: en
+
+variableGroups:
+  - title: Hidden
+    visible: false
+    variables:
+      - tenancy_ocid
+      - region
+
+  - title: Where to install
+    variables:
+      - parent_compartment_ocid
+      - prefix
+      - environment
+
+  - title: Cost control
+    variables:
+      - budget_alert_email
+      - budget_amount
+      - budget_alert_thresholds
+      - enable_quotas
+
+  - title: Network
+    variables:
+      - vcn_cidr
+      - public_subnet_cidr
+      - private_subnet_cidr
+
+variables:
+  parent_compartment_ocid:
+    type: oci:identity:compartment:id
+    title: Parent compartment
+    description: The sandbox compartment tree is created under this. Use the tenancy root on a personal account.
+    required: true
+    default: ${tenancy_ocid}
+
+  prefix:
+    type: string
+    title: Name prefix
+    description: Used for the compartments, tag namespace, VCN, budget and quotas. Lower case letters and digits.
+    default: sbx
+    required: true
+    pattern: "^[a-z][a-z0-9]{1,11}$"
+
+  environment:
+    type: enum
+    title: Environment label
+    description: Stamped on every resource so you can tell installs apart.
+    enum:
+      - personal
+      - dev
+      - prod
+    default: personal
+    required: true
+
+  budget_alert_email:
+    type: string
+    title: Budget alert email
+    description: Where budget alerts are sent. Comma-separate for several recipients.
+    required: true
+    pattern: "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+([,\\s]*[^@\\s]+@[^@\\s]+\\.[^@\\s]+)*$"
+
+  budget_amount:
+    type: number
+    title: Monthly budget
+    description: In the tenancy currency, for the whole sandbox tree.
+    default: 50
+    minimum: 1
+    required: true
+
+  budget_alert_thresholds:
+    type: array
+    title: Alert thresholds (percent of budget)
+    items:
+      type: number
+    default: [50, 80, 100]
+
+  enable_quotas:
+    type: boolean
+    title: Create hard quotas
+    description: >-
+      Caps A1 cores, ADB ECPUs, OKE clusters, stream partitions, GPUs and bare metal
+      on the sandbox compartment. Quota names differ per region - leave this off for
+      the first install, confirm the names, then turn it on.
+    default: false
+
+  vcn_cidr:
+    type: string
+    title: VCN CIDR
+    default: 10.20.0.0/16
+    required: true
+
+  public_subnet_cidr:
+    type: string
+    title: Public subnet CIDR
+    default: 10.20.0.0/24
+    required: true
+
+  private_subnet_cidr:
+    type: string
+    title: Private subnet CIDR
+    default: 10.20.1.0/24
+    required: true
+
+outputGroups:
+  - title: Hand these to the factory
+    outputs:
+      - compartments
+      - network
+      - tag_namespace
+
+outputs:
+  compartments:
+    title: Compartment OCIDs
+    type: string
+  network:
+    title: VCN and subnets
+    type: string
+  tag_namespace:
+    title: Tag namespace
+    type: string

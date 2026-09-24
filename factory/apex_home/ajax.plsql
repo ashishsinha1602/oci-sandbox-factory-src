@@ -7,17 +7,29 @@ declare
   l_out    json_object_t := json_object_t();
   l_id     number;
 
-  c_genai_url   constant varchar2(200) := 'https://inference.generativeai.us-phoenix-1.oci.oraclecloud.com/20231130/actions/chat';
+  -- Region and registry are tenancy-specific: they live in SBX.FACTORY_CONFIG so
+  -- this page works in any tenancy without being edited.
+  l_region      varchar2(64);
+  l_registry    varchar2(200);
+  c_genai_url   varchar2(300);
   -- Model: chosen per request by the page (x02.model); must be one served in this region.
   c_genai_model varchar2(100) := 'google.gemini-2.5-flash';
 
   c_blocks constant varchar2(2000) :=
        'Building blocks available: an Autonomous Database (ATP, Always Free), Kafka (OCI Streaming with a Kafka-compatible endpoint), '
-    || 'and a containerised app (a public container image, or a Git repository with a Dockerfile at its root, built for ARM). '
+    || 'OCI NoSQL (serverless JSON tables), and a containerised app (a public container image, or a Git repository with a Dockerfile at its root, built for ARM). '
     || 'Every container receives ADB_CONNECT_STRING, ADB_ADMIN_PASSWORD, ADB_DB_NAME and KAFKA_BOOTSTRAP_SERVERS as environment variables. '
-    || 'Sandboxes live at most 3 days (ttl_days 1-3) and each is an isolated OCI compartment with its own public URL. ';
+    || 'Sandboxes live at most 3 days (ttl_days 1-3), are tagged with their owner and expiry, and each gets its own public URL. ';
 
   -- What the current user has (for status questions and destroy-by-name).
+  function cfg_value(p_key varchar2, p_default varchar2) return varchar2 is
+    l_v varchar2(4000);
+  begin
+    select value into l_v from factory_config where key = p_key;
+    return nvl(l_v, p_default);
+  exception when no_data_found then return p_default;
+  end;
+
   function my_sandboxes return clob is
     l_json clob;
   begin
@@ -113,14 +125,57 @@ declare
     l_git    varchar2(500)  := l_in.get_string('git_url');
     l_port   number         := nvl(l_in.get_number('app_port'), 80);
     l_req    varchar2(4000) := substr(l_in.get_string('text'), 1, 4000);
+    l_seed   clob           := l_in.get_clob('seed_sql');
+    l_cont   clob           := case when l_in.has('containers') and l_in.get('containers').is_array then l_in.get_array('containers').to_clob else null end;
+    l_files  clob           := l_in.get_clob('app_files');
+    l_nosql  varchar2(1)    := case when l_in.get_boolean('enable_nosql') then 'Y' else 'N' end;
+    l_skey   varchar2(40)   := substr(l_in.get_string('seed_key'), 1, 40);
+    l_atpl   varchar2(40)   := substr(l_in.get_string('app_template'), 1, 40);
+    l_dbs    clob           := case when l_in.has('databases') and l_in.get('databases').is_array
+                                    then l_in.get_array('databases').to_clob else null end;
+    l_owner  varchar2(255);
+    l_live   number;
+    l_cap    number := to_number(cfg_value('max_sandboxes_per_user', '3'));
   begin
+    if l_sid is null or not regexp_like(l_sid, '^[a-z][a-z0-9-]{1,19}$') then
+      l_out.put('err', 'Sandbox name must be 2-20 characters: lower case letters, digits and dashes.');
+      return;
+    end if;
     if l_act = 'DEPLOY' and l_git is null then
       l_act := 'CREATE';
     end if;
+
+    -- A sandbox belongs to whoever first asked for it. Without this check any
+    -- signed-in user could destroy someone else's sandbox, or reuse its name and
+    -- have Resource Manager update their stack instead of creating a new one.
+    select min(requester) into l_owner from sandbox_requests where sandbox_id = l_sid;
+    if l_owner is not null and l_owner <> :APP_USER then
+      l_out.put('err', 'Sandbox "' || l_sid || '" belongs to someone else. Pick another name.');
+      return;
+    end if;
+    if l_act = 'DESTROY' and l_owner is null then
+      l_out.put('err', 'No sandbox called "' || l_sid || '" that belongs to you.');
+      return;
+    end if;
+
+    -- Per-user cap on live sandboxes, so one person cannot drain the budget.
+    if l_act <> 'DESTROY' and l_owner is null then
+      select count(*) into l_live from (
+        select sandbox_id, action, status,
+               row_number() over (partition by sandbox_id order by id desc) rn
+          from sandbox_requests where requester = :APP_USER)
+       where rn = 1 and not (action = 'DESTROY' and status = 'DONE');
+      if l_live >= l_cap then
+        l_out.put('err', 'You already have ' || l_live || ' sandboxes, and the limit is ' || l_cap
+                      || '. Destroy one before creating another.');
+        return;
+      end if;
+    end if;
+
     insert into sandbox_requests
-      (requester, sandbox_id, action, ttl_days, enable_adb, enable_kafka, enable_app, app_image, git_url, app_port, request_text)
+      (requester, sandbox_id, action, ttl_days, enable_adb, enable_kafka, enable_nosql, enable_app, app_image, git_url, app_port, request_text, seed_sql, app_containers, app_files, seed_key, app_template, adb_databases)
     values
-      (:APP_USER, l_sid, l_act, l_ttl, l_adb, l_kafka, l_app, l_image, l_git, l_port, l_req)
+      (:APP_USER, l_sid, l_act, l_ttl, l_adb, l_kafka, l_nosql, l_app, l_image, l_git, l_port, l_req, l_seed, l_cont, l_files, l_skey, l_atpl, l_dbs)
     returning id into l_id;
     l_out.put('id', l_id);
   end;
@@ -131,7 +186,23 @@ begin
     c_genai_model := l_in.get_string('model');
   end if;
 
-  if l_action = 'plan' then
+  l_region   := cfg_value('genai_region', 'us-phoenix-1');
+  l_registry := cfg_value('registry_prefix', '');
+  c_genai_url := 'https://inference.generativeai.' || l_region || '.oci.oraclecloud.com/20231130/actions/chat';
+
+  if l_action = 'config' then
+    l_out.put('registry_prefix', l_registry);
+    l_out.put('region', l_region);
+    l_out.put('user', :APP_USER);
+    l_out.put('cap', to_number(cfg_value('max_sandboxes_per_user', '3')));
+    select count(*) into l_id from (
+      select sandbox_id, action, status,
+             row_number() over (partition by sandbox_id order by id desc) rn
+        from sandbox_requests where requester = :APP_USER)
+     where rn = 1 and not (action = 'DESTROY' and status = 'DONE');
+    l_out.put('live', l_id);
+
+  elsif l_action = 'plan' then
     declare
       l_msgs json_array_t := json_array_t();
     begin
@@ -140,11 +211,14 @@ begin
         || c_blocks || templates() || ' '
         || 'Respond with ONLY one JSON object and no markdown fences, with exactly these keys: '
         || 'sandbox_id (2-20 chars, lowercase letters, digits, dashes, derived from the request), '
-        || 'enable_adb (boolean), enable_kafka (boolean), enable_app (boolean), '
+        || 'enable_adb (boolean), enable_kafka (boolean), enable_nosql (boolean: OCI NoSQL serverless JSON tables), enable_app (boolean), '
         || 'app_image (string or null), git_url (string or null, only if the user gave a repository URL), app_port (integer, 80 if unknown), '
         || 'summary (2-3 sentences: what will be created and how the pieces fit together), '
         || 'steps (array of 3-6 short strings: what the user should do next, e.g. how to connect, which env vars to read), '
         || 'tips (array of 1-3 short strings), '
+        || 'containers (array, optional: several containers in one sandbox, each {name, image, port}; the first is served at / on the Oracle hostname, the others at /<name>; use it for bundles such as MCP + Studio, where <registry> is ' || nvl(l_registry,'(none configured)') || ': [{"name":"studio","image":"<registry>studio/app:latest","port":8770},{"name":"mcp","image":"<registry>schemagate/app:latest","port":8765}]), '
+        || 'seed_sql (string or null: when the user wants sample data or a named domain schema such as telemetry, orders, IoT, HR, write Oracle SQL that creates 2-4 small tables with primary keys and inserts 5-10 realistic rows each, statements separated by semicolons, no PL/SQL blocks, no comments; it runs once in the new database before the containers start), '
+        || 'Every database this factory creates gets Oracle Select AI (NL2SQL) and AI cataloguing switched on automatically over all its schemas, so an agent that answers questions in plain English needs only enable_adb plus seed_sql - no container. Add containers only when the user wants a UI, an MCP endpoint, or an app of their own. '
         || 'questions (array of 0-3 short questions the user should answer before creating when something essential is missing or ambiguous, e.g. which producer or consumer app, which image or repository, which port; empty array when nothing is missing). '
         || 'User request: ' || l_in.get_string('text')));
       l_out.put('raw', ai_chat(l_msgs));
@@ -166,7 +240,13 @@ begin
         || 'Always respond with ONLY one JSON object, no markdown fences, with keys: '
         || 'reply (string, friendly, concise, may contain short line breaks; explain what and how, mention URLs from outputs when relevant), '
         || 'action (null, or an object when the user clearly wants something done: {type: "create"|"deploy"|"destroy", sandbox_id, ttl_days (1-3, default 3), '
-        || 'enable_adb, enable_kafka, enable_app (booleans), app_image (string or null), git_url (string or null: a Git repository URL, or a local folder path the user gave such as C:\Users\me\myapp, kept exactly as given), app_port (integer)}). '
+        || 'databases (optional array of extra Autonomous Databases beyond the first, each {name, tier}; each is a real database with its own ADMIN credential and consumes a tenancy slot - only propose several when the user asks for more than one database), enable_adb, enable_kafka, enable_nosql (OCI NoSQL: serverless JSON/key-value tables, good for events, sessions, device state, anything schemaless), enable_app (booleans), app_image (string or null), git_url (string or null: a Git repository URL, or a local folder path the user gave such as C:\Users\me\myapp, kept exactly as given), app_port (integer), '
+        || 'containers (optional array of {name, image, port} for bundles, first served at /, others at /<name>), '
+        || 'seed_sql (optional string: Oracle SQL creating 2-4 small tables with 5-10 realistic rows each for the domain the user named, semicolon-separated, no PL/SQL, no comments; runs once in the new database)}). '
+        || 'Every database this factory creates gets Oracle Select AI (NL2SQL) and AI cataloguing switched on automatically over all its schemas, so an agent that answers questions in plain English needs only enable_adb plus seed_sql - no container. Add containers only when the user wants a UI, an MCP endpoint, or an app of their own. '
+        || 'You may also return questions (array of 0-3 short questions). Ask when a detail you need is genuinely missing and the answer would change what gets built: which domain the sample data should cover, how many days they need it for, whether they want a UI on top or just the database, or which repo or image to deploy. When you ask questions, leave action out entirely and wait for the answer - do not guess and build. Ask at most two at a time, and do not ask about anything they already told you or anything with an obvious default. '
+        || 'In your reply, say in one or two plain sentences what will actually be created in OCI - the database and its tier, the Kafka cluster, the containers - so the user knows what is being spun up before they confirm. '
+        || 'When the user asks for an MCP server plus a way to chat with or explore the data, propose containers [studio on 8770, mcp on 8765] with a database and seed_sql for their domain. '
         || 'Use type "deploy" when the user gives a Git repository URL or a local folder path (a folder with a Dockerfile; the worker builds it); "create" with app_image for a public image; "destroy" to delete an existing sandbox by its sandbox_id. '
         || 'Never invent a sandbox_id that does not exist for destroy. Ask a short question instead of guessing when something essential is missing. '
         || 'When you propose an action, describe it in reply and end with a question like "Shall I go ahead?".'));

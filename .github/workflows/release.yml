@@ -1,0 +1,54 @@
+name: release
+
+# Tag a version and the two Resource Manager stack zips are built and attached
+# to the release. The "Deploy to Oracle Cloud" button in the README points at
+# the foundation zip's /releases/latest/download/ URL, so it follows every tag
+# without the README ever changing.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  stacks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check the stacks are shippable
+        run: python release.py --check
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+
+      - name: Validate both stacks
+        run: |
+          for dir in foundation stacks/sandbox; do
+            echo "== $dir"
+            terraform -chdir="$dir" init -backend=false -input=false
+            terraform -chdir="$dir" validate
+          done
+
+      - name: Build the zips
+        run: python release.py
+
+      - name: Attach them to the release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.zip
+          generate_release_notes: true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stacks
+          path: dist/*.zip

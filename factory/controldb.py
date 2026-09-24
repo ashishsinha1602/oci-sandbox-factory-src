@@ -78,10 +78,12 @@ create table {SCHEMA}.sandbox_requests (
   sandbox_id    varchar2(20)  not null,
   action        varchar2(10)  default 'CREATE' not null
                 check (action in ('CREATE','DEPLOY','DESTROY')),
-  ttl_days      number(2)     default 7 not null,
+  ttl_days      number(2)     default 3 not null
+                constraint sandbox_requests_ttl_ck check (ttl_days between 1 and 3),
   enable_adb    varchar2(1)   default 'N' not null check (enable_adb in ('Y','N')),
   adb_tier      varchar2(4)   default 'free' check (adb_tier in ('free','paid')),
   enable_kafka  varchar2(1)   default 'N' not null check (enable_kafka in ('Y','N')),
+  enable_nosql  varchar2(1)   default 'N' not null check (enable_nosql in ('Y','N')),
   kafka_mode    varchar2(9)   default 'streaming' check (kafka_mode in ('streaming','cluster')),
   enable_app    varchar2(1)   default 'N' not null check (enable_app in ('Y','N')),
   app_image     varchar2(500),
@@ -94,8 +96,59 @@ create table {SCHEMA}.sandbox_requests (
   finished_at   timestamp,
   outputs       clob,
   error         varchar2(4000),
-  log           clob
+  log           clob,
+  seed_sql      clob,
+  app_containers clob,
+  app_files     clob,
+  adb_databases clob,
+  seed_key      varchar2(40),
+  app_template  varchar2(40)
 )
+"""
+
+# Ownership and quota, enforced by the database so every route is covered:
+# the APEX page, the MCP server, the CLI and anything added later.
+OWNER_TRIGGER = f"""
+create or replace trigger {SCHEMA}.sandbox_requests_owner_biu
+before insert on {SCHEMA}.sandbox_requests
+for each row
+declare
+  l_owner {SCHEMA}.sandbox_requests.requester%type;
+  l_live  number;
+  l_cap   number;
+begin
+  if not regexp_like(:new.sandbox_id, '^[a-z][a-z0-9-]{{1,19}}$') then
+    raise_application_error(-20010, 'Bad sandbox name: '||:new.sandbox_id);
+  end if;
+
+  select min(requester) into l_owner
+    from {SCHEMA}.sandbox_requests where sandbox_id = :new.sandbox_id;
+
+  if l_owner is not null and l_owner <> :new.requester then
+    raise_application_error(-20011,
+      'Sandbox '||:new.sandbox_id||' belongs to '||l_owner||', not '||:new.requester);
+  end if;
+
+  if :new.action = 'DESTROY' and l_owner is null then
+    raise_application_error(-20012, 'No sandbox '||:new.sandbox_id||' owned by '||:new.requester);
+  end if;
+
+  if :new.action <> 'DESTROY' and l_owner is null then
+    begin
+      select to_number(value) into l_cap from {SCHEMA}.factory_config where key = 'max_sandboxes_per_user';
+    exception when no_data_found then l_cap := 3;
+    end;
+    select count(*) into l_live from (
+      select sandbox_id, action, status,
+             row_number() over (partition by sandbox_id order by id desc) rn
+        from {SCHEMA}.sandbox_requests where requester = :new.requester)
+     where rn = 1 and not (action = 'DESTROY' and status = 'DONE');
+    if l_live >= l_cap then
+      raise_application_error(-20013,
+        :new.requester||' already has '||l_live||' sandboxes; the limit is '||l_cap);
+    end if;
+  end if;
+end;
 """
 
 # APEX-friendly view of live sandboxes (latest DONE request per sandbox that is not destroyed).
@@ -103,7 +156,7 @@ VIEW = f"""
 create or replace view {SCHEMA}.sandboxes_v as
 select r.sandbox_id, r.requester, r.finished_at, r.ttl_days,
        r.finished_at + r.ttl_days as expires_at,
-       r.enable_adb, r.enable_kafka, r.enable_app, r.outputs
+       r.enable_adb, r.enable_kafka, r.enable_nosql, r.enable_app, r.outputs
 from {SCHEMA}.sandbox_requests r
 where r.status = 'DONE'
   and r.action in ('CREATE','DEPLOY')
@@ -132,8 +185,21 @@ def setup(argv: list[str]) -> None:
     if not exists("select count(*) from dba_tables where owner = :1 and table_name = 'SANDBOX_REQUESTS'", SCHEMA):
         cur.execute(DDL)
         print("table sandbox_requests created")
+    else:
+        # Columns added after the first deployment of a control database: setup only
+        # runs the DDL for a brand new table, so bring an existing one up to date.
+        for col, kind in (("seed_sql", "clob"), ("app_containers", "clob"), ("app_files", "clob"),
+                          ("seed_key", "varchar2(40)"), ("app_template", "varchar2(40)"),
+                          ("enable_nosql", "varchar2(1) default 'N' not null"),
+                          ("adb_databases", "clob")):
+            if not exists("select count(*) from dba_tab_columns where owner = :1 and table_name = 'SANDBOX_REQUESTS' and column_name = :2",
+                          SCHEMA, col.upper()):
+                cur.execute(f"alter table {SCHEMA}.sandbox_requests add ({col} {kind})")
+                print(f"column {col} added to sandbox_requests")
     cur.execute(VIEW)
     print("view sandboxes_v created")
+    cur.execute(OWNER_TRIGGER)
+    print("trigger sandbox_requests_owner_biu created (ownership + per-user quota)")
     if not exists("select count(*) from dba_tables where owner = :1 and table_name = 'FACTORY_CONFIG'", SCHEMA):
         cur.execute(f"create table {SCHEMA}.factory_config (key varchar2(64) primary key, value varchar2(4000))")
     cur.execute(f"""merge into {SCHEMA}.factory_config c
@@ -141,6 +207,15 @@ def setup(argv: list[str]) -> None:
         on (c.key = s.key) when matched then update set c.value = s.value
         when not matched then insert (key, value) values (s.key, s.value)""")
     print("factory_config: compartment_ocid set")
+    # Tenancy-specific settings the APEX page reads at runtime, so the page itself
+    # carries no region or registry. Override either with an env var at setup time.
+    for key, val in (("registry_prefix", os.environ.get("SBX_REGISTRY_PREFIX", "")),
+                     ("genai_region", os.environ.get("SBX_GENAI_REGION", ""))):
+        if val:
+            cur.execute(f"""merge into {SCHEMA}.factory_config c using (select :k key, :v value from dual) s
+                on (c.key = s.key) when matched then update set c.value = s.value
+                when not matched then insert (key, value) values (s.key, s.value)""", k=key, v=val)
+            print(f"factory_config: {key} = {val}")
 
     # APEX workspace on the SBX schema + a workspace admin who must change password on first login.
     cur.execute("select count(*) from apex_workspaces where workspace = :1", [WORKSPACE])

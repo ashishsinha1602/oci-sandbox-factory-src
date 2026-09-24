@@ -22,6 +22,18 @@ output "adb_admin_password" {
   sensitive = true
 }
 
+output "buckets" {
+  value = length(module.storage) > 0 ? module.storage[0].buckets : []
+}
+
+output "queues" {
+  value = length(module.queue) > 0 ? module.queue[0].queues : []
+}
+
+output "dataflow_jobs" {
+  value = length(module.dataflow) > 0 ? module.dataflow[0].jobs : []
+}
+
 output "functions" {
   value = length(var.functions) > 0 ? module.functions[0].functions : []
 }

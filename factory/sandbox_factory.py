@@ -267,6 +267,12 @@ def build_variables(args, fnd: dict, cfg: dict, app_containers: list | None) -> 
         "app_public": json.dumps(not (bool(args.adb) and args.adb_tier == "paid")),
         "enable_app": json.dumps(app_containers is not None),
     }
+    if getattr(args, "buckets", None):
+        v["buckets"] = json.dumps(args.buckets)
+    if getattr(args, "queues", None):
+        v["queues"] = json.dumps(args.queues)
+    if getattr(args, "dataflow_jobs", None):
+        v["dataflow_jobs"] = json.dumps(args.dataflow_jobs)
     if getattr(args, "functions", None):
         v["functions"] = json.dumps(args.functions)
     if getattr(args, "app_instances", None):
@@ -360,6 +366,38 @@ def destroy_stack(rm, stack, keep_stack: bool = False):
         print(f"  stack {stack.display_name} deleted")
 
 
+def empty_buckets(sandbox_id: str) -> None:
+    """Delete every object in this sandbox's buckets before Terraform runs.
+
+    Object Storage refuses to delete a bucket that still holds objects, so a
+    sandbox that wrote anything would fail to destroy and outlive its TTL. The
+    lifecycle policy expires objects after a day; this covers what is newer.
+    """
+    try:
+        fnd = foundation()
+        osc = client(oci.object_storage.ObjectStorageClient)
+        ns = osc.get_namespace().data
+        prefix = f"sbx-{sandbox_id}-"
+        for comp in {fnd["compartments"]["control"], fnd["compartments"]["sandboxes"]}:
+            for b in osc.list_buckets(ns, comp).data:
+                if not b.name.startswith(prefix):
+                    continue
+                removed = 0
+                start = None
+                while True:
+                    page = osc.list_objects(ns, b.name, start=start, limit=1000).data
+                    for o in page.objects:
+                        osc.delete_object(ns, b.name, o.name)
+                        removed += 1
+                    start = page.next_start_with
+                    if not start:
+                        break
+                if removed:
+                    print(f"  emptied {removed} object(s) from {b.name}")
+    except Exception as e:  # noqa: BLE001 - never block a destroy on cleanup
+        print(f"  bucket cleanup skipped ({type(e).__name__}: {e})")
+
+
 def cmd_destroy(args):
     cfg = config()
     fnd = foundation()
@@ -368,6 +406,7 @@ def cmd_destroy(args):
     if not stack:
         raise SystemExit(f"No sandbox named {args.sandbox_id}")
     assert_owner(stack, getattr(args, "owner", None), "destroy")
+    empty_buckets(args.sandbox_id)
     print(f"Destroying {stack.display_name}")
     destroy_stack(rm, stack, keep_stack=args.keep_stack)
 

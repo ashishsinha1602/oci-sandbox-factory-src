@@ -187,6 +187,48 @@ module "app_extra" {
   depends_on = [time_sleep.iam_propagation]
 }
 
+module "storage" {
+  count  = length(var.buckets) > 0 || length(var.dataflow_jobs) > 0 ? 1 : 0
+  source = "./modules/storage"
+
+  compartment_id = local.compartment_id
+  name           = local.name
+  # A Data Flow job must write its logs somewhere, so asking for one implies a bucket.
+  buckets        = length(var.buckets) > 0 ? var.buckets : [{ name = "logs", public = false, tier = "Standard" }]
+  defined_tags   = local.defined_tags
+  freeform_tags  = local.freeform_tags
+
+  depends_on = [time_sleep.iam_propagation]
+}
+
+module "queue" {
+  count  = length(var.queues) > 0 ? 1 : 0
+  source = "./modules/queue"
+
+  compartment_id = local.compartment_id
+  name           = local.name
+  queues         = var.queues
+  defined_tags   = local.defined_tags
+  freeform_tags  = local.freeform_tags
+
+  depends_on = [time_sleep.iam_propagation]
+}
+
+module "dataflow" {
+  count  = length(var.dataflow_jobs) > 0 ? 1 : 0
+  source = "./modules/dataflow"
+
+  compartment_id  = local.compartment_id
+  name            = local.name
+  jobs            = var.dataflow_jobs
+  logs_bucket_uri = "oci://${module.storage[0].buckets[0].name}@${module.storage[0].namespace}/"
+  injected_env    = local.injected_env
+  defined_tags    = local.defined_tags
+  freeform_tags   = local.freeform_tags
+
+  depends_on = [module.storage]
+}
+
 module "functions" {
   count  = length(var.functions) > 0 ? 1 : 0
   source = "./modules/functions"

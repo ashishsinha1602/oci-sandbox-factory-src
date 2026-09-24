@@ -152,6 +152,49 @@ variable "adb_databases" {
   default = []
 }
 
+variable "buckets" {
+  description = "Object Storage buckets. Cheap, idle-free, and outside the container core quota."
+  type = list(object({
+    name   = string
+    public = optional(bool, false)
+    tier   = optional(string, "Standard")
+  }))
+  default = []
+}
+
+variable "queues" {
+  description = "OCI Queues: serverless point-to-point messaging, the counterpart to Kafka streams."
+  type = list(object({
+    name               = string
+    retention_seconds  = optional(number, 3600)
+    visibility_seconds = optional(number, 30)
+    dead_letter_after  = optional(number, 10)
+  }))
+  default = []
+}
+
+variable "dataflow_jobs" {
+  description = <<-EOT
+    Spark applications on OCI Data Flow - the equivalent of an AWS Glue ETL job.
+    Managed Spark, billed per run, nothing provisioned in between. Needs a
+    bucket for logs, so ask for one in buckets as well.
+  EOT
+  type = list(object({
+    name           = string
+    file_uri       = string
+    language       = optional(string, "PYTHON")
+    spark_version  = optional(string, "3.5.0")
+    driver_shape   = optional(string, "VM.Standard.E4.Flex")
+    executor_shape = optional(string, "VM.Standard.E4.Flex")
+    num_executors  = optional(number, 1)
+    ocpus          = optional(number, 1)
+    memory_gb      = optional(number, 16)
+    arguments      = optional(list(string), [])
+    warehouse_uri  = optional(string)
+  }))
+  default = []
+}
+
 variable "functions" {
   description = <<-EOT
     OCI Functions for this sandbox. Serverless, billed per invocation, so they

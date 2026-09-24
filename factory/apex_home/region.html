@@ -1,0 +1,138 @@
+<style>
+.sf{max-width:1180px;margin:0 auto;font-family:inherit}
+.sf-hero{margin:4px 0 18px}.sf-hero h1{font-size:28px;margin:0 0 4px}.sf-hero p{margin:0;color:#5f6b7a}
+.sf-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px}
+.sf-card{border:1px solid #e3e8ef;border-radius:14px;padding:18px 20px;cursor:pointer;background:#fff;transition:.15s}
+.sf-card:hover{border-color:#1a73e8}.sf-card.sel{border-color:#1a73e8;box-shadow:0 6px 22px rgba(26,115,232,.16)}
+.sf-card .ic{font-size:26px;margin-bottom:8px}.sf-card h3{margin:0 0 4px;font-size:17px}.sf-card p{margin:0;color:#6b7280;font-size:13px}
+.sf-panel{margin-top:18px;border-radius:14px;padding:22px;background:#fff;border:1px solid #e3e8ef}
+.sf-row{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px}.sf-field{flex:1 1 220px}
+.sf-field label{display:block;font-size:12px;color:#5f6b7a;margin-bottom:4px}
+.sf-field input,.sf-field textarea,.sf-field select{width:100%;padding:10px 12px;border:1px solid #cfd6df;border-radius:9px;font-size:14px;box-sizing:border-box;background:#fff}
+.sf-field textarea{min-height:96px;resize:vertical}
+.sf-toggles{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.sf-toggle{display:flex;align-items:center;gap:10px;padding:10px 14px;border:1px solid #d6dde6;border-radius:10px;cursor:pointer;user-select:none;font-size:14px}
+.sf-toggle .dot{width:12px;height:12px;border-radius:50%;background:#cbd5e1}.sf-toggle.on{border-color:#1a73e8;background:#eaf2fe}.sf-toggle.on .dot{background:#1a73e8}
+.sf-btn{background:#1a73e8;color:#fff;border:0;border-radius:10px;padding:11px 20px;font-size:14px;font-weight:600;cursor:pointer}
+.sf-btn.sec{background:#eef2f6;color:#1f2937}.sf-btn:disabled{opacity:.45;cursor:default}.sf-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.sf-ai{background:linear-gradient(135deg,#f5f3ff,#eaf4ff);border:1px solid #d9e4ff;border-radius:12px;padding:16px 18px;margin:12px 0}
+.sf-ai h4{margin:0 0 8px;font-size:14px;color:#3b4a6b}.sf-ai p{margin:0 0 8px;line-height:1.5}.sf-ai ol,.sf-ai ul{margin:6px 0 0 18px;padding:0}.sf-ai li{margin-bottom:4px}
+.sf-chip{display:inline-block;background:#fff;border:1px solid #d6dde6;border-radius:999px;padding:3px 10px;font-size:12px;margin:2px 4px 2px 0}
+.sf-sugg{margin:12px 0 0}
+.sf-sugg h5{margin:10px 0 4px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#7b8794;font-weight:600}
+.sf-sugg b{display:inline-block;background:#fff;border:1px solid #d6dde6;border-radius:999px;padding:5px 12px;font-size:12px;font-weight:400;margin:3px 5px 3px 0;cursor:pointer;transition:background .12s,border-color .12s}
+.sf-sugg b:hover{background:#eef4fb;border-color:#9fb6cd}
+.sf-recs{display:grid;grid-template-columns:repeat(auto-fill,minmax(228px,1fr));gap:10px;margin:6px 0 2px}
+.sf-rec{border:1px solid #dde4ec;border-radius:12px;padding:11px 13px;background:#fff;cursor:pointer;transition:.13s}
+.sf-rec:hover{border-color:#1a73e8;box-shadow:0 4px 14px rgba(26,115,232,.13)}
+.sf-rec .t{font-size:13px;font-weight:600;margin-bottom:3px;color:#111827}
+.sf-rec .d{font-size:12px;color:#6b7280;line-height:1.4}
+.sf-rec .p{margin-top:7px}.sf-rec .p span{display:inline-block;background:#f1f5f9;border-radius:5px;padding:1px 6px;font-size:10.5px;color:#475569;margin:0 4px 0 0}
+.sf-form{margin-top:10px;border:1px solid #dde4ec;border-radius:11px;padding:12px 13px;background:#fff}
+.sf-form .sf-field{margin-bottom:9px}.sf-form label{font-weight:500}
+.sf-tabs{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap}
+.sf-tabs button{border:1px solid #d6dde6;background:#fff;border-radius:8px;padding:6px 11px;font-size:12px;cursor:pointer}
+.sf-tabs button.on{border-color:#1a73e8;background:#eaf2fe;color:#0b4a8b;font-weight:600}
+.sf-status{margin-top:20px}.sf-status h3{font-size:16px;margin:0 0 10px}
+.sf-req{border:1px solid #e3e8ef;border-radius:12px;padding:12px 14px;margin-bottom:10px;background:#fff}
+.sf-req .hd{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.sf-req .hd b{font-size:15px}.sf-req .meta{color:#6b7280;font-size:12px;margin-left:auto}
+.sf-badge{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600}
+.sf-badge.QUEUED{background:#fff3cd;color:#7a5b00}.sf-badge.RUNNING{background:#cfe8ff;color:#0b4a8b}.sf-badge.DONE{background:#d4edda;color:#155724}.sf-badge.FAILED{background:#f8d7da;color:#721c24}
+.sf-log{background:#0f172a;color:#cbd5e1;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;padding:10px 12px;border-radius:8px;max-height:200px;overflow:auto;white-space:pre-wrap;margin-top:8px}
+.sf-links{margin-top:8px;font-size:14px}.sf-links a{margin-right:14px}.sf-links code{background:#f1f5f9;padding:2px 6px;border-radius:6px}
+.sf-spin{display:inline-block;width:14px;height:14px;border:2px solid #cbd5e1;border-top-color:#1a73e8;border-radius:50%;animation:sfspin .8s linear infinite;vertical-align:-2px;margin-right:6px}
+@keyframes sfspin{to{transform:rotate(360deg)}}
+.sf-err{color:#b91c1c;font-size:13px;margin-top:8px}.sf-hide{display:none}
+.sf-msgs{display:flex;flex-direction:column;gap:10px;height:min(64vh,720px);min-height:360px;overflow:auto;padding:6px 4px}
+.sf-msg{max-width:88%;padding:11px 15px;border-radius:14px;font-size:14px;line-height:1.55;white-space:pre-wrap}
+.sf-msg.me{align-self:flex-end;background:#1a73e8;color:#fff;border-bottom-right-radius:4px}
+.sf-msg.ai{align-self:flex-start;background:#f1f5f9;color:#111827;border-bottom-left-radius:4px}
+.sf-msg .sf-act{margin-top:8px;display:flex;gap:8px;flex-wrap:wrap}.sf-msg .sf-act .sf-btn{padding:7px 14px;font-size:13px}
+</style>
+
+<div class="sf">
+  <div class="sf-hero">
+    <h1>What do you want to build?</h1>
+    <p id="sf-who" class="sf-hide" style="float:right;font-size:12px;color:#5f6b7a;margin:0"></p>
+    <p>Pick a path. Every sandbox is tagged, budgeted and owned by you, and the reaper destroys it when its time is up &mdash; 3 days at most.</p>
+  </div>
+
+  <div class="sf-cards">
+    <div class="sf-card" data-mode="chat"><div class="ic">&#128172;</div><h3>Chat with the factory</h3><p>Ask anything, create, deploy or destroy by talking. The AI knows what you have running.</p></div>
+    <div class="sf-card" data-mode="describe"><div class="ic">&#10024;</div><h3>Describe it, AI plans it</h3><p>Say what you want in plain English. AI picks the pieces and tells you what to do next.</p></div>
+    <div class="sf-card" data-mode="build"><div class="ic">&#128295;</div><h3>Build it yourself</h3><p>Pick the pieces by hand: a database, Kafka, and your own image or Git repo. Connection details are injected for you.</p></div>
+  </div>
+
+  <div class="sf-panel sf-hide" id="sf-panel">
+
+    <div id="sf-chat" class="sf-hide">
+      <div class="sf-msgs" id="sf-msgs"><div class="sf-msg ai">Hi! Tell me what you want to build, or ask what you have running. For example: <i>deploy nginx for a day</i>, <i>I need a database and Kafka for my orders API at https://github.com/me/orders</i>, <i>destroy demo3</i>.</div>
+        <div class="sf-sugg" id="sf-sugg">
+          <h5>Build it now &mdash; one click, nothing to fill in</h5>
+          <div class="sf-recs" id="sf-recs"></div>
+          <h5>Deploy something of your own</h5>
+          <b data-form="deploy">Deploy a Docker image or a Git repo&hellip;</b>
+          <b data-form="sql">Load my own SQL / schema into a new database&hellip;</b>
+          <h5>Or just ask for it</h5>
+          <b>A database with sample sales data and a Select AI agent I can ask questions in plain English</b>
+          <b>Telemetry sandbox: sensor readings seeded, ask it "which sensors ran hot last week"</b>
+          <b>An MCP endpoint over an empty database I will load myself, AI catalogue on</b>
+          <b>A knowledge base where I can upload documents and ask questions of them</b>
+          <b>Kafka, a database with sensor readings, and a dashboard, for 3 days</b>
+          <b>A NoSQL table for device events plus Kafka to feed it</b>
+          <b>What do I have running?</b>
+          <b>Destroy my oldest sandbox</b>
+        </div></div>
+      <div class="sf-row" style="margin:10px 0 0"><div class="sf-field"><input id="sf-chat-in" placeholder="Type a message and press Enter"></div>
+        <div class="sf-field" style="flex:0 0 auto"><button type="button" class="sf-btn sec sf-hide" id="sf-starters" title="Show the starter catalogue again">&#9776; Starters</button></div>
+        <div class="sf-field" style="flex:0 1 230px"><select id="sf-model" title="AI model (OCI Generative AI, this region)">
+          <option value="google.gemini-2.5-flash">Gemini 2.5 Flash (fast)</option>
+          <option value="google.gemini-2.5-pro">Gemini 2.5 Pro</option>
+          <option value="xai.grok-4">Grok 4</option>
+          <option value="xai.grok-3">Grok 3</option>
+          <option value="cohere.command-a-03-2025">Cohere Command A</option>
+          <option value="openai.gpt-oss-120b">GPT-OSS 120B</option></select></div>
+        <button type="button" class="sf-btn" id="sf-chat-send" style="flex:0 0 auto">Send</button></div>
+      <div id="sf-chat-wait" class="sf-hide" style="margin-top:8px"><span class="sf-spin"></span>Thinking...</div>
+    </div>
+
+    <div id="sf-describe" class="sf-hide">
+      <div class="sf-row"><div class="sf-field"><label>Describe what you want</label>
+        <textarea id="sf-text" placeholder="e.g. A Python API that stores orders in a database and publishes events to Kafka. Code is at https://github.com/me/orders-api"></textarea></div></div>
+      <div class="sf-actions"><button type="button" class="sf-btn" id="sf-plan">&#10024; Ask AI to plan it</button><span style="font-size:12px;color:#5f6b7a">model: <span id="sf-model-name">Gemini 2.5 Flash</span> (change it in Chat)</span><span id="sf-plan-wait" class="sf-hide"><span class="sf-spin"></span>Thinking...</span></div>
+      <div id="sf-ai" class="sf-ai sf-hide"></div>
+    </div>
+
+    <div id="sf-form" class="sf-hide">
+      <div class="sf-row">
+        <div class="sf-field"><label>Sandbox id</label><input id="sf-id" placeholder="my-app" maxlength="20"></div>
+        <div class="sf-field" style="flex:0 1 160px"><label>Lifetime</label>
+          <select id="sf-ttl"><option value="1">1 day</option><option value="2">2 days</option><option value="3" selected>3 days (max)</option></select></div>
+      </div>
+      <div class="sf-toggles" id="sf-toggles">
+        <div class="sf-toggle" data-k="enable_adb"><span class="dot"></span>Autonomous Database</div>
+        <div class="sf-toggle" data-k="enable_kafka"><span class="dot"></span>Kafka</div>
+        <div class="sf-toggle" data-k="enable_nosql"><span class="dot"></span>NoSQL</div>
+        <div class="sf-toggle" data-k="enable_app"><span class="dot"></span>Containerised app</div>
+      </div>
+      <div id="sf-appfields">
+        <div class="sf-row">
+          <div class="sf-field"><label>Git repository (Dockerfile at root) &mdash; or leave empty and use an image</label><input id="sf-git" placeholder="https://github.com/you/repo"></div>
+        </div>
+        <div class="sf-row">
+          <div class="sf-field"><label>Container image</label><input id="sf-image" value="docker.io/library/nginx:alpine"></div>
+          <div class="sf-field" style="flex:0 1 140px"><label>Port</label><input id="sf-port" type="number" value="80"></div>
+        </div>
+      </div>
+      <div class="sf-actions">
+        <button type="button" class="sf-btn" id="sf-submit">Create sandbox</button>
+        <span id="sf-submit-wait" class="sf-hide"><span class="sf-spin"></span>Queueing...</span>
+      </div>
+      <div class="sf-err sf-hide" id="sf-err"></div>
+    </div>
+  </div>
+
+  <div class="sf-status" id="sf-status"></div>
+</div>
+
+<script src="#APP_FILES#sf.js"></script>

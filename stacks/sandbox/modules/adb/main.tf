@@ -119,13 +119,25 @@ output "admin_password" {
 # reports the public regional host, which resets the connection. Swap in the
 # private endpoint FQDN so anything inside the VCN can actually connect.
 locals {
-  low_connect = try(oci_database_autonomous_database.this.connection_strings[0].all_connection_strings["LOW"], "")
-  low_host    = length(split("/", local.low_connect)) > 1 ? split("/", local.low_connect)[0] : ""
+  low_connect  = try(oci_database_autonomous_database.this.connection_strings[0].all_connection_strings["LOW"], "")
+  low_host     = length(split("/", local.low_connect)) > 1 ? split("/", local.low_connect)[0] : ""
   private_fqdn = local.free ? "" : try(oci_database_autonomous_database.this.private_endpoint, "")
+
+  # The port is NOT the same on both tiers. A public free-tier database serves
+  # server-auth TLS on 1522 and mutual TLS on 1521; a private endpoint inverts
+  # them - 1521 is server auth, 1522 is mutual. Handing a container the mutual
+  # port gets ORA-12506, because it has no wallet. So read the port off the
+  # profile that actually says SERVER rather than assuming either number.
+  profiles = try(oci_database_autonomous_database.this.connection_strings[0].profiles, [])
+  server_auth_low = [
+    for p in local.profiles : p
+    if upper(try(p.tls_authentication, "")) == "SERVER" && can(regex("(?i)_low$", try(p.display_name, "")))
+  ]
+  server_auth_port = try(regex("[(]port=([0-9]+)[)]", local.server_auth_low[0].value)[0], "1521")
 }
 
 output "connect_string" {
-  value = (local.free || local.private_fqdn == "" || local.low_host == "") ? local.low_connect : replace(local.low_connect, local.low_host, "${local.private_fqdn}:1522")
+  value = (local.free || local.private_fqdn == "" || local.low_host == "") ? local.low_connect : replace(local.low_connect, local.low_host, "${local.private_fqdn}:${local.server_auth_port}")
 }
 
 output "sql_web_url" {

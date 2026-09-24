@@ -58,8 +58,31 @@ def git_context(url: str) -> str:
     return "git://" + u + ref
 
 
-def build_in_oci(git_url: str, image: str, registry: str, namespace: str, sandbox_id: str,
-                 platform: str = "linux/arm64") -> None:
+def _source_volume(src_dir: str):
+    """The build context as a config-file volume kaniko can read.
+
+    A container config volume holds a flat set of files - "/" is not allowed in
+    a file name - which is enough for the starter templates. Anything with
+    subdirectories has to come in as a Git URL instead.
+    """
+    files, total = [], 0
+    for p in sorted(pathlib.Path(src_dir).iterdir()):
+        if not p.is_file():
+            raise SystemExit(
+                f"{p.name} is a directory; a local build context must be flat. "
+                "Use a Git URL for a project with subdirectories.")
+        data = p.read_bytes()
+        total += len(data)
+        files.append(cim.ContainerConfigFile(
+            file_name=p.name, data=base64.b64encode(data).decode()))
+    if not any(f.file_name == "Dockerfile" for f in files):
+        raise SystemExit(f"no Dockerfile in {src_dir}")
+    print(f"  shipping {len(files)} source file(s), {total/1024:.1f} KB, to the builder", flush=True)
+    return cim.CreateContainerConfigFileVolumeDetails(name="source", configs=files)
+
+
+def build_in_oci(git_url: str | None, image: str, registry: str, namespace: str, sandbox_id: str,
+                 platform: str = "linux/arm64", src_dir: str | None = None) -> None:
     fnd = sf.foundation()
     ci = sf.client(oci.container_instances.ContainerInstanceClient)
     idc = sf.client(oci.identity.IdentityClient)
@@ -76,19 +99,29 @@ def build_in_oci(git_url: str, image: str, registry: str, namespace: str, sandbo
         availability_domain=ad,
         display_name=name,
         shape=shape,
-        shape_config=cim.CreateContainerInstanceShapeConfigDetails(ocpus=2, memory_in_gbs=8),
+        # 1 OCPU / 4 GB, not 2 / 8. The A1 core quota on compartment sbx is 4 and
+        # the worker plus a live sandbox app already hold 3, so a 2-core builder
+        # is refused with QuotaExceeded: standard-a1-core-count. Builds are
+        # transient, so the smaller builder is the right trade; override with
+        # SBX_BUILD_OCPUS / SBX_BUILD_MEMORY_GB if a build needs more.
+        shape_config=cim.CreateContainerInstanceShapeConfigDetails(
+            ocpus=float(os.environ.get("SBX_BUILD_OCPUS", "1")),
+            memory_in_gbs=float(os.environ.get("SBX_BUILD_MEMORY_GB", "4")),
+        ),
         container_restart_policy="NEVER",
         freeform_tags={"managed_by": "sandbox-factory", "sandbox_id": sandbox_id, "role": "build"},
         vnics=[cim.CreateContainerVnicDetails(subnet_id=fnd["network"]["private_subnet_id"], is_public_ip_assigned=False)],
         volumes=[cim.CreateContainerConfigFileVolumeDetails(
             name="docker-config",
             configs=[cim.ContainerConfigFile(file_name="config.json", data=base64.b64encode(docker_config.encode()).decode())],
-        )],
+        )] + ([_source_volume(src_dir)] if src_dir else []),
         containers=[cim.CreateContainerDetails(
             display_name="kaniko",
             image_url=KANIKO_IMAGE,
-            arguments=[f"--context={git_context(git_url)}", f"--destination={image}", "--cache=false", "--snapshot-mode=redo"],
-            volume_mounts=[cim.CreateVolumeMountDetails(volume_name="docker-config", mount_path="/kaniko/.docker")],
+            arguments=[f"--context={'dir:///workspace' if src_dir else git_context(git_url)}",
+                       f"--destination={image}", "--cache=false", "--snapshot-mode=redo"],
+            volume_mounts=[cim.CreateVolumeMountDetails(volume_name="docker-config", mount_path="/kaniko/.docker")]
+                          + ([cim.CreateVolumeMountDetails(volume_name="source", mount_path="/workspace")] if src_dir else []),
         )],
     )
     inst = ci.create_container_instance(details).data

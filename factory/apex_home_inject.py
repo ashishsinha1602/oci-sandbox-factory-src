@@ -85,7 +85,21 @@ end;
 
 
 def split_home() -> tuple[str, str]:
-    """home.html -> (region markup with a script reference, the script itself)."""
+    """(region markup with a script reference, the script itself).
+
+    region.html and sf.js are read back out of the LIVE application and are the
+    source of truth when present: the browser UI is edited in APEX as well as
+    here, and splitting home.html instead silently reverted that work on
+    2026-09-24. home.html remains the fallback for a fresh install.
+    """
+    region = HERE / "apex_home" / "region.html"
+    script = HERE / "apex_home" / "sf.js"
+    if region.exists() and script.exists():
+        markup = region.read_text(encoding="utf-8")
+        if len(markup.encode()) > 30000:
+            raise SystemExit(f"region.html is {len(markup.encode())} bytes; the APEX limit is 32767")
+        return markup, script.read_text(encoding="utf-8")
+
     html = (HERE / "apex_home" / "home.html").read_text(encoding="utf-8")
     m = SCRIPT_RE.search(html)
     if not m:

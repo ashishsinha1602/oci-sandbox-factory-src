@@ -442,11 +442,17 @@ def cmd_deploy(args):
     image = f"{registry}/{namespace}/{repo}:{tag}"
     platform = "linux/arm64" if args.shape.startswith("CI.Standard.A1") else "linux/amd64"
 
-    use_kaniko = is_git and (in_oci() or os.environ.get("SBX_BUILD_MODE") == "kaniko" or not shutil.which("docker"))
+    # kaniko is not just for Git sources. An app_template expands into a local
+    # folder, and the OCI worker has no docker, so gating kaniko on is_git left
+    # every template build dying with "Need docker or podman on PATH".
+    use_kaniko = in_oci() or os.environ.get("SBX_BUILD_MODE") == "kaniko" or not shutil.which("docker")
     if use_kaniko:
         import oci_build
-        print(f"Building {image} from {src} inside OCI (kaniko, {platform})")
-        oci_build.build_in_oci(git_url=src, image=image, registry=registry, namespace=namespace,
+        where = src if is_git else f"{path} ({len(list(path.iterdir()))} files)"
+        print(f"Building {image} from {where} inside OCI (kaniko, {platform})")
+        oci_build.build_in_oci(git_url=src if is_git else None,
+                               src_dir=None if is_git else str(path),
+                               image=image, registry=registry, namespace=namespace,
                                sandbox_id=args.sandbox_id, platform=platform)
     else:
         if is_git:
@@ -496,7 +502,7 @@ def main(argv=None):
     c = sub.add_parser("create", help="create or update a sandbox")
     add_sandbox_options(c)
     c.add_argument("--app", action="store_true")
-    c.add_argument("--image", default="docker.io/library/nginx:alpine")
+    c.add_argument("--image", default=None, help="container image; omit when using --app-template or explicit containers")
     c.set_defaults(fn=cmd_create)
 
     d = sub.add_parser("deploy", help="build a local Dockerfile, push to OCIR, run it in a sandbox")

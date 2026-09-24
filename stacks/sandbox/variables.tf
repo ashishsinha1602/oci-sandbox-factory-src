@@ -214,7 +214,7 @@ variable "app_containers" {
   }))
   default = [{
     name  = "web"
-    image = "docker.io/library/nginx:alpine"
+    image = "" # no placeholder: an app with no image is a request that cannot be built
     port  = 80
   }]
   description = "Containers that share one network namespace. Ports listed here are opened to allowed_cidr."

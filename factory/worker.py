@@ -114,7 +114,7 @@ def factory_args(req: dict) -> argparse.Namespace:
         ttl=int(req["ttl_days"] or 3), allowed_cidr="0.0.0.0/0",
         adb=req["enable_adb"] == "Y", adb_tier=req["adb_tier"] or "free", adb_workload="OLTP",
         kafka=req["enable_kafka"] == "Y", nosql=req.get("enable_nosql") == "Y", kafka_mode=req["kafka_mode"] or "streaming", topics="events",
-        app=req["enable_app"] == "Y", image=req["app_image"] or "docker.io/library/nginx:alpine",
+        app=req["enable_app"] == "Y", image=req["app_image"] or None,
         shape="CI.Standard.A1.Flex", port=int(req["app_port"] or 80),
         name="app", tag=None, env=None, keep_stack=False, dry_run=False, path=None,
         adb_databases=json.loads(req["adb_databases"]) if req.get("adb_databases") else None,
@@ -130,7 +130,11 @@ def containers_for(req: dict) -> list | None:
         return [{"name": c.get("name") or f"app{i}", "image": c["image"], "port": c.get("port"), "env": {**env, **(c.get("env") or {})}}
                 for i, c in enumerate(items)]
     if req["enable_app"] == "Y" and not req.get("git_url") and env:
-        return [{"name": "web", "image": req["app_image"] or "docker.io/library/nginx:alpine", "port": int(req["app_port"] or 80), "env": env}]
+        if not req["app_image"]:
+            raise ValueError(
+                "an app was requested with seed data but no image; name a container, "
+                "give app_image, or use an app_template")
+        return [{"name": "web", "image": req["app_image"], "port": int(req["app_port"] or 80), "env": env}]
     return None
 
 
@@ -537,10 +541,10 @@ def process_one(conn) -> bool:
 
 def reconcile(conn):
     """Sandboxes destroyed outside the app (CLI, reaper) get a DESTROY/DONE row so the UI stops showing them."""
-    cfg = sf.config()
     fnd = sf.foundation()
-    # sf.client() carries the instance-principal signer; passing cfg alone makes the
-    # SDK validate it as an API-key config and fail with user/key_file 'missing'.
+    # sf.client() attaches the resource-principal signer. Building the client
+    # from config() alone only works with an API key on a laptop; in OCI it
+    # raised {'user': 'missing', 'key_file': 'missing', ...} every cycle.
     rm = sf.client(oci.resource_manager.ResourceManagerClient)
     live = {s.freeform_tags.get("sandbox_id") for s in rm.list_stacks(compartment_id=fnd["compartments"]["control"], lifecycle_state="ACTIVE").data
             if s.freeform_tags.get("managed_by") == "sandbox-factory"}

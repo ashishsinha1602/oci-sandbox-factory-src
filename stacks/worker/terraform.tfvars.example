@@ -1,0 +1,30 @@
+# Example values, shaped like a real foundation's outputs, read back on
+# 2026-09-23. Copy to terraform.tfvars and fill in control_admin_password.
+#
+# terraform.tfvars is gitignored for a reason - the ADMIN password is in it.
+# Nothing here is a secret except that one line.
+
+tenancy_ocid = "ocid1.tenancy.oc1..<your-tenancy>"
+region       = "us-phoenix-1"
+
+control_compartment_ocid   = "ocid1.compartment.oc1..<your-compartment>"
+sandboxes_compartment_ocid = "ocid1.compartment.oc1..<your-compartment>"
+
+vcn_id            = "ocid1.vcn.oc1.<region>.<your-vcn>"
+public_subnet_id  = "ocid1.subnet.oc1.<region>.<your-subnet>"
+private_subnet_id = "ocid1.subnet.oc1.<region>.<your-subnet>"
+
+tag_namespace = "sbx"
+
+# SBXCTL has is-mtls-connection-required = false, so the walletless 1522 profile
+# works. 1521 would need a wallet the container does not have.
+control_connect_string = "adb.us-phoenix-1.oraclecloud.com:1522/g63702d3fbc0a2d_sbxctl_low.adb.oraclecloud.com"
+
+# export TF_VAR_control_admin_password=... instead of writing it here.
+# control_admin_password = ""
+
+owner = "<your-oci-username>"
+
+worker_image = "phx.ocir.io/<your-namespace>/sbx/factory/worker:20260924191308"
+
+ocir_user = "<your-oci-username>"

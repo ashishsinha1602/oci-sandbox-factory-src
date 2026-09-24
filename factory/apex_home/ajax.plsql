@@ -131,8 +131,6 @@ declare
     l_nosql  varchar2(1)    := case when l_in.get_boolean('enable_nosql') then 'Y' else 'N' end;
     l_skey   varchar2(40)   := substr(l_in.get_string('seed_key'), 1, 40);
     l_atpl   varchar2(40)   := substr(l_in.get_string('app_template'), 1, 40);
-    l_dbs    clob           := case when l_in.has('databases') and l_in.get('databases').is_array
-                                    then l_in.get_array('databases').to_clob else null end;
     l_owner  varchar2(255);
     l_live   number;
     l_cap    number := to_number(cfg_value('max_sandboxes_per_user', '3'));
@@ -173,9 +171,9 @@ declare
     end if;
 
     insert into sandbox_requests
-      (requester, sandbox_id, action, ttl_days, enable_adb, enable_kafka, enable_nosql, enable_app, app_image, git_url, app_port, request_text, seed_sql, app_containers, app_files, seed_key, app_template, adb_databases)
+      (requester, sandbox_id, action, ttl_days, enable_adb, enable_kafka, enable_nosql, enable_app, app_image, git_url, app_port, request_text, seed_sql, app_containers, app_files, seed_key, app_template)
     values
-      (:APP_USER, l_sid, l_act, l_ttl, l_adb, l_kafka, l_nosql, l_app, l_image, l_git, l_port, l_req, l_seed, l_cont, l_files, l_skey, l_atpl, l_dbs)
+      (:APP_USER, l_sid, l_act, l_ttl, l_adb, l_kafka, l_nosql, l_app, l_image, l_git, l_port, l_req, l_seed, l_cont, l_files, l_skey, l_atpl)
     returning id into l_id;
     l_out.put('id', l_id);
   end;
@@ -240,7 +238,7 @@ begin
         || 'Always respond with ONLY one JSON object, no markdown fences, with keys: '
         || 'reply (string, friendly, concise, may contain short line breaks; explain what and how, mention URLs from outputs when relevant), '
         || 'action (null, or an object when the user clearly wants something done: {type: "create"|"deploy"|"destroy", sandbox_id, ttl_days (1-3, default 3), '
-        || 'databases (optional array of extra Autonomous Databases beyond the first, each {name, tier}; each is a real database with its own ADMIN credential and consumes a tenancy slot - only propose several when the user asks for more than one database), enable_adb, enable_kafka, enable_nosql (OCI NoSQL: serverless JSON/key-value tables, good for events, sessions, device state, anything schemaless), enable_app (booleans), app_image (string or null), git_url (string or null: a Git repository URL, or a local folder path the user gave such as C:\Users\me\myapp, kept exactly as given), app_port (integer), '
+        || 'enable_adb, enable_kafka, enable_nosql (OCI NoSQL: serverless JSON/key-value tables, good for events, sessions, device state, anything schemaless), enable_app (booleans), app_image (string or null), git_url (string or null: a Git repository URL, or a local folder path the user gave such as C:\Users\me\myapp, kept exactly as given), app_port (integer), '
         || 'containers (optional array of {name, image, port} for bundles, first served at /, others at /<name>), '
         || 'seed_sql (optional string: Oracle SQL creating 2-4 small tables with 5-10 realistic rows each for the domain the user named, semicolon-separated, no PL/SQL, no comments; runs once in the new database)}). '
         || 'Every database this factory creates gets Oracle Select AI (NL2SQL) and AI cataloguing switched on automatically over all its schemas, so an agent that answers questions in plain English needs only enable_adb plus seed_sql - no container. Add containers only when the user wants a UI, an MCP endpoint, or an app of their own. '

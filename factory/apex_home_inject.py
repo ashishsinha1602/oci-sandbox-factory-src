@@ -84,6 +84,19 @@ end;
 """
 
 
+def _versioned(markup: str, script: str) -> str:
+    """Stamp the script URL with a hash of its content.
+
+    #APP_FILES#sf.js never changes its URL, so browsers kept serving the old
+    script after every deploy - new buttons and fixes were live on the server
+    and invisible to the person looking at the page.
+    """
+    import hashlib
+    import re
+    tag = hashlib.sha256(script.encode()).hexdigest()[:10]
+    return re.sub(r"#APP_FILES#sf\.js(\?v=[0-9a-f]+)?", f"#APP_FILES#sf.js?v={tag}", markup)
+
+
 def split_home() -> tuple[str, str]:
     """(region markup with a script reference, the script itself).
 
@@ -95,7 +108,7 @@ def split_home() -> tuple[str, str]:
     region = HERE / "apex_home" / "region.html"
     script = HERE / "apex_home" / "sf.js"
     if region.exists() and script.exists():
-        markup = region.read_text(encoding="utf-8")
+        markup = _versioned(region.read_text(encoding="utf-8"), script.read_text(encoding="utf-8"))
         if len(markup.encode()) > 30000:
             raise SystemExit(f"region.html is {len(markup.encode())} bytes; the APEX limit is 32767")
         return markup, script.read_text(encoding="utf-8")

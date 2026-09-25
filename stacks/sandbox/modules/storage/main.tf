@@ -40,12 +40,28 @@ resource "oci_objectstorage_bucket" "this" {
   freeform_tags = var.freeform_tags
 }
 
-# A bucket with objects in it cannot be deleted, so a sandbox that wrote files
-# would fail to destroy and leak storage past its TTL. This expires objects a
-# day after they are written, which is inside every sandbox's lifetime, and the
-# destroy path empties the bucket as well for anything newer than that.
+variable "expiry_days" {
+  description = <<-EOT
+    Expire objects after this many days. 0 disables it.
+
+    A lifecycle policy needs the Object Storage service principal to be allowed
+    to manage objects in the compartment, otherwise the apply fails with
+    InsufficientServicePermissions. Grant it once in the tenancy and then set
+    this:
+
+      allow service objectstorage-<region> to manage object-family
+        in compartment <sandboxes compartment>
+
+    Cleanup does not depend on it: the destroy path empties every bucket in the
+    sandbox before Terraform runs, because Object Storage refuses to delete a
+    bucket that still holds objects.
+  EOT
+  type    = number
+  default = 0
+}
+
 resource "oci_objectstorage_object_lifecycle_policy" "expire" {
-  for_each = oci_objectstorage_bucket.this
+  for_each = var.expiry_days > 0 ? oci_objectstorage_bucket.this : {}
 
   namespace = each.value.namespace
   bucket    = each.value.name
@@ -53,7 +69,7 @@ resource "oci_objectstorage_object_lifecycle_policy" "expire" {
   rules {
     name        = "expire-objects"
     action      = "DELETE"
-    time_amount = 1
+    time_amount = var.expiry_days
     time_unit   = "DAYS"
     is_enabled  = true
     target      = "objects"
@@ -62,7 +78,7 @@ resource "oci_objectstorage_object_lifecycle_policy" "expire" {
   rules {
     name        = "abort-incomplete-uploads"
     action      = "ABORT"
-    time_amount = 1
+    time_amount = var.expiry_days
     time_unit   = "DAYS"
     is_enabled  = true
     target      = "multipart-uploads"

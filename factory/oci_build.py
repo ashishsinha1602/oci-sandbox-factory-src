@@ -13,6 +13,7 @@ import datetime as dt
 import json
 import os
 import pathlib
+import re
 import time
 
 import oci
@@ -37,6 +38,20 @@ def _token() -> tuple[str, str]:
     if not token:
         raise SystemExit("OCIR_TOKEN (or ~/.oci/ocir_token) is required to push the built image")
     return user, token
+
+
+def split_tree_url(url: str) -> tuple[str, str | None]:
+    """A folder link is what people paste: turn it into repo#branch + sub path.
+
+    https://github.com/o/r/tree/main/examples/app -> ("https://github.com/o/r#main", "examples/app")
+    GitLab (/-/tree/) and Gitea (/src/branch/) links work the same way; a plain
+    repository URL comes back unchanged with no sub path.
+    """
+    m = re.match(r"^(https?://[^/]+/[^/]+/[^/]+?)(?:\.git)?/(?:-/tree|-/blob|src/branch|tree|blob)/([^/]+)(?:/(.*?))?/?$", url.strip())
+    if not m:
+        return url.strip(), None
+    repo, ref, sub = m.groups()
+    return f"{repo}#{ref}", (sub or None)
 
 
 def git_context(url: str) -> str:
@@ -90,6 +105,11 @@ def build_in_oci(git_url: str | None, image: str, registry: str, namespace: str,
     there unless told otherwise, so a repository that keeps its Dockerfile in a
     subdirectory needs it named explicitly.
     """
+    if git_url:
+        # "https://github.com/o/r/tree/main/examples/app" is a folder inside a
+        # repository: clone the repository at that branch, build that folder.
+        git_url, tree_path = split_tree_url(git_url)
+        sub_path = sub_path or tree_path
     fnd = sf.foundation()
     ci = sf.client(oci.container_instances.ContainerInstanceClient)
     idc = sf.client(oci.identity.IdentityClient)
@@ -143,21 +163,32 @@ def build_in_oci(git_url: str | None, image: str, registry: str, namespace: str,
     print(f"  build container {name} starting", flush=True)
     started = time.time()
     state = inst.lifecycle_state
+    container_id, log = None, ""
     while time.time() - started < TIMEOUT_SECONDS:
         inst = ci.get_container_instance(inst.id).data
         state = inst.lifecycle_state
         if state in ("INACTIVE", "FAILED", "DELETED"):
             break
         print(f"  ... build {state.lower()} {int(time.time() - started)}s", flush=True)
+        # Logs can only be read while the container is up (409 once it has
+        # exited), so keep the latest copy from each poll for the failure report.
+        if state == "ACTIVE":
+            try:
+                container_id = container_id or ci.list_containers(compartment_id=control, container_instance_id=inst.id).data.items[0].id
+                log = ci.retrieve_logs(container_id).data.content.decode(errors="replace") or log
+            except Exception:  # noqa: BLE001
+                pass
         time.sleep(POLL_SECONDS)
 
     container = ci.list_containers(compartment_id=control, container_instance_id=inst.id).data.items[0]
     detail = ci.get_container(container.id).data
     try:
-        log = ci.retrieve_logs(container.id).data.content.decode(errors="replace")
-        print("\n".join(log.splitlines()[-25:]), flush=True)
+        log = ci.retrieve_logs(container.id).data.content.decode(errors="replace") or log
     except Exception as e:  # noqa: BLE001
-        print(f"  (no build log: {e})")
+        if not log:
+            print(f"  (no build log: {e})")
+    if log:
+        print("\n".join(log.splitlines()[-25:]), flush=True)
     try:
         ci.delete_container_instance(inst.id)
     except Exception:  # noqa: BLE001

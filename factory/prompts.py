@@ -11,6 +11,8 @@ tuned without redeploying the page. Placeholders the process fills:
 import pathlib
 import sys
 
+import oracledb
+
 import controldb
 
 HERE = pathlib.Path(__file__).resolve().parent
@@ -31,6 +33,9 @@ def load(conn=None) -> list[str]:
     done = []
     for f in sorted((HERE / "prompts").glob("*.txt")):
         text = f.read_text(encoding="utf-8")
+        # Past ~8K chars a plain string bind is sent as a LONG, and two LONG
+        # binds in one MERGE fail with ORA-03146; bind the text as a CLOB.
+        cur.setinputsizes(t1=oracledb.DB_TYPE_CLOB, t2=oracledb.DB_TYPE_CLOB)
         cur.execute("""merge into factory_prompts t using (select :k as key from dual) s on (t.key = s.key)
                        when matched then update set text = :t1, updated_at = systimestamp
                        when not matched then insert (key, text) values (:k2, :t2)""",

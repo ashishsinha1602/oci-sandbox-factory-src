@@ -328,6 +328,36 @@ def gateway_available(cfg: dict) -> bool:
     return _GATEWAY_OK
 
 
+def kafka_addon_reset(fnd: dict, sandbox_id: str) -> bool:
+    """Undo a public add-on the provider lost track of, so a re-apply can make it.
+
+    The Kafka add-on install can finish in the service (work request SUCCEEDED,
+    add-on ACTIVE) while the Terraform provider reports "Work Request error"
+    with no message and records nothing in the state. A second apply would then
+    try to install it again and collide with the one that exists, so uninstall
+    it first and let Terraform create it cleanly. True when there was one.
+    """
+    kc = client(oci.managed_kafka.KafkaClusterClient)
+    comp = fnd["compartments"]["sandboxes"]
+    clusters = [c for c in kc.list_kafka_clusters(compartment_id=comp).data.items
+                if c.display_name == f"sbx-{sandbox_id}-kafka" and c.lifecycle_state == "ACTIVE"]
+    if not clusters:
+        return False
+    found = False
+    for a in kc.list_addons(kafka_cluster_id=clusters[0].id).data.items:
+        found = True
+        print(f"  kafka add-on {a.name} is {a.lifecycle_state} in the service but not in the state; uninstalling it for a clean re-apply", flush=True)
+        wr = kc.uninstall_addon(clusters[0].id, a.name).headers.get("opc-work-request-id")
+        started = time.time()
+        while wr and time.time() - started < 1800:
+            st = kc.get_work_request(wr).data.status
+            if st in ("SUCCEEDED", "FAILED", "CANCELED"):
+                print(f"  add-on uninstall {st} after {int(time.time() - started)}s", flush=True)
+                break
+            time.sleep(POLL_SECONDS)
+    return found
+
+
 def build_variables(args, fnd: dict, cfg: dict, app_containers: list | None) -> dict:
     """Resource Manager variables are strings; lists/objects go as JSON."""
     gw = gateway_available(cfg)
@@ -445,11 +475,20 @@ def cmd_create(args, app_containers: list | None = None) -> dict:
         if "catalog-count" in log and variables.get("enable_catalog") == "true":
             retry["enable_catalog"] = "false"
             NOTES.append("Built without a Data Catalog: this region's limit is used up. Ask for a catalog-count increase, or destroy a sandbox that has one.")
-        if not retry:
+        # The Kafka public add-on: the service finishes it, the provider says
+        # "Work Request error" with no message and forgets it. Not a limit,
+        # the same variables again once the orphan is gone.
+        kafka_orphan = ("kafka_cluster_addon" in log
+                        and ("Work Request error" in log or "409" in log or "already" in log.lower())
+                        and kafka_addon_reset(fnd, args.sandbox_id))
+        if not retry and not kafka_orphan:
             raise
-        variables.update(retry)
-        print(f"apply hit a region limit; re-applying without {', '.join(retry)}", flush=True)
-        rm.update_stack(stack_id, rmm.UpdateStackDetails(variables=variables))
+        if retry:
+            variables.update(retry)
+            print(f"apply hit a region limit; re-applying without {', '.join(retry)}", flush=True)
+            rm.update_stack(stack_id, rmm.UpdateStackDetails(variables=variables))
+        else:
+            print("re-applying for the Kafka public add-on", flush=True)
         job = run_job(rm, stack_id, "APPLY", args.sandbox_id)
     outputs = job_outputs(rm, job.id)
     pws = adb_passwords_from_state(rm, stack_id)
@@ -678,9 +717,12 @@ def cmd_deploy(args, app_containers: list | None = None):
                                sandbox_id=args.sandbox_id, platform=platform)
     else:
         if is_git:
+            import oci_build
+            repo, sub = oci_build.split_tree_url(src)       # a folder link inside a repository
+            repo, _, ref = repo.partition("#")
             tmp = pathlib.Path(tempfile.mkdtemp(prefix="sbx-src-"))
-            subprocess.run(["git", "clone", "--depth", "1", src, str(tmp)], check=True)
-            path = tmp
+            subprocess.run(["git", "clone", "--depth", "1"] + (["--branch", ref] if ref else []) + [repo, str(tmp)], check=True)
+            path = tmp / sub if sub else tmp
         ocir_login(cfg, region_key, namespace)
         tool = container_tool()
         print(f"Building {image} for {platform}")

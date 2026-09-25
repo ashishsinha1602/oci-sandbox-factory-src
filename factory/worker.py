@@ -579,10 +579,37 @@ def process_one(conn) -> bool:
         finish(conn, req["id"], False, error=str(e))
         print(f"  request {req['id']} FAILED: {e}")
     except Exception as e:  # noqa: BLE001
+        if is_capacity_limit(e):
+            # Resource Manager runs at most a handful of jobs at once per
+            # tenancy and refuses the rest with LimitExceeded. That is not the
+            # user's request failing - it is the queue being full. Put it back
+            # and let the next free worker take it, instead of telling someone
+            # their sandbox failed when it simply had to wait its turn.
+            requeue(conn, req["id"])
+            print(f"  request {req['id']} waiting: Resource Manager is at capacity, re-queued", flush=True)
+            time.sleep(RETRY_BACKOFF_SECONDS)
+            return True
         log.write(traceback.format_exc())
         finish(conn, req["id"], False, error=f"{type(e).__name__}: {e}")
         print(f"  request {req['id']} FAILED: {e}")
     return True
+
+
+RETRY_BACKOFF_SECONDS = 20
+
+
+def is_capacity_limit(e: Exception) -> bool:
+    """A refusal that will clear on its own once running jobs finish."""
+    text = str(e)
+    return any(code in text for code in ("LimitExceeded", "TooManyRequests", "429"))
+
+
+def requeue(conn, request_id: int) -> None:
+    cur = conn.cursor()
+    cur.execute("""update sbx.sandbox_requests
+                      set status = 'QUEUED', started_at = null
+                    where id = :i""", i=request_id)
+    conn.commit()
 
 
 def reconcile(conn):

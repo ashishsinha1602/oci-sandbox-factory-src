@@ -24,6 +24,7 @@ import base64
 import datetime as dt
 import io
 import json
+import re
 import os
 import pathlib
 import shutil
@@ -399,6 +400,47 @@ def kafka_addon_reset(fnd: dict, sandbox_id: str) -> bool:
     return found
 
 
+def ui_first(containers: list) -> list:
+    """The first container is served at "/" and the rest under "/<name>".
+
+    A UI (Studio, a web app) only works at "/", and an MCP server is meant to
+    answer at "/mcp", so whatever order a request lists them in, containers
+    named mcp go after the others.
+    """
+    return sorted(containers, key=lambda c: (str(c.get("name", "")).lower() == "mcp"))
+
+
+def db_links_through_gateway(outputs: dict) -> None:
+    """Point a private database's web tools at the sandbox's gateway host.
+
+    A paid database is on a private endpoint, so its SQL Developer Web, APEX
+    and REST URLs do not open from a browser. The app gateway proxies /ords/*
+    to it (modules/app), so rewrite those links to the gateway's HTTPS host.
+    """
+    adb = outputs.get("adb") if isinstance(outputs.get("adb"), dict) else None
+    if not adb or adb.get("tier") != "paid":
+        return
+    urls = []
+    app = outputs.get("app") if isinstance(outputs.get("app"), dict) else {}
+    urls += [u for u in (app.get("urls") or [app.get("url")]) if u]
+    for inst in outputs.get("app_instances") or []:
+        urls += inst.get("urls") or []
+    gw = next((u for u in urls if u.startswith("https://") and "apigateway" in u), None)
+    if not gw:
+        return
+    host = gw.split("/")[2]
+    def swap(u):
+        return re.sub(r"^https://[^/]+", "https://" + host, u) if isinstance(u, str) and "/ords/" in u else u
+    for k in ("sql_web_url", "apex_url"):
+        adb[k] = swap(adb.get(k))
+    for d in outputs.get("databases") or []:
+        if isinstance(d, dict) and d.get("name") == "primary":
+            d["sql_web_url"] = swap(d.get("sql_web_url"))
+    lc = outputs.get("low_code")
+    if isinstance(lc, dict) and lc.get("rest_base"):
+        lc["rest_base"] = swap(lc["rest_base"])
+
+
 def build_variables(args, fnd: dict, cfg: dict, app_containers: list | None) -> dict:
     """Resource Manager variables are strings; lists/objects go as JSON."""
     gw = gateway_available(cfg)
@@ -450,13 +492,13 @@ def build_variables(args, fnd: dict, cfg: dict, app_containers: list | None) -> 
     if getattr(args, "functions", None):
         v["functions"] = json.dumps(args.functions)
     if getattr(args, "app_instances", None):
-        v["app_instances"] = json.dumps(args.app_instances)
+        v["app_instances"] = json.dumps([{**i, "containers": ui_first(i.get("containers") or [])} for i in args.app_instances])
     if getattr(args, "adb_databases", None):
         v["adb_databases"] = json.dumps(args.adb_databases)
     if getattr(args, "nosql_tables", None):
         v["nosql_tables"] = json.dumps(args.nosql_tables)
     if app_containers is not None:
-        v["app_containers"] = json.dumps(app_containers)
+        v["app_containers"] = json.dumps(ui_first(app_containers))
         v["app_shape"] = args.shape
     return v
 
@@ -532,6 +574,7 @@ def cmd_create(args, app_containers: list | None = None) -> dict:
             print("re-applying for the Kafka public add-on", flush=True)
         job = run_job(rm, stack_id, "APPLY", args.sandbox_id)
     outputs = job_outputs(rm, job.id)
+    db_links_through_gateway(outputs)
     pws = adb_passwords_from_state(rm, stack_id)
     if isinstance(outputs.get("adb"), dict):
         # Sensitive outputs are masked in the job outputs; read the password from the state

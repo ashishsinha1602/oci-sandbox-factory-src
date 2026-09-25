@@ -97,11 +97,11 @@ resource "oci_database_autonomous_database" "this" {
 
   # free  -> public endpoint, IP allow-list
   # paid  -> private endpoint in the shared private subnet
-  whitelisted_ips             = local.public_acl ? var.allowed_cidrs : null
-  subnet_id                   = local.free ? null : var.subnet_id
-  nsg_ids                     = local.free ? null : [oci_core_network_security_group.adb[0].id]
+  whitelisted_ips = local.public_acl ? var.allowed_cidrs : null
+  subnet_id       = local.free ? null : var.subnet_id
+  nsg_ids         = local.free ? null : [oci_core_network_security_group.adb[0].id]
 
-  depends_on = [time_sleep.nsg_release]
+  depends_on                  = [time_sleep.nsg_release]
   private_endpoint_label      = local.free ? null : replace(var.name, "-", "")
   is_mtls_connection_required = local.public_acl || !local.free ? false : true
 
@@ -159,4 +159,9 @@ output "sql_web_url" {
 
 output "apex_url" {
   value = try(oci_database_autonomous_database.this.connection_urls[0].apex_url, "")
+}
+
+output "private_fqdn" {
+  description = "Private endpoint host of a paid database (empty for Always Free); the app gateway proxies /ords/* to it."
+  value       = local.private_fqdn
 }

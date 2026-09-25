@@ -16,6 +16,13 @@ variable "memory_gb" { type = number }
 variable "defined_tags" { type = map(string) }
 variable "freeform_tags" { type = map(string) }
 variable "gateway" { type = bool }
+# A paid database sits on a private endpoint: its ORDS (SQL Developer Web,
+# APEX, REST) cannot be reached from a browser. When set, the gateway also
+# serves /ords/* from it, so those tools open on the app's own HTTPS host.
+variable "adb_private_fqdn" {
+  type    = string
+  default = ""
+}
 variable "public_subnet_id" { type = string }
 
 variable "containers" {
@@ -187,6 +194,20 @@ resource "oci_apigateway_deployment" "app" {
         backend {
           type                       = "HTTP_BACKEND"
           url                        = "http://${local.ip}:${routes.value}/${routes.key}/$${request.path[p]}"
+          connect_timeout_in_seconds = 10
+          read_timeout_in_seconds    = 300
+          send_timeout_in_seconds    = 300
+        }
+      }
+    }
+    dynamic "routes" {
+      for_each = var.adb_private_fqdn == "" ? [] : [var.adb_private_fqdn]
+      content {
+        path    = "/ords/{p*}"
+        methods = ["ANY"]
+        backend {
+          type                       = "HTTP_BACKEND"
+          url                        = "https://${routes.value}/ords/$${request.path[p]}"
           connect_timeout_in_seconds = 10
           read_timeout_in_seconds    = 300
           send_timeout_in_seconds    = 300

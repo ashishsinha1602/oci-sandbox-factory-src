@@ -138,7 +138,7 @@ locals {
     # sandbox. DBMS_VECTOR's Generative AI provider rejects a request without it
     # ("Compartment ID must be provided"), which is how embedding failed.
     { SANDBOX_ID = var.sandbox_id, SANDBOX_EXPIRES = local.expires,
-      SANDBOX_COMPARTMENT_OCID = local.compartment_id },
+    SANDBOX_COMPARTMENT_OCID = local.compartment_id },
     var.enable_adb ? {
       ADB_DB_NAME        = module.adb[0].db_name
       ADB_CONNECT_STRING = module.adb[0].connect_string
@@ -183,6 +183,7 @@ module "app_extra" {
   ocpus            = each.value.ocpus
   memory_gb        = each.value.memory_gb
   gateway          = each.value.gateway
+  adb_private_fqdn = var.enable_adb ? module.adb[0].private_fqdn : ""
   public_subnet_id = var.public_subnet_id
   defined_tags     = local.defined_tags
   freeform_tags    = local.freeform_tags
@@ -197,9 +198,9 @@ module "storage" {
   compartment_id = local.compartment_id
   name           = local.name
   # A Data Flow job must write its logs somewhere, so asking for one implies a bucket.
-  buckets        = length(var.buckets) > 0 ? var.buckets : [{ name = "logs", public = false, tier = "Standard" }]
-  defined_tags   = local.defined_tags
-  freeform_tags  = local.freeform_tags
+  buckets       = length(var.buckets) > 0 ? var.buckets : [{ name = "logs", public = false, tier = "Standard" }]
+  defined_tags  = local.defined_tags
+  freeform_tags = local.freeform_tags
 
   depends_on = [time_sleep.iam_propagation]
 }
@@ -264,15 +265,15 @@ module "functions" {
   count  = length(var.functions) > 0 ? 1 : 0
   source = "./modules/functions"
 
-  gateway        = var.functions_gateway
-  compartment_id = local.compartment_id
-  name           = local.name
-  subnet_id      = var.private_subnet_id
+  gateway          = var.functions_gateway
+  compartment_id   = local.compartment_id
+  name             = local.name
+  subnet_id        = var.private_subnet_id
   public_subnet_id = var.public_subnet_id
-  functions      = var.functions
-  injected_env   = local.injected_env
-  defined_tags   = local.defined_tags
-  freeform_tags  = local.freeform_tags
+  functions        = var.functions
+  injected_env     = local.injected_env
+  defined_tags     = local.defined_tags
+  freeform_tags    = local.freeform_tags
 
   depends_on = [time_sleep.iam_propagation]
 }
@@ -292,6 +293,7 @@ module "app" {
   ocpus            = var.app_ocpus
   memory_gb        = var.app_memory_gb
   gateway          = var.app_gateway
+  adb_private_fqdn = var.enable_adb ? module.adb[0].private_fqdn : ""
   public_subnet_id = var.public_subnet_id
   defined_tags     = local.defined_tags
   freeform_tags    = local.freeform_tags

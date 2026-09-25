@@ -2,7 +2,10 @@
 function sfInit(){
   var mode=null, plan=null, cfg={enable_adb:false,enable_kafka:false,enable_nosql:false,enable_app:false}, timer=null;
   var $=function(s){return document.querySelector(s)}, $$=function(s){return Array.prototype.slice.call(document.querySelectorAll(s))};
-  function call(action,payload){payload=payload||{}; var m=document.querySelector('#sf-model'); if(m&&!payload.model)payload.model=m.value; return apex.server.process('SF',{x01:action,x02:JSON.stringify(payload)},{dataType:'json'})}
+  // x02 is a VARCHAR2(32767): anything big (attached code) rides in p_clob_01.
+  function call(action,payload){payload=payload||{}; var m=document.querySelector('#sf-model'); if(m&&!payload.model)payload.model=m.value;
+    var clob=payload.clob; delete payload.clob; var o={x01:action,x02:JSON.stringify(payload)}; if(clob)o.p_clob_01=clob;
+    return apex.server.process('SF',o,{dataType:'json'})}
   function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
 
   $$('.sf-card').forEach(function(c){c.onclick=function(){
@@ -704,11 +707,10 @@ function sfInit(){
         .catch(function(e){ fetching.innerHTML='<span class="sf-err">Could not read '+esc(gh)+': '+esc(e.message||e)+'. Is it public? You can attach the folder instead.</span>'; });
       return;
     }
-    var shown=t; if(CODE){ t=t+codeDigest(CODE); }
     $('#sf-chat-in').value=''; $('#sf-chat-in').style.height='auto'; $('#sf-chat-send').classList.remove('ready'); dropQuickChips();
-    addMsg('me',esc(shown)+(CODE?'<div style="font-size:11px;opacity:.8;margin-top:4px">&#128206; '+Object.keys(CODE.files).length+' files attached</div>':'')); pushHist({role:'user',text:t});
+    addMsg('me',esc(t)+(CODE?'<div style="font-size:11px;opacity:.8;margin-top:4px">&#128206; '+Object.keys(CODE.files).length+' files attached</div>':'')); pushHist({role:'user',text:t});
     var typing=typingBubble(); $('#sf-chat-send').disabled=true;
-    call('chat',{messages:hist.slice(-12)}).then(function(r){
+    call('chat',{messages:hist.slice(-12), clob:CODE?codeDigest(CODE):undefined}).then(function(r){
       if(typing)typing.remove(); $('#sf-chat-send').disabled=false; $('#sf-chat-in').focus();
       if(r.err){addMsg('ai','<span class="sf-err">'+esc(r.err)+'</span>');return}
       var m=(r.raw||'').match(/\{[\s\S]*\}/), j=null; try{j=m?JSON.parse(m[0]):null}catch(e){}

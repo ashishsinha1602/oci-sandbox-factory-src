@@ -80,6 +80,20 @@ declare
     return nvl(l_json, '[]');
   end;
 
+  -- utl_raw.cast_to_raw takes a VARCHAR2, so a request over 32767 bytes (a
+  -- conversation with attached code) died with ORA-06502. Convert properly.
+  function clob_to_blob(p in clob) return blob is
+    l_blob blob;
+    l_dest integer := 1;
+    l_src  integer := 1;
+    l_lang integer := 0;
+    l_warn integer;
+  begin
+    dbms_lob.createtemporary(l_blob, true);
+    dbms_lob.converttoblob(l_blob, p, dbms_lob.lobmaxsize, l_dest, l_src, dbms_lob.default_csid, l_lang, l_warn);
+    return l_blob;
+  end;
+
   function ai_chat(p_messages json_array_t) return clob is
     l_resp dbms_cloud_types.resp;
     l_req  json_object_t := json_object_t();
@@ -107,7 +121,7 @@ declare
       uri             => c_genai_url,
       method          => dbms_cloud.method_post,
       headers         => json_object('Content-Type' value 'application/json'),
-      body            => utl_raw.cast_to_raw(l_req.to_clob));
+      body            => clob_to_blob(l_req.to_clob));
     l_body := dbms_cloud.get_response_text(l_resp);
     if dbms_cloud.get_response_status_code(l_resp) <> 200 then
       raise_application_error(-20001, 'Generative AI returned ' || dbms_cloud.get_response_status_code(l_resp) || ': ' || substr(l_body, 1, 300));
@@ -328,7 +342,11 @@ begin
       if l_hist is not null then
         for i in 0 .. l_hist.get_size - 1 loop
           l_m := treat(l_hist.get(i) as json_object_t);
-          l_msgs.append(msg(case when l_m.get_string('role') = 'assistant' then 'ASSISTANT' else 'USER' end, l_m.get_string('text')));
+          -- Attached code arrives in the CLOB parameter (x02 is capped at
+          -- 32767 bytes) and is appended to the latest user message.
+          l_msgs.append(msg(case when l_m.get_string('role') = 'assistant' then 'ASSISTANT' else 'USER' end,
+                            l_m.get_clob('text') || case when i = l_hist.get_size - 1 and l_m.get_string('role') <> 'assistant'
+                                                         then apex_application.g_clob_01 end));
         end loop;
       end if;
       l_out.put('raw', ai_chat(l_msgs));

@@ -765,6 +765,13 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--once", action="store_true")
     a = ap.parse_args()
+    # A fresh tenancy: create the schema, install the application, load the
+    # prompts. Idempotent, so every worker may run it.
+    try:
+        import bootstrap
+        bootstrap.bootstrap()
+    except Exception as e:  # noqa: BLE001
+        print(f"bootstrap skipped ({type(e).__name__}: {e})", flush=True)
     conn = controldb.connect("ADMIN")
     print("worker connected to control DB; polling sbx.sandbox_requests")
     last_reap = 0.0

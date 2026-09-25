@@ -154,10 +154,11 @@ def harvest_catalog(**ctx):
     cid = cats[0].id
     # Type names repeat across parents ("Resource Principal" exists for Object
     # Storage and for Data Integration), so keep every type and pick by parent.
-    all_types = dc.list_types(cid, limit=500).data.items
+    all_types = list(oci.pagination.list_call_get_all_results(dc.list_types, cid, limit=500).data)
     asset_type = next(t.key for t in all_types if t.type_category == "dataAsset" and t.name == "Oracle Object Storage")
-    conn_type = next(t.key for t in all_types if t.type_category == "connection" and t.name == "Resource Principal"
-                     and dc.get_type(cid, t.key).data.parent_type_name == "Oracle Object Storage")
+    rp = [t for t in all_types if t.type_category == "connection" and t.name == "Resource Principal"]
+    print("resource principal connection types:", [(t.key, t.parent_type_name) for t in rp])
+    conn_type = next((t.key for t in rp if (t.parent_type_name or "") == "Oracle Object Storage"), None) or rp[0].key
 
     assets = [a for a in dc.list_data_assets(cid, display_name=BUCKET).data.items]
     if assets:

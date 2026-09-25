@@ -271,12 +271,15 @@ def add_users(argv: list[str]) -> None:
     """
     conn = connect("ADMIN")
     cur = conn.cursor()
+    # APEX 26.1 refuses to create a user unless the session parses as the
+    # workspace schema (ORA-20987 "no privileges to parse as schema ADMIN").
+    cur.execute(f"alter session set current_schema = {SCHEMA}")
     for email in argv:
         user = email.split("@")[0].upper()
         pw = _password()
         cur.execute(f"""
             begin
-              apex_util.set_workspace(p_workspace => '{WORKSPACE}');
+              apex_util.set_security_group_id(p_security_group_id => apex_util.find_security_group_id('{WORKSPACE}'));
               if apex_util.get_user_id(:u) is null then
                 apex_util.create_user(
                   p_user_name => :u, p_email_address => :e, p_web_password => :pw,

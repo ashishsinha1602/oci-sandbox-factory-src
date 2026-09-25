@@ -94,7 +94,8 @@ declare
     return l_blob;
   end;
 
-  function ai_chat(p_messages json_array_t) return clob is
+  function ai_chat(p_messages json_array_t, p_retry boolean default true) return clob is
+    l_text clob;
     l_resp dbms_cloud_types.resp;
     l_req  json_object_t := json_object_t();
     l_sm   json_object_t := json_object_t();
@@ -127,8 +128,16 @@ declare
       raise_application_error(-20001, 'Generative AI returned ' || dbms_cloud.get_response_status_code(l_resp) || ': ' || substr(l_body, 1, 300));
     end if;
     l_j := json_object_t.parse(l_body);
-    return treat(treat(l_j.get_object('chatResponse').get_array('choices').get(0) as json_object_t)
+    l_text := treat(treat(l_j.get_object('chatResponse').get_array('choices').get(0) as json_object_t)
                    .get_object('message').get_array('content').get(0) as json_object_t).get_clob('text');
+    -- Every caller expects one JSON object. Now and then the model answers in
+    -- prose instead; ask once more, pointedly, before handing that back.
+    if p_retry and instr(l_text, '{') = 0 then
+      p_messages.append(msg('ASSISTANT', l_text));
+      p_messages.append(msg('USER', 'Answer again with ONLY the JSON object described above, no prose, no fences.'));
+      return ai_chat(p_messages, false);
+    end if;
+    return l_text;
   end;
 
   function templates return varchar2 is

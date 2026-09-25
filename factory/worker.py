@@ -815,8 +815,8 @@ def recover_own_claims(conn) -> None:
     """
     cur = conn.cursor()
     cur.execute("""update sbx.sandbox_requests set status = 'QUEUED', started_at = null,
-                   log = log || chr(10) || 'worker ' || :1 || ' was replaced; queued again'
-                   where status = 'RUNNING' and worker_name = :1""", [WORKER_NAME])
+                   log = log || chr(10) || 'worker ' || :w || ' was replaced; queued again'
+                   where status = 'RUNNING' and worker_name = :w""", w=WORKER_NAME)
     if cur.rowcount:
         print(f"recovered {cur.rowcount} request(s) left RUNNING by the previous {WORKER_NAME}", flush=True)
     conn.commit()

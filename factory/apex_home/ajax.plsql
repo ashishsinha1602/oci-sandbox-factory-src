@@ -347,7 +347,13 @@ begin
           l_txt := substr(l_j.get_string('reply'), 1, 4000);
         exception when others then l_j := null;
         end;
-        if l_j is not null and (not l_j.has('action') or l_j.get('action').is_null)
+        if l_j is null then
+          -- Prose or a fenced block around the JSON (or no JSON at all): ask once
+          -- for the object alone, so the page never has to show raw text.
+          l_msgs.append(msg('ASSISTANT', l_raw));
+          l_msgs.append(msg('USER', 'Answer again with ONLY the JSON object described above: no prose before or after it, no code fences.'));
+          l_raw := ai_chat(l_msgs);
+        elsif (not l_j.has('action') or l_j.get('action').is_null)
            and (l_j.get('questions') is null or l_j.get('questions').is_null or l_j.get_array('questions').get_size = 0)
            and regexp_like(l_txt, '(go ahead|shall i|would you like me to|should i (create|deploy|build))', 'i') then
           l_msgs.append(msg('ASSISTANT', l_raw));

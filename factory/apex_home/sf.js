@@ -29,7 +29,7 @@ function sfInit(){
     call('plan',{text:text}).then(function(r){
       $('#sf-plan').disabled=false; $('#sf-plan-wait').classList.add('sf-hide');
       if(r.err){showAI('<p class="sf-err">'+esc(r.err)+'</p>');return}
-      var m=(r.raw||'').match(/\{[\s\S]*\}/); try{plan=m?JSON.parse(m[0]):null}catch(e){plan=null}
+      plan=modelJson(r.raw);
       if(!plan){showAI('<h4>AI answer</h4><p>'+esc(r.raw)+'</p>');return}
       var h='<h4>&#10024; Plan</h4><p>'+esc(plan.summary)+'</p><div>';
       if(plan.enable_adb)h+='<span class="sf-chip">Autonomous Database</span>';
@@ -197,6 +197,16 @@ function sfInit(){
     }
     if(o.adb)return o.adb.apex_url||o.adb.sql_web_url;
     var fu=(o.functions||[]).filter(function(f){return f.url})[0]; if(fu)return fu.url;
+    return null;
+  }
+  // The model is asked for one JSON object but sometimes wraps it in prose or
+  // a ```json fence. Take the fenced block if there is one, else the first
+  // '{' that starts a valid object; null only when there is truly none.
+  function modelJson(raw){
+    raw=raw||''; var tries=[], f=raw.match(/```(?:json)?\s*([\s\S]*?)```/i); if(f)tries.push(f[1]);
+    var end=raw.lastIndexOf('}');
+    for(var i=raw.indexOf('{'); i>=0 && i<end && tries.length<40; i=raw.indexOf('{',i+1)) tries.push(raw.slice(i,end+1));
+    for(var k=0;k<tries.length;k++){ try{ var o=JSON.parse(tries[k]); if(o&&typeof o==='object'&&!Array.isArray(o))return o; }catch(e){} }
     return null;
   }
   function addMsg(cls,html){var d=document.createElement('div');d.className='sf-msg '+cls;d.innerHTML=html;$('#sf-msgs').appendChild(d);$('#sf-msgs').scrollTop=1e9;return d}
@@ -741,7 +751,7 @@ function sfInit(){
     call('chat',{messages:hist.slice(-12), clob:CODE?codeDigest(CODE):undefined}).then(function(r){
       if(typing)typing.remove(); $('#sf-chat-send').disabled=false; $('#sf-chat-in').focus();
       if(r.err){addMsg('ai','<span class="sf-err">'+esc(r.err)+'</span>');return}
-      var m=(r.raw||'').match(/\{[\s\S]*\}/), j=null; try{j=m?JSON.parse(m[0]):null}catch(e){}
+      var j=modelJson(r.raw);
       var reply=j&&j.reply?j.reply:(r.raw||''); pushHist({role:'assistant',text:reply});
       var d=addMsg('ai',fmt(reply));
       d.insertAdjacentHTML('beforeend',widgetsHtml(j,reply,t));

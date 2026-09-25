@@ -79,7 +79,7 @@ create table {SCHEMA}.sandbox_requests (
   action        varchar2(10)  default 'CREATE' not null
                 check (action in ('CREATE','DEPLOY','DESTROY')),
   ttl_days      number(2)     default 3 not null
-                constraint sandbox_requests_ttl_ck check (ttl_days between 1 and 3),
+                constraint sandbox_requests_ttl_ck check (ttl_days between 1 and 30),
   enable_adb    varchar2(1)   default 'N' not null check (enable_adb in ('Y','N')),
   adb_tier      varchar2(4)   default 'free' check (adb_tier in ('free','paid')),
   enable_kafka  varchar2(1)   default 'N' not null check (enable_kafka in ('Y','N')),

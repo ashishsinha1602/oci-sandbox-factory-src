@@ -67,10 +67,10 @@ def create_sandbox(
     adb: Autonomous Database (adb_tier free = Always Free, paid = ECPU private endpoint).
     kafka: Kafka (kafka_mode streaming = serverless Kafka-compatible, cluster = managed brokers).
     app: run a container image with a public IP on `port`.
-    ttl_days is capped at 3. Takes 3-8 minutes. Returns connection details.
+    ttl_days is 1-30. Takes 3-8 minutes. Returns connection details.
     """
     return _capture(sf.cmd_create, _args(
-        sandbox_id=sandbox_id, owner=owner, ttl=max(1, min(3, ttl_days)), team=team,
+        sandbox_id=sandbox_id, owner=owner, ttl=max(1, min(30, ttl_days)), team=team,
         adb=adb, adb_tier=adb_tier, kafka=kafka, kafka_mode=kafka_mode,
         app=app, image=image, port=port,
     ))
@@ -94,7 +94,7 @@ def deploy_app(
     Needs an OCIR auth token in ~/.oci/ocir_token or OCIR_TOKEN.
     """
     return _capture(sf.cmd_deploy, _args(
-        sandbox_id=sandbox_id, path=path, owner=owner, port=port, ttl=max(1, min(3, ttl_days)),
+        sandbox_id=sandbox_id, path=path, owner=owner, port=port, ttl=max(1, min(30, ttl_days)),
         adb=adb, kafka=kafka, name=name, shape=shape,
     ))
 

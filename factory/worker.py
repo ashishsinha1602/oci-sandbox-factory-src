@@ -57,6 +57,25 @@ class RowLog(io.TextIOBase):
         self.conn.commit()
 
 
+
+def adb_dsn(connect: str) -> str:
+    """Autonomous Database only accepts TLS.
+
+    connect_string is "host:port/service". Handed to oracledb as-is it opens a
+    plain TCP connection, which the database resets (DPY-6005 / DPY-4011), so
+    every seed, Select AI and REST step failed on paid, private-endpoint
+    databases. Build an explicit TCPS descriptor - the same one the starter
+    apps use. No wallet: these databases are created with mTLS off.
+    """
+    if connect.lstrip().startswith("("):
+        return connect
+    host_port, service = connect.split("/", 1)
+    host, port = host_port.split(":")
+    return (f"(description=(retry_count=5)(retry_delay=3)"
+            f"(address=(protocol=tcps)(port={port})(host={host}))"
+            f"(connect_data=(service_name={service}))"
+            f"(security=(ssl_server_dn_match=yes)))")
+
 def claim(conn):
     cur = conn.cursor()
     # The OCI-hosted worker cannot see a laptop's folders: it only takes requests whose
@@ -210,7 +229,7 @@ def seed_database(outputs: dict, seed_sql: str) -> None:
     if len(stmts) > 200:
         print(f"seed skipped: {len(stmts)} statements exceeds the 200 limit", flush=True)
         return
-    with oracledb.connect(user="ADMIN", password=pw, dsn=connect,
+    with oracledb.connect(user="ADMIN", password=pw, dsn=adb_dsn(connect),
                           ssl_server_dn_match=True) as db:
         cur = db.cursor()
         done = 0
@@ -271,7 +290,7 @@ def enable_select_ai(outputs: dict, region: str, cfg: dict) -> None:
         return
     import oracledb
     try:
-        with oracledb.connect(user="ADMIN", password=pw, dsn=connect,
+        with oracledb.connect(user="ADMIN", password=pw, dsn=adb_dsn(connect),
                               ssl_server_dn_match=True) as db:
             cur = db.cursor()
             # Resource principal first: the database authenticates as itself and no
@@ -395,7 +414,7 @@ def enable_low_code(outputs: dict) -> None:
         return
     import oracledb
     try:
-        with oracledb.connect(user="ADMIN", password=pw, dsn=connect,
+        with oracledb.connect(user="ADMIN", password=pw, dsn=adb_dsn(connect),
                               ssl_server_dn_match=True) as db:
             cur = db.cursor()
             cur.execute("""

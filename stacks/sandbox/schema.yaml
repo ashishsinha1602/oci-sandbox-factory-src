@@ -104,9 +104,9 @@ variables:
   ttl_days:
     type: integer
     title: Lifetime (days)
-    description: The sandbox is destroyed automatically after this many days (max 3).
+    description: The sandbox is destroyed automatically after this many days (max 30).
     minimum: 1
-    maximum: 3
+    maximum: 30
     default: 3
 
   per_sandbox_compartment:

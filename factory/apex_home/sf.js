@@ -34,7 +34,7 @@ function sfInit(){
       if(plan.containers&&plan.containers.length){plan.containers.forEach(function(c){h+='<span class="sf-chip">'+esc(c.name)+': '+esc(c.image)+' :'+esc(c.port)+'</span>'})}
       else if(plan.enable_app)h+='<span class="sf-chip">App: '+esc(plan.git_url||plan.app_image||'(image or repo needed)')+' on port '+esc(plan.app_port||80)+'</span>';
       if(plan.seed_sql)h+='<span class="sf-chip">sample data: '+esc(String(plan.seed_sql).split(';').filter(function(x){return x.trim()}).length)+' SQL statements</span>';
-      h+='<span class="sf-chip">3 days</span></div>';
+      h+='<span class="sf-chip">'+(plan.ttl_days||3)+' days</span></div>';
       if(plan.steps&&plan.steps.length){h+='<h4 style="margin-top:10px">What to do next</h4><ol>'+plan.steps.map(function(s){return '<li>'+esc(s)+'</li>'}).join('')+'</ol>'}
       h+=infraHtml(plan);
       if(plan.tips&&plan.tips.length){h+='<ul>'+plan.tips.map(function(s){return '<li>'+esc(s)+'</li>'}).join('')+'</ul>'}
@@ -87,6 +87,7 @@ function sfInit(){
         if(o&&r.status==='DONE'){ h+='<div class="sf-links">';
           var pu=primaryUrl(o);
           if(pu){h+='<a class="sf-open" href="'+esc(pu)+'" target="_blank" rel="noopener">Open '+esc(r.sandbox_id)+' &rarr;</a><br>'}
+          else{h+='<button type="button" class="sf-open" style="border:0;cursor:pointer" data-open="'+esc(r.sandbox_id)+'">Open '+esc(r.sandbox_id)+' &rarr;</button><br>'}
           if(o.app&&o.app.urls){var us=o.app.urls.filter(function(u){return u.indexOf('https://')===0}); if(!us.length)us=o.app.urls; us.forEach(function(u){h+='<a href="'+esc(u)+'" target="_blank">'+esc(u)+'</a>'});
             if(o.app.containers&&o.app.containers.length>1&&us.length){o.app.containers.slice(1).forEach(function(n){h+='<a href="'+esc(us[0])+'/'+esc(n)+'" target="_blank">'+esc(us[0])+'/'+esc(n)+'</a>'})}}
           (o.logins||[]).forEach(function(l){
@@ -95,29 +96,18 @@ function sfInit(){
           if(o.adb){h+='<div style="margin-top:6px"><a href="'+esc(o.adb.sql_web_url)+'" target="_blank">SQL Developer Web</a> &middot; user <code>'+esc(o.adb.admin_user||'ADMIN')+'</code>'
               +(o.adb.admin_password?' &middot; password <code>'+esc(o.adb.admin_password)+'</code> <button type="button" class="sf-btn sec" style="padding:2px 8px;font-size:12px" onclick="navigator.clipboard.writeText(this.previousElementSibling.textContent)">copy</button>':'')
               +'<br>connect string <code>'+esc(o.adb.connect_string)+'</code></div>'}
-          if(o.nosql&&o.nosql.tables&&o.nosql.tables.length)h+='<code>nosql: '+esc(o.nosql.tables.join(', '))+'</code>';
+
           if(o.low_code&&o.low_code.rest_base)h+='<code>REST: '+esc(o.low_code.rest_base)+'</code>';
           if(o.kafka)h+='<code>kafka: '+esc(o.kafka.bootstrap_servers)+'</code>';
-          if(o.buckets&&o.buckets.length)h+='<code>buckets: '+esc(o.buckets.map(function(b){return b.name}).join(', '))+'</code>';
-          if(o.queues&&o.queues.length)h+='<code>queues: '+esc(o.queues.map(function(q){return q.name}).join(', '))+'</code>';
-          if(o.functions&&o.functions.length)h+='<code>functions: '+esc(o.functions.map(function(f){return f.name}).join(', '))+'</code>';
-          if(o.dataflow_jobs&&o.dataflow_jobs.length)h+='<code>spark: '+esc(o.dataflow_jobs.map(function(j){return j.name}).join(', '))+'</code>';
-          if(o.catalog&&o.catalog.display_name)h+='<code>catalog: '+esc(o.catalog.display_name)+'</code>';
+
+
+
+
+          resourceLinks(o).forEach(function(x){h+=x[1]?'<a class="sf-reslink" href="'+esc(x[1])+'" target="_blank" rel="noopener">'+esc(x[0])+' &#8599;</a>':'<code>'+esc(x[0])+'</code>'});
           if(o.databases&&o.databases.length>1){o.databases.slice(1).forEach(function(d){
             h+='<code>'+esc(d.name)+': '+esc(d.db_name)+'</code>'})}
           if(o.warnings&&o.warnings.length)h+='<div class="sf-err" style="margin-top:6px">'
               +o.warnings.map(esc).join('<br>')+'</div>';
-          if(o.consoles){
-            var open=[];
-            if(o.dataflow_jobs&&o.dataflow_jobs.length)open.push(['Data Flow',o.consoles.data_flow]);
-            if(o.catalog)open.push(['Data Catalog',o.consoles.data_catalog]);
-            if(o.buckets&&o.buckets.length)open.push(['Buckets',o.consoles.object_storage]);
-            if(o.functions&&o.functions.length)open.push(['Functions',o.consoles.functions]);
-            if(o.queues&&o.queues.length)open.push(['Queues',o.consoles.queues]);
-            if(o.nosql)open.push(['NoSQL',o.consoles.nosql]);
-            if(open.length)h+='<div style="margin-top:6px">open in OCI: '+open.map(function(x){
-              return '<a href="'+esc(x[1])+'" target="_blank">'+esc(x[0])+'</a>'}).join(' &middot; ')+'</div>';
-          }
           if(o.destroyed)h+='destroyed';
           h+='</div>'}
         if(r.error)h+='<div class="sf-err">'+esc(r.error)+'</div>';
@@ -146,6 +136,28 @@ function sfInit(){
       .replace(/\n/g,'<br>')+'</p>'}
   // Every sandbox hands back one thing to click. Newer stacks output `url`
   // directly; older rows are derived so existing sandboxes still get a button.
+  function consolesFor(o){
+    if(!o)return {};
+    if(o.consoles)return o.consoles;
+    var c=o.sandbox&&o.sandbox.compartment_id, rg=window.__sfRegion||'us-phoenix-1';
+    if(!c)return {};
+    var q='?region='+rg+'&compartmentId='+c;
+    return {data_flow:'https://cloud.oracle.com/data-flow/apps'+q, data_catalog:'https://cloud.oracle.com/data-catalog/data-catalogs'+q,
+      object_storage:'https://cloud.oracle.com/object-storage/buckets'+q, functions:'https://cloud.oracle.com/functions/applications'+q,
+      queues:'https://cloud.oracle.com/queue/queues'+q, nosql:'https://cloud.oracle.com/nosql/tables'+q};
+  }
+  // What a sandbox has, each with the place to open it. Used by the dashboard
+  // card, the chat widget and the landing page so they never disagree.
+  function resourceLinks(o){
+    var k=consolesFor(o), L=[];
+    if(o.nosql&&o.nosql.tables&&o.nosql.tables.length)L.push(['NoSQL: '+o.nosql.tables.join(', '),k.nosql]);
+    if(o.buckets&&o.buckets.length)L.push(['Buckets: '+o.buckets.map(function(b){return b.name}).join(', '),k.object_storage]);
+    if(o.queues&&o.queues.length)L.push(['Queues: '+o.queues.map(function(x){return x.name}).join(', '),k.queues]);
+    if(o.functions&&o.functions.length)L.push(['Functions: '+o.functions.map(function(f){return f.name}).join(', '),k.functions]);
+    if(o.dataflow_jobs&&o.dataflow_jobs.length)L.push(['Spark (Data Flow): '+o.dataflow_jobs.map(function(j){return j.name}).join(', '),k.data_flow]);
+    if(o.catalog)L.push(['Data Catalog: '+(o.catalog.display_name||''),k.data_catalog]);
+    return L;
+  }
   function primaryUrl(o){
     if(!o)return null;
     if(o.url)return o.url;
@@ -327,13 +339,10 @@ function sfInit(){
       {hint:'authenticated as ADMIN with the password above'});
     t += '</table>';
     h += t;
-    if(o.consoles){
-      var links=[];
-      for(var k in o.consoles){ if(o.consoles[k]) links.push(
-        '<a href="'+esc(o.consoles[k])+'" target="_blank">'+esc(k.replace(/_/g,' '))+'</a>'); }
-      if(links.length) h += '<p style="margin:12px 0 0;font-size:13px">Open in the OCI console: '
-        + links.join(' &middot; ') + '</p>';
-    }
+    var rl=resourceLinks(o).filter(function(x){return x[1]});
+    if(rl.length) h += '<div style="margin:14px 0 0"><div style="font-size:12px;color:#6b7280;margin-bottom:6px">Open in the OCI console</div>'
+      + rl.map(function(x){return '<a class="sf-btn sec" style="display:inline-block;margin:0 6px 6px 0;padding:6px 12px;font-size:12px;text-decoration:none" href="'+esc(x[1])+'" target="_blank" rel="noopener">'+esc(x[0])+' &#8599;</a>'}).join('')
+      + '</div>';
     if(o.warnings&&o.warnings.length) h += '<p class="sf-err" style="margin-top:10px">'
       + o.warnings.map(esc).join('<br>') + '</p>';
     return h;
@@ -432,7 +441,7 @@ function sfInit(){
       f.innerHTML='<div class="sf-field"><label>SQL to run in the new database</label>'
         +'<textarea id="sf-f-sql" style="min-height:130px" placeholder="create table ...;&#10;insert into ... values (...);"></textarea></div>'
         +'<div class="sf-row"><div class="sf-field" style="flex:0 1 150px"><label>Keep it for</label>'
-        +'<select id="sf-f-ttl"><option value="1">1 day</option><option value="2">2 days</option><option value="3" selected>3 days (max)</option></select></div>'
+        +'<select id="sf-f-ttl"><option value="1">1 day</option><option value="2">2 days</option><option value="3" selected>3 days</option><option value="5">5 days</option><option value="7">7 days</option><option value="14">14 days</option><option value="21">21 days</option><option value="30">30 days (max)</option></select></div>'
         +'<div class="sf-field" style="flex:0 1 220px"><label>Also give me</label>'
         +'<select id="sf-f-extra"><option value="">just the database</option><option value="mcp">an MCP endpoint</option>'
         +'<option value="both">MCP + the Studio chat UI</option></select></div></div>'
@@ -458,7 +467,7 @@ function sfInit(){
       +'<input id="sf-f-src" placeholder="docker.io/library/nginx:alpine"></div>'
       +'<div class="sf-field" style="flex:0 1 120px"><label>Port</label><input id="sf-f-port" value="80"></div></div>'
       +'<div class="sf-row"><div class="sf-field" style="flex:0 1 150px"><label>Keep it for</label>'
-      +'<select id="sf-f-ttl"><option value="1">1 day</option><option value="2">2 days</option><option value="3" selected>3 days (max)</option></select></div>'
+      +'<select id="sf-f-ttl"><option value="1">1 day</option><option value="2">2 days</option><option value="3" selected>3 days</option><option value="5">5 days</option><option value="7">7 days</option><option value="14">14 days</option><option value="21">21 days</option><option value="30">30 days (max)</option></select></div>'
       +'<div class="sf-field" style="flex:0 1 250px"><label>Database</label>'
       +'<select id="sf-f-db"><option value="">no database</option><option value="empty">empty database, Select AI on</option>'
       +'<option value="sales">database + sample sales data</option></select></div></div>'
@@ -530,7 +539,7 @@ function sfInit(){
     return '<div class="sf-w-card"><div class="sf-w-hd"><b>'+esc(r.sandbox_id)+'</b><span class="sf-badge '+esc(r.status)+'">'+esc(r.status)+'</span></div>'
       +(exp?'<div class="sf-w-meta">expires '+esc(exp)+'</div>':'')
       +(parts.length?'<div class="sf-w-parts">'+parts.map(function(p){return '<span>'+esc(p)+'</span>'}).join('')+'</div>':'')
-      +'<div class="sf-w-acts">'+(done&&pu?'<a class="sf-btn" href="'+esc(pu)+'" target="_blank" rel="noopener">Open</a>':'')
+      +'<div class="sf-w-acts">'+(done&&pu?'<a class="sf-btn" href="'+esc(pu)+'" target="_blank" rel="noopener">Open</a>':(done&&o?'<button type="button" class="sf-btn" data-open="'+esc(r.sandbox_id)+'">Open</button>':''))
       +(done&&o?'<button type="button" class="sf-btn sec" data-open="'+esc(r.sandbox_id)+'">Details &amp; passwords</button>':'')
       +(r.status==='FAILED'&&r.error?'<span class="sf-err">'+esc(String(r.error).slice(0,140))+'</span>':'')+'</div></div>';
   }
@@ -554,7 +563,7 @@ function sfInit(){
   function sendChat(){
     var t=$('#sf-chat-in').value.trim(); if(!t)return;
     hideSugg();
-    $('#sf-chat-in').value=''; $('#sf-chat-in').style.height='auto'; dropQuickChips(); addMsg('me',esc(t)); pushHist({role:'user',text:t});
+    $('#sf-chat-in').value=''; $('#sf-chat-in').style.height='auto'; $('#sf-chat-send').classList.remove('ready'); dropQuickChips(); addMsg('me',esc(t)); pushHist({role:'user',text:t});
     var typing=typingBubble(); $('#sf-chat-send').disabled=true;
     call('chat',{messages:hist.slice(-12)}).then(function(r){
       if(typing)typing.remove(); $('#sf-chat-send').disabled=false; $('#sf-chat-in').focus();
@@ -603,6 +612,7 @@ function sfInit(){
       // was height:min(64vh,720px);min-height:360px - sized for the card grid
       '#sf-msgs{height:auto;min-height:120px;max-height:min(56vh,520px);overflow-y:auto}',
       '.sf-msg p{margin:0 0 8px}',
+      '.sf-reslink{display:inline-block;background:#eef4fb;color:#0b4a8b;border-radius:6px;padding:3px 9px;font-size:12px;margin:6px 6px 0 0;text-decoration:none}.sf-reslink:hover{background:#dbe8f8}',
       '.sf-w-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px;margin:10px 0 2px}',
       '.sf-w-card{background:#fff;border:1px solid #dde4ec;border-radius:12px;padding:11px 13px;box-shadow:0 1px 3px rgba(15,23,42,.05)}',
       '.sf-w-hd{display:flex;align-items:center;justify-content:space-between;gap:8px}.sf-w-hd b{font-size:14px}',
@@ -623,6 +633,16 @@ function sfInit(){
       '#sf-recs .sf-rec .p{margin-top:6px}',
       '#sf-recs .sf-rec .p span{font-size:10.5px;padding:1px 6px}',
       '#sf-chat-in{width:100%;line-height:1.4}',
+      '.sf-composer{display:flex !important;align-items:flex-end;gap:8px;flex-wrap:nowrap !important;border:1px solid #d6dde6;border-radius:18px;padding:8px 8px 8px 16px;background:#fff;box-shadow:0 2px 12px rgba(15,23,42,.06);transition:border-color .15s,box-shadow .15s}',
+      '.sf-composer:focus-within{border-color:#1a73e8;box-shadow:0 0 0 3px rgba(26,115,232,.12)}',
+      '.sf-composer .sf-field{margin:0 !important;flex:0 0 auto !important}',
+      '.sf-composer .sf-field:first-child{flex:1 1 auto !important;align-self:center}',
+      '.sf-composer #sf-chat-in{border:0 !important;outline:0 !important;box-shadow:none !important;padding:7px 0 !important;min-height:24px !important;font-size:14px;font-family:inherit;background:transparent}',
+      '.sf-composer #sf-model{width:auto;border:1px solid #e3e8ef;border-radius:999px;padding:6px 26px 6px 12px;font-size:12px;color:#374151;background-color:#f8fafc;cursor:pointer}',
+      '.sf-composer #sf-chat-send{width:38px;height:38px;padding:0;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:#cbd5e1;flex:0 0 38px;transition:background .15s,transform .1s}',
+      '.sf-composer #sf-chat-send.ready{background:#1a73e8}.sf-composer #sf-chat-send.ready:hover{background:#1557b0}',
+      '.sf-composer #sf-chat-send:active{transform:scale(.94)}',
+      '@media (max-width:640px){.sf-composer{flex-wrap:wrap !important}.sf-composer .sf-field:first-child{flex:1 1 100% !important}}',
       '.sf-open{display:inline-block;background:#2563eb;color:#fff !important;padding:7px 15px;border-radius:6px;font-weight:600;text-decoration:none;margin:0 0 8px}',
       '.sf-open:hover{background:#1d4fd7}',
       '.sf-nourl{display:inline-block;color:#8a90a0;font-size:12px;margin:0 0 8px}',
@@ -704,6 +724,11 @@ function sfInit(){
     ta.placeholder='Message the factory…  Enter to send, Shift+Enter for a new line';
     ta.style.resize='none'; ta.style.overflowY='auto'; ta.style.maxHeight='160px';
     i.parentNode.replaceChild(ta,i);
+    var row=ta.closest('.sf-row'); if(row)row.classList.add('sf-composer');
+    var send=$('#sf-chat-send'); if(send){send.title='Send (Enter)'; send.setAttribute('aria-label','Send');
+      send.innerHTML='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg>';}
+    var sync=function(){if(send)send.classList.toggle('ready',!!ta.value.trim())};
+    ta.addEventListener('input',sync); sync();
     ta.addEventListener('input',function(){this.style.height='auto';this.style.height=Math.min(this.scrollHeight,160)+'px'});
   }
   function restoreChat(){
@@ -723,6 +748,7 @@ function sfInit(){
   call('config',{}).then(function(c){
     if(!c)return;
     if(c.registry_prefix)OCIR=c.registry_prefix;
+    if(c.region)window.__sfRegion=c.region;
     if(c.user){var w=$('#sf-who');
       w.textContent='Signed in as '+c.user+' · '+(c.live||0)+' of '+(c.cap||3)+' sandboxes';
       w.classList.remove('sf-hide');}

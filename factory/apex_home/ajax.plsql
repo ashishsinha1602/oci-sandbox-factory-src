@@ -20,7 +20,7 @@ declare
        'Building blocks available: an Autonomous Database (ATP, Always Free), Kafka (OCI Streaming with a Kafka-compatible endpoint), '
     || 'OCI NoSQL (serverless JSON tables), and a containerised app (a public container image, or a Git repository with a Dockerfile at its root, built for ARM). '
     || 'Every container receives ADB_CONNECT_STRING, ADB_ADMIN_PASSWORD, ADB_DB_NAME and KAFKA_BOOTSTRAP_SERVERS as environment variables. '
-    || 'Sandboxes live at most 3 days (ttl_days 1-3), are tagged with their owner and expiry, and each gets its own public URL. ';
+    || 'Sandboxes live 1 to 30 days (ttl_days 1-30, default 3; use what the user asks for), are tagged with their owner and expiry, and each gets its own public URL. ';
 
   -- What the current user has (for status questions and destroy-by-name).
   function cfg_value(p_key varchar2, p_default varchar2) return varchar2 is
@@ -140,7 +140,7 @@ declare
   procedure do_submit is
     l_sid    varchar2(20)   := lower(l_in.get_string('sandbox_id'));
     l_act    varchar2(10)   := nvl(l_in.get_string('action'), 'CREATE');
-    l_ttl    number         := least(3, greatest(1, nvl(l_in.get_number('ttl_days'), 3)));
+    l_ttl    number         := least(30, greatest(1, round(nvl(l_in.get_number('ttl_days'), 3))));
     l_adb    varchar2(1)    := case when l_in.get_boolean('enable_adb') then 'Y' else 'N' end;
     l_kafka  varchar2(1)    := case when l_in.get_boolean('enable_kafka') then 'Y' else 'N' end;
     l_app    varchar2(1)    := case when l_in.get_boolean('enable_app') then 'Y' else 'N' end;
@@ -278,7 +278,7 @@ begin
         || 'reply (string, friendly, concise, may contain short line breaks; explain what and how), '
         || 'sandboxes (array of the sandbox_ids your reply is about - every one the user asked about, e.g. all of them for "what do I have running"; the page renders each as a live card with its status, expiry, resources, links and passwords, so do NOT repeat that detail as a list in reply, just summarise in one sentence), '
         || 'cost (null, or when you give any price: {items: [{name, detail (how it is billed), monthly_usd (number)}], total_usd (number), note (one line on assumptions)}; the page renders it as a table, so keep the arithmetic out of reply), '
-        || 'action (null, or an object when the user clearly wants something done: {type: "create"|"deploy"|"destroy", sandbox_id, ttl_days (1-3, default 3), '
+        || 'action (null, or an object when the user clearly wants something done: {type: "create"|"deploy"|"destroy", sandbox_id, ttl_days (1-30, default 3), '
         || 'enable_catalog (boolean: OCI Data Catalog, the metastore a Spark job resolves table names against - the counterpart to the AWS Glue Data Catalog), buckets (optional array of Object Storage buckets, each {name, public}; cheap and outside the container quota), queues (optional array of OCI Queues, each {name}; serverless point-to-point messaging, the counterpart to Kafka streams), dataflow_jobs (optional array of Spark applications on OCI Data Flow, the equivalent of an AWS Glue ETL job, each {name, file_uri}; managed Spark billed per run), databases (optional array of EXTRA Autonomous Databases, each {name, tier}; every one is a real database with its own ADMIN credential and uses a tenancy slot), functions (optional array of OCI Functions, each {name, image}; serverless, billed per invocation, free when idle, and they do not consume the container core quota), app_instances (optional array of ADDITIONAL container instances, each {name, containers:[{name,image,port}]}; containers within ONE instance share a host and localhost, separate instances do not), enable_adb, enable_kafka, enable_nosql (OCI NoSQL: serverless JSON/key-value tables, good for events, sessions, device state, anything schemaless), enable_app (booleans), app_image (string or null), git_url (string or null: a Git repository URL, or a local folder path the user gave such as C:\Users\me\myapp, kept exactly as given), app_port (integer), '
         || 'containers (optional array of {name, image, port} for bundles, first served at /, others at /<name>), '
         || 'seed_sql (optional string: Oracle SQL creating 2-4 small tables with 5-10 realistic rows each for the domain the user named, semicolon-separated, no PL/SQL, no comments; runs once in the new database)}). '

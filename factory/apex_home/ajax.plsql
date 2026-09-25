@@ -52,12 +52,34 @@ declare
               select r.*, row_number() over (partition by sandbox_id order by id desc) rn
               from sandbox_requests r where requester = :APP_USER)
             where rn = 1
-              and not (action = 'DESTROY' and status = 'DONE' and finished_at < systimestamp - interval '1' hour)
+              and not (action = 'DESTROY' and status = 'DONE')
             order by id desc fetch first 8 rows only);
     return nvl(l_json, '[]');
   end;
 
   -- Ask OCI Generative AI as the database itself (resource principal, no keys).
+  function my_history return clob is
+    l_json clob;
+  begin
+    select json_arrayagg(
+             json_object(
+               'sandbox_id' value sandbox_id,
+               'destroyed'  value to_char(finished_at, 'YYYY-MM-DD HH24:MI'),
+               'built'      value (select to_char(min(c.finished_at), 'YYYY-MM-DD HH24:MI')
+                                     from sandbox_requests c
+                                    where c.sandbox_id = d.sandbox_id and c.action = 'CREATE'
+                                      and c.status = 'DONE'),
+               'reason'     value request_text
+               returning clob)
+             order by finished_at desc returning clob)
+      into l_json
+      from (select r.*, row_number() over (partition by sandbox_id order by id desc) rn
+              from sandbox_requests r where requester = :APP_USER) d
+     where rn = 1 and action = 'DESTROY' and status = 'DONE'
+       and rownum <= 50;
+    return nvl(l_json, '[]');
+  end;
+
   function ai_chat(p_messages json_array_t) return clob is
     l_resp dbms_cloud_types.resp;
     l_req  json_object_t := json_object_t();
@@ -288,6 +310,10 @@ begin
 
   elsif l_action = 'submit' then
     do_submit;
+
+  elsif l_action = 'history' then
+    htp.p(my_history());
+    return;
 
   elsif l_action = 'status' then
     htp.p(my_sandboxes());

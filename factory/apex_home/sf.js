@@ -69,7 +69,12 @@ function sfInit(){
 
   function refresh(){
     call('status',{}).then(function(rows){
-      rows=rows||[]; var active=false, h=rows.length?'<h3>Your sandboxes</h3>':'';
+      rows=rows||[]; var active=false;
+      var h='<div class="sf-tabs" style="margin:18px 0 10px">'
+        +'<button type="button" class="'+(window.__sfTab==='history'?'':'on')+'" data-tab="live">Running ('+rows.length+')</button>'
+        +'<button type="button" class="'+(window.__sfTab==='history'?'on':'')+'" data-tab="history">History</button></div>';
+      if(window.__sfTab==='history'){ $('#sf-status').innerHTML=h+'<div id="sf-history"><span class="sf-spin"></span>Loading history...</div>'; loadHistory(); return; }
+      if(!rows.length)h+='<p style="color:#6b7280;font-size:13px">Nothing running. Destroyed sandboxes are under History.</p>';
       window.__sfRows = rows;
       rows.forEach(function(r){
         if(r.status==='QUEUED'||r.status==='RUNNING')active=true;
@@ -312,6 +317,21 @@ function sfInit(){
       + o.warnings.map(esc).join('<br>') + '</p>';
     return h;
   }
+  function loadHistory(){
+    call('history',{}).then(function(items){
+      items=items||[];
+      var el=$('#sf-history'); if(!el)return;
+      if(!items.length){ el.innerHTML='<p style="color:#6b7280;font-size:13px">Nothing destroyed yet.</p>'; return; }
+      el.innerHTML='<table style="width:100%;border-collapse:collapse;font-size:13.5px">'
+        +'<tr style="text-align:left;color:#6b7280;font-size:12px"><th style="padding:6px 0">Sandbox</th><th>Built</th><th>Destroyed</th><th>Why</th></tr>'
+        +items.map(function(x){
+          return '<tr style="border-top:1px solid #eef2f7"><td style="padding:7px 12px 7px 0"><b>'+esc(x.sandbox_id)+'</b></td>'
+            +'<td style="padding-right:12px">'+esc(x.built||'-')+'</td>'
+            +'<td style="padding-right:12px">'+esc(x.destroyed||'-')+'</td>'
+            +'<td style="color:#6b7280">'+esc(x.reason||'')+'</td></tr>';
+        }).join('')+'</table>';
+    });
+  }
   function showLanding(sid){
     var r=(window.__sfRows||[]).filter(function(x){return x.sandbox_id===sid})[0];
     if(!r||!r.outputs)return;
@@ -328,6 +348,8 @@ function sfInit(){
     $('#sf-landing-close').onclick=function(){box.remove()};
   }
   document.addEventListener('click', function(e){
+    var tb = e.target.closest && e.target.closest('[data-tab]');
+    if(tb){ window.__sfTab = tb.getAttribute('data-tab'); refresh(); return; }
     var op = e.target.closest && e.target.closest('[data-open]');
     if(op){ showLanding(op.getAttribute('data-open')); return; }
     var b = e.target.closest && e.target.closest('[data-copy]');

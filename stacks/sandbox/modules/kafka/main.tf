@@ -187,7 +187,7 @@ resource "oci_managed_kafka_kafka_cluster_addon" "public" {
   count                    = local.superuser ? 1 : 0
   kafka_cluster_id         = oci_managed_kafka_kafka_cluster.this[0].id
   addon_type               = "PUBLICCONNECTIVITY"
-  authentication_mechanism = "SASL_SCRAM"
+  authentication_mechanism = "SASL"   # the API's spelling of SASL/SCRAM; "SASL_SCRAM" is rejected
   name                     = "${var.name}-public"
   description              = "Public bootstrap for ${var.name}, SASL/SCRAM."
   network_cidrs            = var.public_cidrs

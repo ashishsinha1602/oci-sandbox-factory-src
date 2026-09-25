@@ -341,20 +341,21 @@ begin
     -- Select AI, REST. Only the owner may do it, and only for a live sandbox.
     declare
       l_sid varchar2(64) := l_in.get_string('sandbox_id');
+      l_src number;
     begin
+      select max(id) into l_src from sandbox_requests
+       where sandbox_id = l_sid and requester = :APP_USER
+         and action in ('CREATE', 'DEPLOY') and status = 'DONE';
+      if l_src is null then
+        l_out.put('err', 'No finished build of ' || l_sid || ' to retry.');
+        htp.p(l_out.to_clob);
+        return;
+      end if;
       insert into sandbox_requests (requester, sandbox_id, action, ttl_days, enable_adb, adb_tier, enable_kafka, kafka_mode, enable_app, app_image, git_url, app_port, request_text, seed_sql, app_containers, app_files, seed_key, app_template, enable_nosql, adb_databases, functions, app_instances, buckets, queues, dataflow_jobs, enable_catalog, catalog_assets)
       select requester, sandbox_id, action, ttl_days, enable_adb, adb_tier, enable_kafka, kafka_mode, enable_app, app_image, git_url, app_port, request_text, seed_sql, app_containers, app_files, seed_key, app_template, enable_nosql, adb_databases, functions, app_instances, buckets, queues, dataflow_jobs, enable_catalog, catalog_assets
-        from (select r.* from sandbox_requests r
-               where r.sandbox_id = l_sid and r.requester = :APP_USER
-                 and r.action in ('CREATE', 'DEPLOY') and r.status = 'DONE'
-               order by r.id desc)
-       where rownum = 1
-      returning id into l_id;
-      if l_id is null then
-        l_out.put('err', 'No finished build of ' || l_sid || ' to retry.');
-      else
-        l_out.put('id', l_id);
-      end if;
+        from sandbox_requests where id = l_src;
+      select max(id) into l_id from sandbox_requests where sandbox_id = l_sid and requester = :APP_USER;
+      l_out.put('id', l_id);
     exception when others then
       l_out.put('err', substr(sqlerrm, 1, 300));
     end;

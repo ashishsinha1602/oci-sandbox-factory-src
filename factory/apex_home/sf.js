@@ -90,10 +90,9 @@ function sfInit(){
           if(o.app&&o.app.urls){var us=o.app.urls.filter(function(u){return u.indexOf('https://')===0}); if(!us.length)us=o.app.urls; us.forEach(function(u){h+='<a href="'+esc(u)+'" target="_blank">'+esc(u)+'</a>'});
             if(o.app.containers&&o.app.containers.length>1&&us.length){o.app.containers.slice(1).forEach(function(n){h+='<a href="'+esc(us[0])+'/'+esc(n)+'" target="_blank">'+esc(us[0])+'/'+esc(n)+'</a>'})}}
           (o.logins||[]).forEach(function(l){
-      t += row(l.service+' user', l.user, {});
-      t += row(l.service+' password', l.password, {hint:'generated for this sandbox only'});
-    });
-    if(o.adb){h+='<div style="margin-top:6px"><a href="'+esc(o.adb.sql_web_url)+'" target="_blank">SQL Developer Web</a> &middot; user <code>'+esc(o.adb.admin_user||'ADMIN')+'</code>'
+            h+='<div style="margin-top:6px">'+esc(l.service)+' &middot; user <code>'+esc(l.user)+'</code> &middot; password <code>'+esc(l.password)+'</code></div>';
+          });
+          if(o.adb){h+='<div style="margin-top:6px"><a href="'+esc(o.adb.sql_web_url)+'" target="_blank">SQL Developer Web</a> &middot; user <code>'+esc(o.adb.admin_user||'ADMIN')+'</code>'
               +(o.adb.admin_password?' &middot; password <code>'+esc(o.adb.admin_password)+'</code> <button type="button" class="sf-btn sec" style="padding:2px 8px;font-size:12px" onclick="navigator.clipboard.writeText(this.previousElementSibling.textContent)">copy</button>':'')
               +'<br>connect string <code>'+esc(o.adb.connect_string)+'</code></div>'}
           if(o.nosql&&o.nosql.tables&&o.nosql.tables.length)h+='<code>nosql: '+esc(o.nosql.tables.join(', '))+'</code>';

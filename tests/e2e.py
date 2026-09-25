@@ -75,11 +75,16 @@ class Factory:
                      apex_application.g_x01:=:a; apex_application.g_x02:=:p; apex_application.g_clob_01:=:c; end;""",
                   a=action, p=json.dumps(payload), c=clob)
         c.execute(src)
-        v = c.var(str, 32767)
-        c.execute("""declare l htp.htbuf_arr; n integer:=99999; s varchar2(32767); begin owa.get_page(l,n);
-                     for i in 1..n loop s:=s||l(i); end loop; :o:=s; end;""", o=v)
+        # The page reads a CLOB; so must the harness (a planner answer with a
+        # cost table, or an attached-code reply, is longer than 32767 bytes).
+        import oracledb
+        v = c.var(oracledb.DB_TYPE_CLOB)
+        c.execute("""declare l htp.htbuf_arr; n integer:=99999; s clob; begin dbms_lob.createtemporary(s, true); owa.get_page(l,n);
+                     for i in 1..n loop dbms_lob.writeappend(s, length(l(i)), l(i)); end loop; :o:=s; end;""", o=v)
         self.conn.commit()
-        return json.loads(v.getvalue().split("\n\n", 1)[1])
+        body = v.getvalue()
+        body = body.read() if hasattr(body, "read") else body
+        return json.loads(body.split("\n\n", 1)[1])
 
     def submit(self, user, payload):
         r = self.ajax(user, "submit", payload)
@@ -405,8 +410,11 @@ def main():
     for name in ids:
         record(f"{name}: request accepted by the page's back end", True)
 
-    verify_ai(f)
-    verify_isolation(f)
+    for name, fn in (("ai", verify_ai), ("users", verify_isolation)):
+        try:
+            fn(f)
+        except Exception as e:  # noqa: BLE001
+            record(f"{name}: checks ran", False, f"{type(e).__name__}: {e}")
 
     results = f.wait(ids, timeout=5400 if a.kafka else 2400)
     outs = {}

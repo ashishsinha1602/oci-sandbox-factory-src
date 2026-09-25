@@ -223,6 +223,8 @@ declare
                                     then l_in.get_array('dataflow_jobs').to_clob else null end;
     l_cat    varchar2(1)    := case when l_in.get_boolean('enable_catalog') then 'Y' else 'N' end;
     l_aidp   varchar2(1)    := case when l_in.get_boolean('enable_aidp') then 'Y' else 'N' end;
+    l_kmode  varchar2(9)    := case when l_in.get_string('kafka_mode') in ('streaming','cluster') then l_in.get_string('kafka_mode') else 'cluster' end;
+    l_tier   varchar2(4)    := case when l_in.get_string('adb_tier') in ('free','paid') then l_in.get_string('adb_tier') else 'paid' end;
     l_casset clob           := case when l_in.has('catalog_assets') and l_in.get('catalog_assets').is_array
                                     then l_in.get_array('catalog_assets').to_clob else null end;
     l_owner  varchar2(255);
@@ -265,9 +267,9 @@ declare
     end if;
 
     insert into sandbox_requests
-      (requester, sandbox_id, action, ttl_days, enable_adb, enable_kafka, enable_nosql, enable_app, app_image, git_url, app_port, request_text, seed_sql, app_containers, app_files, seed_key, app_template, adb_databases, functions, app_instances, buckets, queues, dataflow_jobs, enable_catalog, catalog_assets, enable_aidp)
+      (requester, sandbox_id, action, ttl_days, enable_adb, adb_tier, enable_kafka, kafka_mode, enable_nosql, enable_app, app_image, git_url, app_port, request_text, seed_sql, app_containers, app_files, seed_key, app_template, adb_databases, functions, app_instances, buckets, queues, dataflow_jobs, enable_catalog, catalog_assets, enable_aidp)
     values
-      (:APP_USER, l_sid, l_act, l_ttl, l_adb, l_kafka, l_nosql, l_app, l_image, l_git, l_port, l_req, l_seed, l_cont, l_files, l_skey, l_atpl, l_dbs, l_fns, l_insts, l_bkts, l_qs, l_dfj, l_cat, l_casset, l_aidp)
+      (:APP_USER, l_sid, l_act, l_ttl, l_adb, l_tier, l_kafka, l_kmode, l_nosql, l_app, l_image, l_git, l_port, l_req, l_seed, l_cont, l_files, l_skey, l_atpl, l_dbs, l_fns, l_insts, l_bkts, l_qs, l_dfj, l_cat, l_casset, l_aidp)
     returning id into l_id;
     l_out.put('id', l_id);
   end;

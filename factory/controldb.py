@@ -84,7 +84,7 @@ create table {SCHEMA}.sandbox_requests (
   adb_tier      varchar2(4)   default 'paid' check (adb_tier in ('free','paid')),
   enable_kafka  varchar2(1)   default 'N' not null check (enable_kafka in ('Y','N')),
   enable_nosql  varchar2(1)   default 'N' not null check (enable_nosql in ('Y','N')),
-  kafka_mode    varchar2(9)   default 'streaming' check (kafka_mode in ('streaming','cluster')),
+  kafka_mode    varchar2(9)   default 'cluster' check (kafka_mode in ('streaming','cluster')),
   enable_app    varchar2(1)   default 'N' not null check (enable_app in ('Y','N')),
   app_image     varchar2(500),
   git_url       varchar2(500),

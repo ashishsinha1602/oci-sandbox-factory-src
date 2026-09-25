@@ -10,10 +10,9 @@ env:
     WORKER_COUNT: "6"
 steps:
   - type: Command
-    name: Install the OCI SDK
-    command: python3 -m pip install --quiet oci
-  - type: Command
     name: Roll the workers
     command: |
-      cd "${OCI_PRIMARY_SOURCE_DIR}/factory"
-      python3 roll_workers.py "phx.ocir.io/ax3sbu0rnjhx/sbx/factory/worker:${IMAGE_TAG}"
+      cd "${OCI_PRIMARY_SOURCE_DIR}"
+      source ci/ensure_oci_sdk.sh
+      cd factory
+      "$PY" roll_workers.py "phx.ocir.io/ax3sbu0rnjhx/sbx/factory/worker:${IMAGE_TAG}"

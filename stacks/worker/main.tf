@@ -89,6 +89,7 @@ resource "oci_identity_policy" "worker" {
     "allow dynamic-group ${oci_identity_dynamic_group.worker[0].name} to use keys in compartment id ${var.compartment_ocid}",
     # The worker reads service limits to decide between an API Gateway and a public IP.
     "allow dynamic-group ${oci_identity_dynamic_group.worker[0].name} to read limits in tenancy",
+    "allow dynamic-group ${oci_identity_dynamic_group.worker[0].name} to read repos in tenancy",
     "allow dynamic-group ${oci_identity_dynamic_group.worker[0].name} to inspect compartments in tenancy",
     "allow dynamic-group ${oci_identity_dynamic_group.worker[0].name} to inspect tenancies in tenancy",
     "allow dynamic-group ${oci_identity_dynamic_group.worker[0].name} to use tag-namespaces in tenancy",

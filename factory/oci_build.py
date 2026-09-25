@@ -97,6 +97,11 @@ def build_in_oci(git_url: str | None, image: str, registry: str, namespace: str,
     ad = idc.list_availability_domains(control).data[0].name
     user, token = _token()
 
+    # Create the repository in sbx-control before pushing. A push to a
+    # repository that does not exist yet auto-creates it in the tenancy root,
+    # where neither the workers nor the sandbox services may read it.
+    repo = image.split("/", 2)[2].rsplit(":", 1)[0]
+    sf.ensure_public_repo(sf.config(), control, repo)
     docker_config = json.dumps({"auths": {registry: {"auth": base64.b64encode(f"{namespace}/{user}:{token}".encode()).decode()}}})
     shape = "CI.Standard.A1.Flex" if platform.endswith("arm64") else "CI.Standard.E4.Flex"
     name = f"sbx-build-{sandbox_id}-{dt.datetime.now(dt.timezone.utc):%H%M%S}"

@@ -376,7 +376,9 @@ def empty_buckets(sandbox_id: str) -> None:
     try:
         fnd = foundation()
         osc = client(oci.object_storage.ObjectStorageClient)
-        ns = osc.get_namespace().data
+        # Under an instance principal the namespace lookup needs a compartment;
+        # without one it comes back 404 NamespaceNotFound.
+        ns = osc.get_namespace(compartment_id=fnd["compartments"]["control"]).data
         prefix = f"sbx-{sandbox_id}-"
         for comp in {fnd["compartments"]["control"], fnd["compartments"]["sandboxes"]}:
             for b in osc.list_buckets(ns, comp).data:

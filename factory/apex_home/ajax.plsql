@@ -222,6 +222,7 @@ declare
     l_dfj    clob           := case when l_in.has('dataflow_jobs') and l_in.get('dataflow_jobs').is_array
                                     then l_in.get_array('dataflow_jobs').to_clob else null end;
     l_cat    varchar2(1)    := case when l_in.get_boolean('enable_catalog') then 'Y' else 'N' end;
+    l_aidp   varchar2(1)    := case when l_in.get_boolean('enable_aidp') then 'Y' else 'N' end;
     l_casset clob           := case when l_in.has('catalog_assets') and l_in.get('catalog_assets').is_array
                                     then l_in.get_array('catalog_assets').to_clob else null end;
     l_owner  varchar2(255);
@@ -264,9 +265,9 @@ declare
     end if;
 
     insert into sandbox_requests
-      (requester, sandbox_id, action, ttl_days, enable_adb, enable_kafka, enable_nosql, enable_app, app_image, git_url, app_port, request_text, seed_sql, app_containers, app_files, seed_key, app_template, adb_databases, functions, app_instances, buckets, queues, dataflow_jobs, enable_catalog, catalog_assets)
+      (requester, sandbox_id, action, ttl_days, enable_adb, enable_kafka, enable_nosql, enable_app, app_image, git_url, app_port, request_text, seed_sql, app_containers, app_files, seed_key, app_template, adb_databases, functions, app_instances, buckets, queues, dataflow_jobs, enable_catalog, catalog_assets, enable_aidp)
     values
-      (:APP_USER, l_sid, l_act, l_ttl, l_adb, l_kafka, l_nosql, l_app, l_image, l_git, l_port, l_req, l_seed, l_cont, l_files, l_skey, l_atpl, l_dbs, l_fns, l_insts, l_bkts, l_qs, l_dfj, l_cat, l_casset)
+      (:APP_USER, l_sid, l_act, l_ttl, l_adb, l_kafka, l_nosql, l_app, l_image, l_git, l_port, l_req, l_seed, l_cont, l_files, l_skey, l_atpl, l_dbs, l_fns, l_insts, l_bkts, l_qs, l_dfj, l_cat, l_casset, l_aidp)
     returning id into l_id;
     l_out.put('id', l_id);
   end;
@@ -356,8 +357,8 @@ begin
         l_r.ttl_days := least(30, greatest(1, round(l_in.get_number('ttl_days'))));
         l_r.request_text := 'lifetime set to ' || l_r.ttl_days || ' day(s) from now';
       end if;
-      insert into sandbox_requests (requester, sandbox_id, action, ttl_days, enable_adb, adb_tier, enable_kafka, kafka_mode, enable_app, app_image, git_url, app_port, request_text, seed_sql, app_containers, app_files, seed_key, app_template, enable_nosql, adb_databases, functions, app_instances, buckets, queues, dataflow_jobs, enable_catalog, catalog_assets)
-      values (l_r.requester, l_r.sandbox_id, l_r.action, l_r.ttl_days, l_r.enable_adb, l_r.adb_tier, l_r.enable_kafka, l_r.kafka_mode, l_r.enable_app, l_r.app_image, l_r.git_url, l_r.app_port, l_r.request_text, l_r.seed_sql, l_r.app_containers, l_r.app_files, l_r.seed_key, l_r.app_template, l_r.enable_nosql, l_r.adb_databases, l_r.functions, l_r.app_instances, l_r.buckets, l_r.queues, l_r.dataflow_jobs, l_r.enable_catalog, l_r.catalog_assets);
+      insert into sandbox_requests (requester, sandbox_id, action, ttl_days, enable_adb, adb_tier, enable_kafka, kafka_mode, enable_app, app_image, git_url, app_port, request_text, seed_sql, app_containers, app_files, seed_key, app_template, enable_nosql, adb_databases, functions, app_instances, buckets, queues, dataflow_jobs, enable_catalog, catalog_assets, enable_aidp)
+      values (l_r.requester, l_r.sandbox_id, l_r.action, l_r.ttl_days, l_r.enable_adb, l_r.adb_tier, l_r.enable_kafka, l_r.kafka_mode, l_r.enable_app, l_r.app_image, l_r.git_url, l_r.app_port, l_r.request_text, l_r.seed_sql, l_r.app_containers, l_r.app_files, l_r.seed_key, l_r.app_template, l_r.enable_nosql, l_r.adb_databases, l_r.functions, l_r.app_instances, l_r.buckets, l_r.queues, l_r.dataflow_jobs, l_r.enable_catalog, l_r.catalog_assets, l_r.enable_aidp);
       select max(id) into l_id from sandbox_requests where sandbox_id = l_sid and requester = :APP_USER;
       l_out.put('id', l_id);
     exception when others then

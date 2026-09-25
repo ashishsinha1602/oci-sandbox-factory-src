@@ -366,6 +366,8 @@ def build_variables(args, fnd: dict, cfg: dict, app_containers: list | None) -> 
     }
     if getattr(args, "enable_catalog", False) and catalog_available(cfg, fnd):
         v["enable_catalog"] = json.dumps(True)
+    if getattr(args, "enable_aidp", False):
+        v["enable_aidp"] = json.dumps(True)
     if getattr(args, "catalog_assets", None):
         v["catalog_assets"] = json.dumps(args.catalog_assets)
     if getattr(args, "buckets", None):
@@ -684,6 +686,7 @@ def add_sandbox_options(p):
     p.add_argument("--adb-tier", choices=["free", "paid"], default="paid")
     p.add_argument("--adb-workload", choices=["OLTP", "DW", "AJD", "APEX"], default="OLTP")
     p.add_argument("--kafka", action="store_true")
+    p.add_argument("--aidp", dest="enable_aidp", action="store_true", help="Oracle AI Data Platform instance (lakehouse) in the sandbox")
     p.add_argument("--nosql", action="store_true", help="add OCI NoSQL tables to the sandbox")
     p.add_argument("--kafka-mode", choices=["streaming", "cluster"], default="cluster")
     p.add_argument("--topics", default="events", help="comma-separated")

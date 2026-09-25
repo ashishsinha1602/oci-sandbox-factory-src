@@ -248,6 +248,18 @@ module "dataflow" {
   depends_on = [module.storage]
 }
 
+module "aidp" {
+  count  = var.enable_aidp ? 1 : 0
+  source = "./modules/aidp"
+
+  compartment_id = local.compartment_id
+  name           = local.name
+  defined_tags   = local.defined_tags
+  freeform_tags  = local.freeform_tags
+
+  depends_on = [time_sleep.iam_propagation]
+}
+
 module "functions" {
   count  = length(var.functions) > 0 ? 1 : 0
   source = "./modules/functions"

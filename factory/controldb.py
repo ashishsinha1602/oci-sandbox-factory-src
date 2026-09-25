@@ -107,6 +107,7 @@ create table {SCHEMA}.sandbox_requests (
   queues        clob,
   dataflow_jobs clob,
   enable_catalog varchar2(1) default 'N' not null check (enable_catalog in ('Y','N')),
+  enable_aidp    varchar2(1) default 'N' not null check (enable_aidp in ('Y','N')),
   catalog_assets clob,
   seed_key      varchar2(40),
   app_template  varchar2(40)
@@ -202,6 +203,7 @@ def setup(argv: list[str]) -> None:
                           ("app_instances", "clob"), ("buckets", "clob"),
                           ("queues", "clob"), ("dataflow_jobs", "clob"),
                           ("enable_catalog", "varchar2(1) default 'N' not null"),
+                          ("enable_aidp", "varchar2(1) default 'N' not null"),
                           ("catalog_assets", "clob")):
             if not exists("select count(*) from dba_tab_columns where owner = :1 and table_name = 'SANDBOX_REQUESTS' and column_name = :2",
                           SCHEMA, col.upper()):

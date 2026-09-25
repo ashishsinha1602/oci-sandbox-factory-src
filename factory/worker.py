@@ -147,7 +147,7 @@ def claim(conn):
         select id, requester, sandbox_id, action, ttl_days, enable_adb, adb_tier, enable_kafka,
                kafka_mode, enable_app, app_image, git_url, app_port, request_text, seed_sql, app_containers, app_files,
                seed_key, app_template, enable_nosql, adb_databases, functions, app_instances,
-               buckets, queues, dataflow_jobs, enable_catalog, catalog_assets
+               buckets, queues, dataflow_jobs, enable_catalog, catalog_assets, enable_aidp
         from sbx.sandbox_requests where id = :1""", [row[0]])
     cols = [d[0].lower() for d in cur.description]
     row = dict(zip(cols, cur.fetchone()))
@@ -187,6 +187,7 @@ def factory_args(req: dict) -> argparse.Namespace:
         queues=json.loads(req["queues"]) if req.get("queues") else None,
         dataflow_jobs=json.loads(req["dataflow_jobs"]) if req.get("dataflow_jobs") else None,
         enable_catalog=req.get("enable_catalog") == "Y",
+        enable_aidp=req.get("enable_aidp") == "Y",
         catalog_assets=json.loads(req["catalog_assets"]) if req.get("catalog_assets") else None,
     )
 
@@ -591,7 +592,7 @@ def handle(req: dict, conn=None) -> dict:
             shutil.rmtree(built, ignore_errors=True)
     if (req.get("functions") or req.get("app_instances") or req.get("buckets")
             or req.get("queues") or req.get("dataflow_jobs")
-            or req.get("enable_catalog") == "Y") and not req.get("app_files")             and not req.get("git_url") and req["enable_app"] != "Y":
+            or req.get("enable_catalog") == "Y" or req.get("enable_aidp") == "Y") and not req.get("app_files")             and not req.get("git_url") and req["enable_app"] != "Y":
         # Functions and extra instances are stack variables, not the primary app,
         # so a sandbox made only of them still goes through the plain create path.
         return sf.cmd_create(args)

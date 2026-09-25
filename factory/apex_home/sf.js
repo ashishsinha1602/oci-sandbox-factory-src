@@ -64,7 +64,7 @@ function sfInit(){
       action:(cfg.enable_app&&git)?'DEPLOY':'CREATE', git_url:git||null, app_image:$('#sf-image').value.trim()||null, app_port:+$('#sf-port').value||80, text:mode==='describe'?$('#sf-text').value.trim():null};
     if(mode==='describe'&&plan){ if(plan.containers&&plan.containers.length)payload.containers=plan.containers; if(plan.seed_sql)payload.seed_sql=plan.seed_sql;
       payload.buckets=nz(plan.buckets); payload.queues=nz(plan.queues); payload.functions=nz(plan.functions); payload.dataflow_jobs=nz(plan.dataflow_jobs);
-      payload.databases=nz(plan.databases); payload.app_instances=nz(plan.app_instances); payload.enable_catalog=!!plan.enable_catalog; }
+      payload.databases=nz(plan.databases); payload.app_instances=nz(plan.app_instances); payload.enable_catalog=!!plan.enable_catalog; payload.enable_aidp=!!plan.enable_aidp; }
     $('#sf-submit').disabled=true; $('#sf-submit-wait').classList.remove('sf-hide');
     call('submit',payload).then(function(r){
       $('#sf-submit').disabled=false; $('#sf-submit-wait').classList.add('sf-hide');
@@ -184,6 +184,7 @@ function sfInit(){
     if(o.functions&&o.functions.length&&!o.functions.some(function(f){return f.url}))L.push(['Functions: '+o.functions.map(function(f){return f.name}).join(', '),k.functions]);
     (o.dataflow_jobs||[]).forEach(function(d){L.push(['Spark job '+d.name,u['spark:'+d.name]])});
     if(o.catalog)L.push(['Data Catalog '+(o.catalog.display_name||''),u['catalog']]);
+    if(o.aidp)L.push(['AI Data Platform '+(o.aidp.display_name||''),o.aidp.console_url]);
     return L;
   }
   function primaryUrl(o){
@@ -294,7 +295,7 @@ function sfInit(){
     function list(v){return (v&&v.length)?v:undefined}
     return {sandbox_id:newId(r.k), action:'CREATE', ttl_days:p.ttl_days||3,
       enable_adb:!!p.enable_adb, enable_kafka:!!p.enable_kafka, enable_nosql:!!p.enable_nosql,
-      enable_catalog:!!p.enable_catalog,
+      enable_catalog:!!p.enable_catalog, enable_aidp:!!p.enable_aidp,
       enable_app:!!p.enable_app||cs.length>0||!!p.app_template||!!p.app_files,
       app_image:p.app_image||null, git_url:null,
       app_port:p.app_port||(cs[0]&&cs[0].port)||80, text:'one-click recipe: '+r.t,
@@ -379,6 +380,7 @@ function sfInit(){
       t += row('Spark job', d.name, {open:ru['spark:'+d.name], hint:'Open it and press Run; each run shows its logs there. Script: '+esc(d.file_uri||'')});
     });
     if(o.catalog) t += row('Data Catalog', o.catalog.display_name || '', {open:ru['catalog'], hint:'Open it to harvest the bucket and browse the tables it finds.'});
+    if(o.aidp) t += row('AI Data Platform', o.aidp.display_name || '', {open:o.aidp.console_url, hint:'Open it: workspace <b>'+esc(o.aidp.workspace||'')+'</b>. Create a compute cluster inside (smallest size), attach the sandbox bucket, run the same Spark code.'+(o.aidp.web_socket_endpoint?'<br>endpoint '+esc(o.aidp.web_socket_endpoint):'')});
     if(o.low_code&&o.low_code.rest_base) t += row('REST (ORDS)', o.low_code.rest_base,
       {hint:'authenticated as ADMIN with the password above'});
     t += '</table>';
@@ -570,6 +572,7 @@ function sfInit(){
     (a.buckets||[]).forEach(function(b){L.push('<li><b>Bucket '+esc(b.name)+'</b> &mdash; Object Storage, '+(b.public?'public read':'private')+'.</li>')});
     (a.queues||[]).forEach(function(q){L.push('<li><b>Queue '+esc(q.name)+'</b> &mdash; OCI Queue, serverless point-to-point messaging (the SQS counterpart).</li>')});
     (a.dataflow_jobs||[]).forEach(function(d){L.push('<li><b>Spark job '+esc(d.name)+'</b> &mdash; OCI Data Flow, managed Spark billed per run (the Glue counterpart).</li>')});
+    if(a.enable_aidp)L.push('<li><b>Oracle AI Data Platform</b> &mdash; one lakehouse service (managed Spark, Iceberg catalog, notebooks, AI) with a default workspace; size and start compute inside it. Destroyed with the sandbox.</li>');
     if(a.enable_catalog)L.push('<li><b>Data Catalog</b> &mdash; the metastore Spark resolves table names against (the Glue Data Catalog counterpart).</li>');
     (a.databases||[]).forEach(function(d){L.push('<li><b>Extra database '+esc(d.name)+'</b> &mdash; its own Autonomous Database with its own ADMIN password.</li>')});
     if(a.seed_sql)L.push('<li><b>Sample data</b> &mdash; '+esc(String(a.seed_sql).split(';').filter(function(x){return x.trim()}).length)+' SQL statements loaded into the new database before anything starts.</li>');
@@ -688,6 +691,7 @@ function sfInit(){
       ((o.functions||[]).length)&&parts.push('Functions');
       ((o.dataflow_jobs||[]).length)&&parts.push('Spark');
       if(o.catalog)parts.push('Data Catalog');
+      if(o.aidp)parts.push('AI Data Platform');
     }
     var exp=o&&o.sandbox&&o.sandbox.expires, pu=primaryUrl(o), done=r.status==='DONE'&&r.action!=='DESTROY';
     return '<div class="sf-w-card"><div class="sf-w-hd"><b>'+esc(r.sandbox_id)+'</b><span class="sf-badge '+esc(r.status)+'">'+esc(r.status)+'</span></div>'
@@ -752,7 +756,7 @@ function sfInit(){
           var payload=a.type==='destroy'?{sandbox_id:a.sandbox_id,action:'DESTROY',ttl_days:1,enable_adb:false,enable_kafka:false,enable_app:false}
             :{sandbox_id:a.sandbox_id,action:a.git_url?'DEPLOY':'CREATE',ttl_days:a.ttl_days||3,enable_adb:!!a.enable_adb,enable_kafka:!!a.enable_kafka,enable_nosql:!!a.enable_nosql,enable_app:!!a.enable_app||!!a.git_url||!!a.app_image||!!(a.containers&&a.containers.length),
               app_image:a.app_image||null,git_url:a.git_url||null,app_port:a.app_port||80,text:t,containers:(a.containers&&a.containers.length)?a.containers:undefined,seed_sql:a.seed_sql||undefined,
-              enable_catalog:!!a.enable_catalog,databases:nz(a.databases),buckets:nz(a.buckets),queues:nz(a.queues),
+              enable_catalog:!!a.enable_catalog,enable_aidp:!!a.enable_aidp,databases:nz(a.databases),buckets:nz(a.buckets),queues:nz(a.queues),
               functions:nz(a.functions),dataflow_jobs:nz(a.dataflow_jobs),app_instances:nz(a.app_instances),
               app_files:a.app_files?JSON.stringify(a.app_files):undefined};
           call('submit',payload).then(function(s){ if(s.err){box.innerHTML='<span class="sf-err">'+esc(s.err)+'</span>';return}

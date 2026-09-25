@@ -46,6 +46,12 @@ output "consoles" {
   }
 }
 
+output "aidp" {
+  value = var.enable_aidp ? merge(module.aidp[0].aidp, {
+    console_url = "https://cloud.oracle.com/ai-data-platform?region=${var.region}&compartmentId=${local.compartment_id}"
+  }) : null
+}
+
 output "catalog" {
   value = length(module.catalog) > 0 ? module.catalog[0].catalog : null
 }

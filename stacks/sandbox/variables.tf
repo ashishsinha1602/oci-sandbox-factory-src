@@ -293,6 +293,11 @@ variable "secrets_key_id" {
   type        = string
   default     = ""
 }
+variable "enable_aidp" {
+  type        = bool
+  default     = false
+  description = "Oracle AI Data Platform instance (lakehouse: managed Spark, Iceberg catalog, notebooks, AI) with a default workspace."
+}
 variable "kafka_topics" {
   type    = list(string)
   default = ["events"]

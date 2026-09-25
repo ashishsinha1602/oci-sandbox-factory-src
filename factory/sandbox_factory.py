@@ -259,7 +259,10 @@ def adb_passwords_from_state(rm, stack_id: str) -> dict:
     out = {}
     for r in state.get("resources", []):
         if r.get("type") == "random_password" and r.get("name") == "admin":
-            out[r.get("module", "")] = r["instances"][0]["attributes"].get("result")
+            # count-based modules are addressed as module.adb[0]; normalise so the
+            # primary database is always "module.adb".
+            mod = (r.get("module") or "").replace("module.adb[0]", "module.adb")
+            out[mod] = r["instances"][0]["attributes"].get("result")
     return out
 
 

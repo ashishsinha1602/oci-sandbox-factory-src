@@ -118,6 +118,13 @@ resource "oci_managed_kafka_kafka_cluster" "this" {
     storage_size_in_gbs = var.storage_gb
   }
 
+  # A cluster takes 20-30 minutes to come up; the provider's default 20-minute
+  # wait gave up on a cluster that was still creating ("Operation Timeout").
+  timeouts {
+    create = "90m"
+    delete = "60m"
+  }
+
   defined_tags  = var.defined_tags
   freeform_tags = var.freeform_tags
 }
@@ -169,6 +176,11 @@ resource "oci_managed_kafka_kafka_cluster_superusers_management" "this" {
   compartment_id   = var.compartment_id
   secret_id        = oci_vault_secret.superuser[0].id
   enable_superuser = true
+
+  timeouts {
+    create = "45m"
+    update = "45m"
+  }
 }
 
 resource "oci_managed_kafka_kafka_cluster_addon" "public" {
@@ -179,6 +191,11 @@ resource "oci_managed_kafka_kafka_cluster_addon" "public" {
   name                     = "${var.name}-public"
   description              = "Public bootstrap for ${var.name}, SASL/SCRAM."
   network_cidrs            = var.public_cidrs
+
+  timeouts {
+    create = "45m"
+    delete = "45m"
+  }
 
   depends_on = [oci_managed_kafka_kafka_cluster_superusers_management.this]
 }

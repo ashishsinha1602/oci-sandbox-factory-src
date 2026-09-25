@@ -171,7 +171,9 @@ def harvest_catalog(**ctx):
         asset_key = dc.create_data_asset(cid, oci.data_catalog.models.CreateDataAssetDetails(
             display_name=BUCKET, type_key=asset_type,
             description=f"Sandbox {SANDBOX} data bucket: raw/ and gold/",
-            properties={"default": {"url": f"https://objectstorage.{_region()}.oraclecloud.com", "namespace": ns}})).data.key
+            # Data Catalog addresses Object Storage through its Swift-compatible
+            # endpoint; the native endpoint is rejected (DCAT-11111).
+            properties={"default": {"url": f"https://swiftobjectstorage.{_region()}.oraclecloud.com/v1", "namespace": ns}})).data.key
     conns = dc.list_connections(cid, asset_key).data.items
     if conns:
         conn_key = conns[0].key

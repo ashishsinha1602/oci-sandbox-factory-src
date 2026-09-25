@@ -1,0 +1,21 @@
+# OCI DevOps build pipeline: on every push to main, build the worker image
+# inside OCI and roll the workers onto it. Runs as the pipeline's own resource
+# principal (dynamic group sbx-devops-dg).
+version: 0.1
+component: build
+timeoutInSeconds: 3600
+shell: bash
+env:
+  variables:
+    SBX_WORKER_KIND: "oci"
+steps:
+  - type: Command
+    name: Install the factory's Python dependencies
+    command: |
+      python3 -m pip install --quiet --upgrade pip
+      python3 -m pip install --quiet oci oracledb requests
+  - type: Command
+    name: Build the worker image in OCI and roll the workers
+    command: |
+      cd "${OCI_PRIMARY_SOURCE_DIR}"
+      python3 factory/ci_build_and_roll.py

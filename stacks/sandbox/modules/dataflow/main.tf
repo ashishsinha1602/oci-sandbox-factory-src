@@ -24,6 +24,10 @@ variable "jobs" {
     memory_gb       = optional(number, 16)
     arguments       = optional(list(string), [])
     warehouse_uri   = optional(string)
+    # The job's code, inline. Terraform drops attributes a module's object
+    # type does not declare, so without this line an inline script silently
+    # became an empty file_uri: "Missing fileUri" from Data Flow.
+    script          = optional(string, "")
   }))
 }
 variable "scripts_bucket" {

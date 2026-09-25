@@ -643,6 +643,9 @@ function sfInit(){
   // Expand the model's `workload` into the pieces of a request.
   function expandWorkload(a){
     var w=a.workload; if(!w||!CODE)return;
+    // A workload is built from the files generated below (app_files), never by
+    // cloning the repository: a pipeline folder has no Dockerfile to build.
+    a.type='create'; a.git_url=null;
     var files=CODE.files, id=a.sandbox_id;
     var dags=(w.dags||[]).filter(function(p){return files[p]}), spark=(w.spark||[]).filter(function(p){return files[p]});
     var reqs=(w.requirements||[]).filter(function(p){return files[p]});
@@ -760,7 +763,10 @@ function sfInit(){
               functions:nz(a.functions),dataflow_jobs:nz(a.dataflow_jobs),app_instances:nz(a.app_instances),
               app_files:a.app_files?JSON.stringify(a.app_files):undefined};
           call('submit',payload).then(function(s){ if(s.err){box.innerHTML='<span class="sf-err">'+esc(s.err)+'</span>';return}
-            box.innerHTML='<span class="sf-chip">Queued as request #'+esc(s.id)+'</span>'; pushHist({role:'user',text:'(confirmed: '+a.type+' '+a.sandbox_id+' queued)'}); refresh(); });
+            box.innerHTML='<span class="sf-chip">Queued as request #'+esc(s.id)+'</span>'; pushHist({role:'user',text:'(confirmed: '+a.type+' '+a.sandbox_id+' queued)'});
+            // the attached code has been built; it must not ride along with the next, unrelated question
+            if(CODE){ CODE=null; showCodeChip(); }
+            refresh(); });
         };
         box.children[1].onclick=function(){box.remove()};
       }

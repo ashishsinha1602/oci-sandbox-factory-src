@@ -129,6 +129,15 @@ python controldb.py users you@example.com
 python ../tests/e2e.py               # proves every path in this tenancy, then destroys what it made
 ```
 
+### 5a. Building the worker inside OCI (DevOps)
+
+The worker image is built and rolled by an OCI DevOps build pipeline (`build_spec.yaml` → deliver to OCIR → `roll_spec.yaml`), triggered by a push to the mirrored code repository. Two things the pipeline needs that are easy to miss:
+
+- **OCI Logging must be enabled on the DevOps project**, or every run fails at once with *"Logs need to be enabled in order to run the builds"*. Create a log group in `sbx-control` and a service log for the project (service `devops`, category `all`), then re-run.
+- The DevOps project needs a **notification topic** at creation and the build runner needs `sbx-devops-build` (read repos, manage container images in `sbx-control`, manage container instances in `sbx-control` for the roll).
+
+The DevOps project, its code repository, the pipeline and the log group are created once from the console or the SDK; they are not part of `foundation/` yet.
+
 ## 6. Known limits (honest list)
 
 - Isolation between users is at the application and network layer; inside OCI, all sandboxes share one compartment and one dynamic group. `per_sandbox_compartment = true` gives IAM-level isolation at the cost of slower creates.

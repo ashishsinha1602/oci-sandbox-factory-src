@@ -82,6 +82,18 @@ declare
 
   -- utl_raw.cast_to_raw takes a VARCHAR2, so a request over 32767 bytes (a
   -- conversation with attached code) died with ORA-06502. Convert properly.
+  -- htp.p takes at most 32767 characters; a long answer (a pipeline plan with
+  -- its file review and cost table) raised ORA-06502. Write CLOBs in pieces.
+  procedure out_clob(p in clob) is
+    o pls_integer := 1;
+    n pls_integer := nvl(dbms_lob.getlength(p), 0);
+  begin
+    while o <= n loop
+      htp.prn(dbms_lob.substr(p, 8000, o));
+      o := o + 8000;
+    end loop;
+  end;
+
   function clob_to_blob(p in clob) return blob is
     l_blob blob;
     l_dest integer := 1;
@@ -330,7 +342,7 @@ begin
     do_submit;
 
   elsif l_action = 'history' then
-    htp.p(my_history());
+    out_clob(my_history());
     return;
 
   elsif l_action = 'retry' then
@@ -347,7 +359,7 @@ begin
          and action in ('CREATE', 'DEPLOY') and status = 'DONE';
       if l_src is null then
         l_out.put('err', 'No finished build of ' || l_sid || ' to retry.');
-        htp.p(l_out.to_clob);
+        out_clob(l_out.to_clob);
         return;
       end if;
       -- Read first, then insert: the ownership trigger queries this table,
@@ -368,14 +380,14 @@ begin
     end;
 
   elsif l_action = 'status' then
-    htp.p(my_sandboxes());
+    out_clob(my_sandboxes());
     return;
 
   else
     l_out.put('err', 'unknown action');
   end if;
 
-  htp.p(l_out.to_clob);
+  out_clob(l_out.to_clob);
 exception
   when others then
     htp.p('{"err":"' || apex_escape.json(sqlerrm) || '"}');

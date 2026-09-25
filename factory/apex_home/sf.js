@@ -735,6 +735,7 @@ function sfInit(){
     $('#sf-chat-in').value=''; $('#sf-chat-in').style.height='auto'; $('#sf-chat-send').classList.remove('ready'); dropQuickChips();
     addMsg('me',esc(t)+(CODE?'<div style="font-size:11px;opacity:.8;margin-top:4px">&#128206; '+Object.keys(CODE.files).length+' files attached</div>':'')); pushHist({role:'user',text:t});
     var typing=typingBubble(); $('#sf-chat-send').disabled=true;
+    var sentCode=!!CODE;   // attached code belongs to this message only; dropped once its reply is built
     call('chat',{messages:hist.slice(-12), clob:CODE?codeDigest(CODE):undefined}).then(function(r){
       if(typing)typing.remove(); $('#sf-chat-send').disabled=false; $('#sf-chat-in').focus();
       if(r.err){addMsg('ai','<span class="sf-err">'+esc(r.err)+'</span>');return}
@@ -742,10 +743,12 @@ function sfInit(){
       var reply=j&&j.reply?j.reply:(r.raw||''); pushHist({role:'assistant',text:reply});
       var d=addMsg('ai',fmt(reply));
       d.insertAdjacentHTML('beforeend',widgetsHtml(j,reply,t));
-      var qs=j&&j.questions; if(qs&&qs.length){
-        d.insertAdjacentHTML('beforeend','<h4 style="margin:10px 0 4px">A couple of things first</h4><ol style="margin:0;padding-left:18px">'
+      var qs=j&&j.questions, hasAct=!!(j&&j.action&&j.action.type); if(qs&&qs.length){
+        // With a proposal on the table the questions are optional refinements:
+        // the Create button stays, so a build never hinges on a follow-up.
+        d.insertAdjacentHTML('beforeend','<h4 style="margin:10px 0 4px">'+(hasAct?'You can also tell me':'A couple of things first')+'</h4><ol style="margin:0;padding-left:18px">'
           +qs.map(function(q){return '<li>'+esc(q)+'</li>'}).join('')+'</ol>');
-        return;   // hold the action until they answer
+        if(!hasAct){ if(sentCode){CODE=null;showCodeChip();} return; }   // nothing proposed yet: wait for the answer
       }
       var a=j&&j.action; if(a&&a.type){
         try{ expandWorkload(a); }catch(e){ console.error('workload', e); }
@@ -770,6 +773,9 @@ function sfInit(){
         };
         box.children[1].onclick=function(){box.remove()};
       }
+      // the plan above already carries what it needs from the code (app_files,
+      // workload); the next, unrelated question must not be answered about it
+      if(sentCode){ CODE=null; showCodeChip(); }
     }).catch(function(e){if(typing)typing.remove();$('#sf-chat-send').disabled=false;addMsg('ai','<span class="sf-err">'+esc(e&&e.statusText||e)+'</span>')});
   }
     // ---- Chat / Starters as real tabs ------------------------------------

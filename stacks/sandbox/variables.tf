@@ -305,7 +305,7 @@ variable "kafka_partitions" {
 
 variable "kafka_version" {
   type    = string
-  default = "3.7.0"
+  default = "4.0.0"
 }
 
 # ---------------------------------------------------------------------------

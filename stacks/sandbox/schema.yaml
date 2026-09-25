@@ -191,7 +191,7 @@ variables:
   kafka_version:
     type: string
     title: Kafka version (cluster mode)
-    default: "3.7.0"
+    default: "4.0.0"
     visible:
       and:
         - ${enable_kafka}

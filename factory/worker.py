@@ -22,6 +22,7 @@ import os
 import pathlib
 import secrets
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -125,7 +126,7 @@ def claim(conn):
     # run at once, so walk a window of candidates rather than fighting over min(id):
     # with a single candidate every extra worker would lose the skip-locked race and
     # idle, and the queue would drain one request at a time no matter how many run.
-    if os.environ.get("SBX_WORKER_KIND", "laptop") == "oci":
+    if os.environ.get("SBX_WORKER_KIND", "oci" if sf.in_oci() else "laptop") == "oci":
         cur.execute("""select id from sbx.sandbox_requests where status = 'QUEUED'
                        and (git_url is null or lower(git_url) like 'http%' or lower(git_url) like 'git%' or lower(git_url) like 'ssh%')
                        order by id fetch first 25 rows only""")
@@ -141,7 +142,8 @@ def claim(conn):
         conn.rollback()
     if not row:
         return None
-    cur.execute("update sbx.sandbox_requests set status = 'RUNNING', started_at = systimestamp where id = :1", [row[0]])
+    cur.execute("update sbx.sandbox_requests set status = 'RUNNING', started_at = systimestamp, worker_name = :2 where id = :1",
+                [row[0], WORKER_NAME])
     conn.commit()
     cur.execute("""
         select id, requester, sandbox_id, action, ttl_days, enable_adb, adb_tier, enable_kafka,
@@ -284,6 +286,11 @@ def seed_database(outputs: dict, seed_sql: str) -> None:
         db.commit()
     print(f"seeded {done}/{len(stmts)} statements into {adb.get('db_name')}", flush=True)
 
+
+# Who this worker is, for the claim it writes on a request. A replaced worker
+# comes back under the same name, so at start it can hand back the requests
+# its predecessor was holding (see recover_own_claims).
+WORKER_NAME = os.environ.get("WORKER_NAME") or socket.gethostname()
 
 # A model the region actually serves on demand: llama-3.3-70b is listed but
 # 404s in us-phoenix-1 (as do llama-4, command-a and grok-4); Gemini 2.5 Flash
@@ -766,6 +773,24 @@ def reconcile(conn):
     conn.commit()
 
 
+def recover_own_claims(conn) -> None:
+    """Re-queue the requests a previous instance of THIS worker was running.
+
+    A roll replaces the container under the same name, and whatever it was
+    mid-way through (a Terraform job that Resource Manager finishes on its own)
+    would otherwise sit at RUNNING for ever. The new instance knows it holds
+    nothing, so anything still claimed under its name goes back to QUEUED and
+    is picked up again; a CREATE re-applies the same stack idempotently.
+    """
+    cur = conn.cursor()
+    cur.execute("""update sbx.sandbox_requests set status = 'QUEUED', started_at = null,
+                   log = log || chr(10) || 'worker ' || :1 || ' was replaced; queued again'
+                   where status = 'RUNNING' and worker_name = :1""", [WORKER_NAME])
+    if cur.rowcount:
+        print(f"recovered {cur.rowcount} request(s) left RUNNING by the previous {WORKER_NAME}", flush=True)
+    conn.commit()
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--once", action="store_true")
@@ -778,7 +803,8 @@ def main():
     except Exception as e:  # noqa: BLE001
         print(f"bootstrap skipped ({type(e).__name__}: {e})", flush=True)
     conn = controldb.connect("ADMIN")
-    print("worker connected to control DB; polling sbx.sandbox_requests")
+    print(f"worker {WORKER_NAME} connected to control DB; polling sbx.sandbox_requests")
+    recover_own_claims(conn)
     last_reap = 0.0
     while True:
         if time.time() - last_reap > REAP_SECONDS:

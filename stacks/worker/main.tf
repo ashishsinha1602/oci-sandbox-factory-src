@@ -157,6 +157,8 @@ resource "oci_container_instances_container_instance" "worker" {
     # still serves every request that names an image it can pull.
     environment_variables = merge({
       SBX_FOUNDATION      = jsonencode(local.foundation)
+      WORKER_NAME         = local.name
+      SBX_WORKER_KIND     = "oci"
       SBX_CONTROL_CONNECT = var.control_connect_string
       SBX_ADMIN_PASSWORD  = var.control_admin_password
       SBX_OWNER           = var.owner

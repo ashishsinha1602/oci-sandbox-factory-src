@@ -30,8 +30,10 @@ def main(argv):
     m = oci.container_instances.models
     ad = idc.list_availability_domains(compartment_id=sf.config()["tenancy"]).data[0].name
     name = f"sbx-e2e-runner-{time.strftime('%H%M%S')}"
+    # The runner is the workers' image, so it must run on the workers' shape
+    # (the image is built for one architecture: E4 = x86, A1 = arm).
     inst = cc.create_container_instance(m.CreateContainerInstanceDetails(
-        compartment_id=ctrl, availability_domain=ad, display_name=name, shape="CI.Standard.A1.Flex",
+        compartment_id=ctrl, availability_domain=ad, display_name=name, shape=w.shape,
         shape_config=m.CreateContainerInstanceShapeConfigDetails(ocpus=1, memory_in_gbs=4),
         container_restart_policy="NEVER", freeform_tags={"managed_by": "sandbox-factory", "role": "e2e"},
         vnics=[m.CreateContainerVnicDetails(subnet_id=fnd["network"]["private_subnet_id"], display_name=name, is_public_ip_assigned=False)],

@@ -89,7 +89,11 @@ function sfInit(){
           if(pu){h+='<a class="sf-open" href="'+esc(pu)+'" target="_blank" rel="noopener">Open '+esc(r.sandbox_id)+' &rarr;</a><br>'}
           if(o.app&&o.app.urls){var us=o.app.urls.filter(function(u){return u.indexOf('https://')===0}); if(!us.length)us=o.app.urls; us.forEach(function(u){h+='<a href="'+esc(u)+'" target="_blank">'+esc(u)+'</a>'});
             if(o.app.containers&&o.app.containers.length>1&&us.length){o.app.containers.slice(1).forEach(function(n){h+='<a href="'+esc(us[0])+'/'+esc(n)+'" target="_blank">'+esc(us[0])+'/'+esc(n)+'</a>'})}}
-          if(o.adb){h+='<div style="margin-top:6px"><a href="'+esc(o.adb.sql_web_url)+'" target="_blank">SQL Developer Web</a> &middot; user <code>'+esc(o.adb.admin_user||'ADMIN')+'</code>'
+          (o.logins||[]).forEach(function(l){
+      t += row(l.service+' user', l.user, {});
+      t += row(l.service+' password', l.password, {hint:'generated for this sandbox only'});
+    });
+    if(o.adb){h+='<div style="margin-top:6px"><a href="'+esc(o.adb.sql_web_url)+'" target="_blank">SQL Developer Web</a> &middot; user <code>'+esc(o.adb.admin_user||'ADMIN')+'</code>'
               +(o.adb.admin_password?' &middot; password <code>'+esc(o.adb.admin_password)+'</code> <button type="button" class="sf-btn sec" style="padding:2px 8px;font-size:12px" onclick="navigator.clipboard.writeText(this.previousElementSibling.textContent)">copy</button>':'')
               +'<br>connect string <code>'+esc(o.adb.connect_string)+'</code></div>'}
           if(o.nosql&&o.nosql.tables&&o.nosql.tables.length)h+='<code>nosql: '+esc(o.nosql.tables.join(', '))+'</code>';
@@ -218,6 +222,10 @@ function sfInit(){
      p:{enable_nosql:true,enable_kafka:true}, tags:['NoSQL','Kafka','events']},
     {k:'polyglot', t:'Polyglot: SQL + NoSQL + Kafka', d:'One sandbox with all three, to compare them or build something that spans them.',
      p:{enable_adb:true,enable_nosql:true,enable_kafka:true,seed_key:'sales'}, tags:['Autonomous DB','NoSQL','Kafka']},
+    {k:'airflow', t:'Apache Airflow', d:'Airflow in a container instance - your DAGs run unchanged. The admin password is generated for this sandbox and shown on its landing page. Oracle has no managed Airflow.',
+     p:{containers:[{name:'airflow',image:'docker.io/apache/airflow:2.10.3',port:8080,command:['bash','-c'],args:['airflow db migrate && airflow users create --role Admin --username admin --password \"$AIRFLOW_ADMIN_PASSWORD\" --firstname Sandbox --lastname Admin --email admin@example.com; airflow scheduler & exec airflow webserver --port 8080'],env:{AIRFLOW_ADMIN_PASSWORD:'{{GENERATE_PASSWORD}}',AIRFLOW__CORE__LOAD_EXAMPLES:'False',AIRFLOW__WEBSERVER__WORKERS:'2',AIRFLOW__WEBSERVER__EXPOSE_CONFIG:'False'}}]}, tags:['Airflow','DAGs','login']},
+    {k:'airflowdf', t:'Airflow + Spark + bucket', d:'Airflow to orchestrate, a bucket for the data - the MWAA + Glue + S3 shape. Point a DAG task at Data Flow for Spark.',
+     p:{containers:[{name:'airflow',image:'docker.io/apache/airflow:2.10.3',port:8080,command:['bash','-c'],args:['airflow db migrate && airflow users create --role Admin --username admin --password \"$AIRFLOW_ADMIN_PASSWORD\" --firstname Sandbox --lastname Admin --email admin@example.com; airflow scheduler & exec airflow webserver --port 8080'],env:{AIRFLOW_ADMIN_PASSWORD:'{{GENERATE_PASSWORD}}',AIRFLOW__CORE__LOAD_EXAMPLES:'False',AIRFLOW__WEBSERVER__WORKERS:'2',AIRFLOW__WEBSERVER__EXPOSE_CONFIG:'False'}}],buckets:[{name:'data'}]}, tags:['Airflow','Object Storage','Data Flow']},
     {k:'kafka', t:'Kafka cluster only', d:'A broker and an events topic, for producing and consuming.',
      p:{enable_kafka:true}, tags:['Kafka']},
     {k:'grafana', t:'Grafana on a database', d:'Grafana wired to a fresh database with the telemetry schema loaded.',
@@ -232,15 +240,29 @@ function sfInit(){
   function newId(pfx){return (pfx||'sbx')+'-'+Math.random().toString(36).slice(2,7)}
   function needsRegistry(r){return JSON.stringify(r.p.containers||[]).indexOf('{R}')>=0}
   function recipePayload(r){
+    // Pass the recipe through whole. This used to rebuild each container as
+    // {name, image, port} and drop seed_key and app_template, so a starter that
+    // needed a start command, an environment or a template reached the worker
+    // with none of them - the knowledge base starter arrived with no app at all.
     var p=r.p, cs=(p.containers||[]).map(function(c){
-      return {name:c.name, image:String(c.image).replace('{R}',OCIR), port:c.port};
+      var x={name:c.name, image:String(c.image).replace('{R}',OCIR), port:c.port};
+      if(c.env)x.env=c.env;
+      if(c.command)x.command=c.command;
+      if(c.args)x.args=c.args;
+      return x;
     });
+    function list(v){return (v&&v.length)?v:undefined}
     return {sandbox_id:newId(r.k), action:'CREATE', ttl_days:p.ttl_days||3,
       enable_adb:!!p.enable_adb, enable_kafka:!!p.enable_kafka, enable_nosql:!!p.enable_nosql,
-      enable_app:!!p.enable_app||cs.length>0, app_image:p.app_image||null, git_url:null,
-      app_port:p.app_port||80, text:'one-click recipe: '+r.t,
-      containers:cs.length?cs:undefined, seed_sql:p.seed_sql||undefined,
-      app_files:p.app_files?JSON.stringify(p.app_files):undefined};
+      enable_catalog:!!p.enable_catalog,
+      enable_app:!!p.enable_app||cs.length>0||!!p.app_template||!!p.app_files,
+      app_image:p.app_image||null, git_url:null,
+      app_port:p.app_port||(cs[0]&&cs[0].port)||80, text:'one-click recipe: '+r.t,
+      containers:list(cs), seed_sql:p.seed_sql||undefined, seed_key:p.seed_key||undefined,
+      app_template:p.app_template||undefined,
+      app_files:p.app_files?JSON.stringify(p.app_files):undefined,
+      databases:list(p.databases), buckets:list(p.buckets), queues:list(p.queues),
+      functions:list(p.functions), dataflow_jobs:list(p.dataflow_jobs)};
   }
   // ---- Per-sandbox landing page --------------------------------------
   // Everything a sandbox produced, in one place, clickable and copyable, with

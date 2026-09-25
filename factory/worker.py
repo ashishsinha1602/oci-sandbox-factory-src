@@ -20,6 +20,7 @@ import io
 import json
 import os
 import pathlib
+import secrets
 import shutil
 import subprocess
 import sys
@@ -136,8 +137,29 @@ def containers_for(req: dict) -> list | None:
     env = {"SEED_SQL": base64.b64encode(seed.encode()).decode()} if seed else {}
     if req.get("app_containers"):
         items = json.loads(req["app_containers"])
-        return [{"name": c.get("name") or f"app{i}", "image": c["image"], "port": c.get("port"), "env": {**env, **(c.get("env") or {})}}
-                for i, c in enumerate(items)]
+        out = []
+        for i, c in enumerate(items):
+            cenv = {**env, **(c.get("env") or {})}
+            # A container may ask for a secret to be minted for it, e.g. Airflow's
+            # admin password. It is generated here, per sandbox, never taken from
+            # the browser, and recorded so the landing page can show it.
+            for k, v in list(cenv.items()):
+                if v == "{{GENERATE_PASSWORD}}":
+                    pw = secrets.token_urlsafe(14)
+                    cenv[k] = pw
+                    req.setdefault("_logins", []).append(
+                        {"service": c.get("name") or f"app{i}", "user": "admin", "password": pw})
+            item = {"name": c.get("name") or f"app{i}", "image": c["image"],
+                    "port": c.get("port"), "env": cenv}
+            # command/args were dropped here before, so anything that needs a
+            # start command - Airflow runs a migrate, a user create and two
+            # processes - could not be deployed as a plain image.
+            if c.get("command"):
+                item["command"] = c["command"]
+            if c.get("args"):
+                item["args"] = c["args"]
+            out.append(item)
+        return out
     if req["enable_app"] == "Y" and not req.get("git_url") and env:
         if not req["app_image"]:
             raise ValueError(
@@ -572,6 +594,8 @@ def process_one(conn) -> bool:
                     print(f"sandbox is up; database setup did not finish ({note[:200]})", flush=True)
                     outputs.setdefault("warnings", []).append(
                         "Database setup (seed / Select AI / REST) did not finish: " + note[:300])
+        if isinstance(outputs, dict) and req.get("_logins"):
+            outputs["logins"] = req["_logins"]
         finish(conn, req["id"], True, outputs)
         print(f"  request {req['id']} DONE")
     except SystemExit as e:

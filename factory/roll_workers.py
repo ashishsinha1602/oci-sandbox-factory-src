@@ -82,6 +82,14 @@ for nm in names:
         time.sleep(90)
         cid = cc.get_container_instance(new.id).data.containers[0].container_id
         restarts = cc.get_container(cid).data.container_restart_attempt_count or 0
+        # A worker can also stay up and fail every poll (it logs "db error" and
+        # retries), which is just as dead. Its first 90 s of log must be clean.
+        try:
+            early = cc.retrieve_logs(cid).data.content.decode("utf-8", "replace")
+        except Exception:  # noqa: BLE001
+            early = ""
+        if not restarts and ("db error" in early or "Traceback" in early):
+            restarts = "0, but its log shows errors"
         if restarts:
             try:
                 tail = cc.retrieve_logs(cid).data.content.decode("utf-8", "replace").splitlines()[-8:]

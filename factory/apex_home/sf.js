@@ -275,8 +275,8 @@ function sfInit(){
      p:{enable_adb:true,seed_key:'sales',containers:[{name:'lab',image:'docker.io/jupyter/minimal-notebook:latest',port:8888}]}, tags:['Jupyter','Autonomous DB']},
     {k:'n8n', t:'n8n automation', d:'Workflow automation with a database behind it to store runs.',
      p:{enable_adb:true,containers:[{name:'n8n',image:'docker.io/n8nio/n8n:latest',port:5678}]}, tags:['n8n','Autonomous DB']},
-    {k:'nginx', t:'nginx smoke test', d:'One container and a public URL, to check the plumbing end to end.',
-     p:{enable_app:true,app_image:'docker.io/library/nginx:alpine',app_port:80,ttl_days:1}, tags:['container','1 day']}
+    {k:'anyimage', t:'Your own container image', d:'Run any public image with a public HTTPS URL. Pick this, then put your image and port in the form.',
+     p:{enable_app:true,app_image:'',app_port:8080,ttl_days:3}, tags:['container','your image']}
   ];
   function newId(pfx){return (pfx||'sbx')+'-'+Math.random().toString(36).slice(2,7)}
   function needsRegistry(r){return JSON.stringify(r.p.containers||[]).indexOf('{R}')>=0}
@@ -869,7 +869,7 @@ function sfInit(){
   function addQuickChips(){
     var msgs=$('#sf-msgs'); if(!msgs||$('#sf-quick')||hist.length)return;
     var wrap=document.createElement('div'); wrap.id='sf-quick';
-    ['What do I have running?','Deploy nginx for a day',
+    ['What do I have running?','A React app on sample sales data for 2 days',
      'A database with sample sales data','Destroy my oldest sandbox'
     ].forEach(function(q){
       var b=document.createElement('button');

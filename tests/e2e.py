@@ -41,7 +41,7 @@ import oci  # noqa: E402
 import requests  # noqa: E402
 import sandbox_factory as sf  # noqa: E402
 
-USER = "SBX"
+USER = "E2ETEST"
 USER2 = "TEAMUSER2"
 PREFIX = "e2e-"
 AJAX = (ROOT / "factory" / "apex_home" / "ajax.plsql").read_text(encoding="utf-8").strip().rstrip("/").strip()

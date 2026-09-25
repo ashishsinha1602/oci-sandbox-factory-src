@@ -72,6 +72,8 @@ allow service dataflow to manage objects in compartment <sbx-sandboxes>
 allow any-user to manage object-family in compartment <sbx-sandboxes> where ALL {request.principal.type = 'dataflowrun', request.principal.compartment.id = '<sbx-sandboxes>'}
 allow any-user to read object-family in compartment <sbx-sandboxes> where ALL {request.principal.type = 'datacatalog', request.principal.compartment.id = '<sbx-sandboxes>'}
 allow any-user to read buckets in compartment <sbx-sandboxes> where ALL {request.principal.type = 'datacatalog', request.principal.compartment.id = '<sbx-sandboxes>'}
+allow service faas to read repos in tenancy
+allow service faas to use apm-domains in tenancy
 allow service rawfka to {SECRET_UPDATE} in compartment <sbx-sandboxes>
 allow service rawfka to use secrets in compartment <sbx-sandboxes> where request.operation = 'UpdateSecret'
 allow service rawfka to read secrets in compartment <sbx-sandboxes>

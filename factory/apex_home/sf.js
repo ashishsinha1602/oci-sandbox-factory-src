@@ -783,7 +783,8 @@ function sfInit(){
       '.sf-composer{display:flex !important;align-items:flex-end;gap:8px;flex-wrap:nowrap !important;border:1px solid #d6dde6;border-radius:18px;padding:8px 8px 8px 16px;background:#fff;box-shadow:0 2px 12px rgba(15,23,42,.06);transition:border-color .15s,box-shadow .15s}',
       '.sf-composer:focus-within{border-color:#1a73e8;box-shadow:0 0 0 3px rgba(26,115,232,.12)}',
       '.sf-composer .sf-field{margin:0 !important;flex:0 0 auto !important}',
-      '.sf-composer .sf-field:first-child{flex:1 1 auto !important;align-self:center}',
+      '.sf-composer .sf-field:first-of-type{flex:1 1 auto !important;align-self:center}',
+      '.sf-composer #sf-attach{align-self:center;flex:0 0 auto}',
       '.sf-composer #sf-chat-in{border:0 !important;outline:0 !important;box-shadow:none !important;padding:7px 0 !important;min-height:24px !important;font-size:14px;font-family:inherit;background:transparent}',
       '.sf-composer #sf-model{width:auto;border:1px solid #e3e8ef;border-radius:999px;padding:6px 26px 6px 12px;font-size:12px;color:#374151;background-color:#f8fafc;cursor:pointer}',
       '.sf-composer #sf-chat-send{width:38px;height:38px;padding:0;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:#cbd5e1;flex:0 0 38px;transition:background .15s,transform .1s}',
@@ -874,7 +875,7 @@ function sfInit(){
     var row=ta.closest('.sf-row'); if(row)row.classList.add('sf-composer');
     var clip=document.createElement('button'); clip.type='button'; clip.id='sf-attach'; clip.title='Attach a folder of code'; clip.innerHTML='&#128206;';
     clip.style.cssText='border:0;background:transparent;font-size:18px;cursor:pointer;padding:6px 4px;color:#6b7280'; clip.onclick=attachFolder;
-    ta.parentNode.insertBefore(clip, ta.parentNode.firstChild);
+    var fld=ta.parentNode; if(fld.parentNode)fld.parentNode.insertBefore(clip, fld); else fld.insertBefore(clip, ta);
     var send=$('#sf-chat-send'); if(send){send.title='Send (Enter)'; send.setAttribute('aria-label','Send');
       send.innerHTML='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg>';}
     var sync=function(){if(send)send.classList.toggle('ready',!!ta.value.trim())};

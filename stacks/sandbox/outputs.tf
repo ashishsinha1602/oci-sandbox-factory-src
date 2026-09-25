@@ -30,6 +30,10 @@ output "queues" {
   value = length(module.queue) > 0 ? module.queue[0].queues : []
 }
 
+output "catalog" {
+  value = length(module.catalog) > 0 ? module.catalog[0].catalog : null
+}
+
 output "dataflow_jobs" {
   value = length(module.dataflow) > 0 ? module.dataflow[0].jobs : []
 }

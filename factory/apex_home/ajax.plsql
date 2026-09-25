@@ -143,6 +143,9 @@ declare
                                     then l_in.get_array('queues').to_clob else null end;
     l_dfj    clob           := case when l_in.has('dataflow_jobs') and l_in.get('dataflow_jobs').is_array
                                     then l_in.get_array('dataflow_jobs').to_clob else null end;
+    l_cat    varchar2(1)    := case when l_in.get_boolean('enable_catalog') then 'Y' else 'N' end;
+    l_casset clob           := case when l_in.has('catalog_assets') and l_in.get('catalog_assets').is_array
+                                    then l_in.get_array('catalog_assets').to_clob else null end;
     l_owner  varchar2(255);
     l_live   number;
     l_cap    number := to_number(cfg_value('max_sandboxes_per_user', '3'));
@@ -183,9 +186,9 @@ declare
     end if;
 
     insert into sandbox_requests
-      (requester, sandbox_id, action, ttl_days, enable_adb, enable_kafka, enable_nosql, enable_app, app_image, git_url, app_port, request_text, seed_sql, app_containers, app_files, seed_key, app_template, adb_databases, functions, app_instances, buckets, queues, dataflow_jobs)
+      (requester, sandbox_id, action, ttl_days, enable_adb, enable_kafka, enable_nosql, enable_app, app_image, git_url, app_port, request_text, seed_sql, app_containers, app_files, seed_key, app_template, adb_databases, functions, app_instances, buckets, queues, dataflow_jobs, enable_catalog, catalog_assets)
     values
-      (:APP_USER, l_sid, l_act, l_ttl, l_adb, l_kafka, l_nosql, l_app, l_image, l_git, l_port, l_req, l_seed, l_cont, l_files, l_skey, l_atpl, l_dbs, l_fns, l_insts, l_bkts, l_qs, l_dfj)
+      (:APP_USER, l_sid, l_act, l_ttl, l_adb, l_kafka, l_nosql, l_app, l_image, l_git, l_port, l_req, l_seed, l_cont, l_files, l_skey, l_atpl, l_dbs, l_fns, l_insts, l_bkts, l_qs, l_dfj, l_cat, l_casset)
     returning id into l_id;
     l_out.put('id', l_id);
   end;
@@ -250,7 +253,7 @@ begin
         || 'Always respond with ONLY one JSON object, no markdown fences, with keys: '
         || 'reply (string, friendly, concise, may contain short line breaks; explain what and how, mention URLs from outputs when relevant), '
         || 'action (null, or an object when the user clearly wants something done: {type: "create"|"deploy"|"destroy", sandbox_id, ttl_days (1-3, default 3), '
-        || 'buckets (optional array of Object Storage buckets, each {name, public}; cheap and outside the container quota), queues (optional array of OCI Queues, each {name}; serverless point-to-point messaging, the counterpart to Kafka streams), dataflow_jobs (optional array of Spark applications on OCI Data Flow, the equivalent of an AWS Glue ETL job, each {name, file_uri}; managed Spark billed per run), databases (optional array of EXTRA Autonomous Databases, each {name, tier}; every one is a real database with its own ADMIN credential and uses a tenancy slot), functions (optional array of OCI Functions, each {name, image}; serverless, billed per invocation, free when idle, and they do not consume the container core quota), app_instances (optional array of ADDITIONAL container instances, each {name, containers:[{name,image,port}]}; containers within ONE instance share a host and localhost, separate instances do not), enable_adb, enable_kafka, enable_nosql (OCI NoSQL: serverless JSON/key-value tables, good for events, sessions, device state, anything schemaless), enable_app (booleans), app_image (string or null), git_url (string or null: a Git repository URL, or a local folder path the user gave such as C:\Users\me\myapp, kept exactly as given), app_port (integer), '
+        || 'enable_catalog (boolean: OCI Data Catalog, the metastore a Spark job resolves table names against - the counterpart to the AWS Glue Data Catalog), buckets (optional array of Object Storage buckets, each {name, public}; cheap and outside the container quota), queues (optional array of OCI Queues, each {name}; serverless point-to-point messaging, the counterpart to Kafka streams), dataflow_jobs (optional array of Spark applications on OCI Data Flow, the equivalent of an AWS Glue ETL job, each {name, file_uri}; managed Spark billed per run), databases (optional array of EXTRA Autonomous Databases, each {name, tier}; every one is a real database with its own ADMIN credential and uses a tenancy slot), functions (optional array of OCI Functions, each {name, image}; serverless, billed per invocation, free when idle, and they do not consume the container core quota), app_instances (optional array of ADDITIONAL container instances, each {name, containers:[{name,image,port}]}; containers within ONE instance share a host and localhost, separate instances do not), enable_adb, enable_kafka, enable_nosql (OCI NoSQL: serverless JSON/key-value tables, good for events, sessions, device state, anything schemaless), enable_app (booleans), app_image (string or null), git_url (string or null: a Git repository URL, or a local folder path the user gave such as C:\Users\me\myapp, kept exactly as given), app_port (integer), '
         || 'containers (optional array of {name, image, port} for bundles, first served at /, others at /<name>), '
         || 'seed_sql (optional string: Oracle SQL creating 2-4 small tables with 5-10 realistic rows each for the domain the user named, semicolon-separated, no PL/SQL, no comments; runs once in the new database)}). '
         || 'Every database this factory creates gets Oracle Select AI (NL2SQL) and AI cataloguing switched on automatically over all its schemas, so an agent that answers questions in plain English needs only enable_adb plus seed_sql - no container. Add containers only when the user wants a UI, an MCP endpoint, or an app of their own. '

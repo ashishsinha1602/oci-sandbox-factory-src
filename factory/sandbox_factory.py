@@ -267,6 +267,10 @@ def build_variables(args, fnd: dict, cfg: dict, app_containers: list | None) -> 
         "app_public": json.dumps(not (bool(args.adb) and args.adb_tier == "paid")),
         "enable_app": json.dumps(app_containers is not None),
     }
+    if getattr(args, "enable_catalog", False):
+        v["enable_catalog"] = json.dumps(True)
+    if getattr(args, "catalog_assets", None):
+        v["catalog_assets"] = json.dumps(args.catalog_assets)
     if getattr(args, "buckets", None):
         v["buckets"] = json.dumps(args.buckets)
     if getattr(args, "queues", None):

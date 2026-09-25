@@ -214,6 +214,20 @@ module "queue" {
   depends_on = [time_sleep.iam_propagation]
 }
 
+module "catalog" {
+  count  = var.enable_catalog ? 1 : 0
+  source = "./modules/catalog"
+
+  compartment_id = local.compartment_id
+  name           = local.name
+  enabled        = var.enable_catalog
+  data_assets    = var.catalog_assets
+  defined_tags   = local.defined_tags
+  freeform_tags  = local.freeform_tags
+
+  depends_on = [time_sleep.iam_propagation]
+}
+
 module "dataflow" {
   count  = length(var.dataflow_jobs) > 0 ? 1 : 0
   source = "./modules/dataflow"

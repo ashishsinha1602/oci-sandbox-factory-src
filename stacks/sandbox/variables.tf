@@ -152,6 +152,23 @@ variable "adb_databases" {
   default = []
 }
 
+variable "enable_catalog" {
+  description = "OCI Data Catalog: the metastore a Spark job resolves table names against."
+  type        = bool
+  default     = false
+}
+
+variable "catalog_assets" {
+  description = "Sources to register in the catalog, e.g. an Object Storage bucket or a database."
+  type = list(object({
+    name        = string
+    type_key    = string
+    description = optional(string, "")
+    properties  = optional(map(string), {})
+  }))
+  default = []
+}
+
 variable "buckets" {
   description = "Object Storage buckets. Cheap, idle-free, and outside the container core quota."
   type = list(object({

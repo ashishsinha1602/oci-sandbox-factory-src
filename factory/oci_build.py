@@ -83,7 +83,7 @@ def _source_volume(src_dir: str):
 
 def build_in_oci(git_url: str | None, image: str, registry: str, namespace: str, sandbox_id: str,
                  platform: str = "linux/arm64", src_dir: str | None = None,
-                 dockerfile: str | None = None) -> None:
+                 dockerfile: str | None = None, sub_path: str | None = None) -> None:
     """Build an image inside OCI with kaniko.
 
     dockerfile is relative to the context root; kaniko looks for "Dockerfile"
@@ -127,7 +127,9 @@ def build_in_oci(git_url: str | None, image: str, registry: str, namespace: str,
             image_url=KANIKO_IMAGE,
             arguments=[f"--context={'dir:///workspace' if src_dir else git_context(git_url)}",
                        f"--destination={image}", "--cache=false", "--snapshot-mode=redo"]
-                      + ([f"--dockerfile={dockerfile}"] if dockerfile else []),
+                      + ([f"--dockerfile={dockerfile}"] if dockerfile else [])
+                      # a project inside a repository: COPY paths are relative to it
+                      + ([f"--context-sub-path={sub_path}"] if sub_path else []),
             volume_mounts=[cim.CreateVolumeMountDetails(volume_name="docker-config", mount_path="/kaniko/.docker")]
                           + ([cim.CreateVolumeMountDetails(volume_name="source", mount_path="/workspace")] if src_dir else []),
         )],

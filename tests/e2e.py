@@ -369,7 +369,7 @@ def main():
             fn_image = f"phx.ocir.io/{sf.client(oci.object_storage.ObjectStorageClient).get_namespace().data}/sbx/hello-fn/app:e2e"
             oci_build.build_in_oci(git_url="https://github.com/ashishsinha1602/oci-sandbox-factory.git", image=fn_image,
                                    registry="phx.ocir.io", namespace=fnd.get("namespace") or sf.client(oci.object_storage.ObjectStorageClient).get_namespace().data,
-                                   sandbox_id="hello-fn", platform="linux/arm64", dockerfile="examples/hello-fn/Dockerfile")
+                                   sandbox_id="hello-fn", platform="linux/arm64", dockerfile="Dockerfile", sub_path="examples/hello-fn")
             record("build: function image built inside OCI from the repo", True, fn_image)
         except BaseException as e:  # noqa: BLE001  (the builder exits via SystemExit on failure)
             record("build: function image built inside OCI from the repo", False, f"{type(e).__name__}: {e}")

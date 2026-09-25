@@ -11,6 +11,7 @@ declare
   -- this page works in any tenancy without being edited.
   l_region      varchar2(64);
   l_registry    varchar2(200);
+  l_prices      varchar2(4000);
   c_genai_url   varchar2(300);
   -- Model: chosen per request by the page (x02.model); must be one served in this region.
   c_genai_model varchar2(100) := 'google.gemini-2.5-flash';
@@ -199,6 +200,7 @@ begin
     c_genai_model := l_in.get_string('model');
   end if;
 
+  l_prices   := cfg_value('oci_prices', '');
   l_region   := cfg_value('genai_region', 'us-phoenix-1');
   l_registry := cfg_value('registry_prefix', '');
   c_genai_url := 'https://inference.generativeai.' || l_region || '.oci.oraclecloud.com/20231130/actions/chat';
@@ -257,6 +259,14 @@ begin
         || 'containers (optional array of {name, image, port} for bundles, first served at /, others at /<name>), '
         || 'seed_sql (optional string: Oracle SQL creating 2-4 small tables with 5-10 realistic rows each for the domain the user named, semicolon-separated, no PL/SQL, no comments; runs once in the new database)}). '
         || 'Every database this factory creates gets Oracle Select AI (NL2SQL) and AI cataloguing switched on automatically over all its schemas, so an agent that answers questions in plain English needs only enable_adb plus seed_sql - no container. Add containers only when the user wants a UI, an MCP endpoint, or an app of their own. '
+        || 'MOVING A WORKLOAD FROM AWS. When the user describes an existing stack - Lambda, Glue, S3, Iceberg, Athena, SQS, Kinesis, DynamoDB, RDS, EKS - do not just name the OCI service. Answer in this order: '
+        || '(1) what you would build, as two options: RUN THE SAME CODE (the closest service, what changes - usually an endpoint and credentials) and CHANGE THE CODE (the service that fits OCI better, and why it is worth the edit). '
+        || '(2) what it costs per month at their volume, as a short list of line items with a total. Say which pieces are billed per use and cost nothing idle, and if a cluster is shared across N workloads divide it by N and say so. '
+        || '(3) ask for the code: a Git URL or a folder path. Say you will read it and point out anything missing before deploying. '
+        || '(4) only once you have the repo, propose the action that builds it. '
+        || 'The mapping: Lambda -> OCI Functions (same handler in a container) or a small container instance when it runs for minutes or holds a database connection. S3 -> Object Storage, S3-compatible so usually only the endpoint changes. Glue ETL -> Data Flow, managed Spark, PySpark runs unchanged. Glue Data Catalog -> OCI Data Catalog. Iceberg -> the same iceberg jar on Data Flow writing to Object Storage, or an Autonomous Database instead if the data is under a few terabytes, because it already has ACID tables and time travel. Athena -> Data Flow SQL or Autonomous Database external tables. SQS -> OCI Queue. Kinesis/MSK -> OCI Streaming. DynamoDB -> OCI NoSQL. RDS -> Autonomous Database. EKS -> OKE, or container instances when it is a few containers rather than a platform. '
+        || 'Live OCI unit prices, use these and show your arithmetic: ' || l_prices || '. '
+        || 'Be honest about what you cannot price: there is no published rate for Data Flow, Data Catalog or Container Instances, so estimate those from the compute shape and say that is what you did. Never present a free-tier allowance as the real price. '
         || 'You may also return questions (array of 0-3 short questions). Ask when a detail you need is genuinely missing and the answer would change what gets built: which domain the sample data should cover, how many days they need it for, whether they want a UI on top or just the database, or which repo or image to deploy. When you ask questions, leave action out entirely and wait for the answer - do not guess and build. Ask at most two at a time, and do not ask about anything they already told you or anything with an obvious default. '
         || 'In your reply, say in one or two plain sentences what will actually be created in OCI - the database and its tier, the Kafka cluster, the containers - so the user knows what is being spun up before they confirm. '
         || 'When the user asks for an MCP server plus a way to chat with or explore the data, propose containers [studio on 8770, mcp on 8765] with a database and seed_sql for their domain. '

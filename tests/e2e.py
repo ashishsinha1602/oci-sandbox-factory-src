@@ -455,6 +455,22 @@ def main():
     md += [f"| {r['check']} | {'PASS' if r['ok'] else 'FAIL'} | {r['detail'].replace('|', '/').replace(chr(10), ' ')[:160]} |" for r in RESULTS]
     (rep / f"e2e-{ts}.md").write_text("\n".join(md) + "\n", encoding="utf-8")
     (rep / f"e2e-{ts}.json").write_text(json.dumps(RESULTS, indent=1), encoding="utf-8")
+    if sf.in_oci():
+        # Running inside OCI: the container is gone after the run, so the report
+        # goes to a bucket in sbx-control as well.
+        try:
+            osc = sf.client(oci.object_storage.ObjectStorageClient)
+            ns = osc.get_namespace().data
+            bucket = "sbx-factory-reports"
+            try:
+                osc.get_bucket(ns, bucket)
+            except oci.exceptions.ServiceError:
+                osc.create_bucket(ns, oci.object_storage.models.CreateBucketDetails(name=bucket, compartment_id=fnd["compartments"]["control"]))
+            for ext in ("md", "json"):
+                osc.put_object(ns, bucket, f"e2e-{ts}.{ext}", (rep / f"e2e-{ts}.{ext}").read_bytes())
+            log(f"report uploaded to bucket {bucket}: e2e-{ts}.md")
+        except Exception as e:  # noqa: BLE001
+            log(f"report upload skipped ({type(e).__name__}: {e})")
     log(f"{passed}/{len(RESULTS)} passed; report tests/reports/e2e-{ts}.md")
     sys.exit(0 if passed == len(RESULTS) else 1)
 

@@ -336,30 +336,42 @@ begin
         end loop;
       end if;
       declare
+        -- Did the user ask for a build? Decided from their own words (and any
+        -- attached code), never from the model's reply, so a deployment request
+        -- always ends with an action the page can turn into a button.
+        l_last varchar2(4000) := case when l_hist is not null and l_hist.get_size > 0
+                                      then substr(treat(l_hist.get(l_hist.get_size - 1) as json_object_t).get_string('text'), 1, 4000) end;
+        l_ask_build boolean := apex_application.g_clob_01 is not null
+                               or regexp_like(l_last, '(^|\W)(create|deploy|build|spin up|set up|launch|provision|destroy|delete|extend|recreate|retry)(\W|$)|github\.com|here is the code|for [0-9]+ days?', 'i');
         l_raw  clob := ai_chat(l_msgs);
         l_j    json_object_t;
         l_txt  varchar2(4000);
       begin
-        -- A reply that proposes a build but carries no action object leaves the
-        -- user with nothing to click. Ask once more for the action itself.
-        begin
-          l_j   := json_object_t.parse(substr(l_raw, instr(l_raw, '{'), instr(l_raw, '}', -1) - instr(l_raw, '{') + 1));
-          l_txt := substr(l_j.get_string('reply'), 1, 4000);
-        exception when others then l_j := null;
-        end;
-        if l_j is null then
-          -- Prose or a fenced block around the JSON (or no JSON at all): ask once
-          -- for the object alone, so the page never has to show raw text.
-          l_msgs.append(msg('ASSISTANT', l_raw));
-          l_msgs.append(msg('USER', 'Answer again with ONLY the JSON object described above: no prose before or after it, no code fences.'));
-          l_raw := ai_chat(l_msgs);
-        elsif (not l_j.has('action') or l_j.get('action').is_null)
-           and (l_j.get('questions') is null or l_j.get('questions').is_null or l_j.get_array('questions').get_size = 0)
-           and regexp_like(l_txt, '(go ahead|shall i|would you like me to|should i (create|deploy|build))', 'i') then
-          l_msgs.append(msg('ASSISTANT', l_raw));
-          l_msgs.append(msg('USER', 'Yes. Answer again with the same JSON and the action object filled in, so the page can show the Create button.'));
-          l_raw := ai_chat(l_msgs);
-        end if;
+        -- Up to two corrections: an answer that is not one JSON object is asked
+        -- for again as JSON only; a build request (or a proposal) that came back
+        -- without its action object is asked for the action. Each new answer is
+        -- checked the same way.
+        for l_try in 1 .. 2 loop
+          begin
+            l_j   := json_object_t.parse(substr(l_raw, instr(l_raw, '{'), instr(l_raw, '}', -1) - instr(l_raw, '{') + 1));
+            l_txt := substr(l_j.get_string('reply'), 1, 4000);
+          exception when others then l_j := null;
+          end;
+          if l_j is null then
+            l_msgs.append(msg('ASSISTANT', l_raw));
+            l_msgs.append(msg('USER', 'Answer again with ONLY the JSON object described above: no prose before or after it, no code fences.'));
+            l_raw := ai_chat(l_msgs);
+          elsif (not l_j.has('action') or l_j.get('action').is_null)
+             and (l_ask_build
+                  or ((l_j.get('questions') is null or l_j.get('questions').is_null or l_j.get_array('questions').get_size = 0)
+                      and regexp_like(l_txt, '(go ahead|shall i|would you like me to|should i (create|deploy|build))', 'i'))) then
+            l_msgs.append(msg('ASSISTANT', l_raw));
+            l_msgs.append(msg('USER', 'The user asked for this to be built. Answer again with the same JSON and the action object filled in (use sensible defaults for anything not given), so the page can show the Create button.'));
+            l_raw := ai_chat(l_msgs);
+          else
+            exit;
+          end if;
+        end loop;
         l_out.put('raw', l_raw);
       end;
     end;

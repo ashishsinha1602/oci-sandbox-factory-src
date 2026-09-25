@@ -30,7 +30,7 @@ made=[]
 for n in range(1,N+1):
     nm="sbx-worker" if n==1 else f"sbx-worker-{n}"
     made.append(cc.create_container_instance(m.CreateContainerInstanceDetails(
-      compartment_id=ctrl, availability_domain=ad, display_name=nm, shape="CI.Standard.A1.Flex",
+      compartment_id=ctrl, availability_domain=ad, display_name=nm, shape=os.environ.get("WORKER_SHAPE", "CI.Standard.A1.Flex"),
       shape_config=m.CreateContainerInstanceShapeConfigDetails(ocpus=1, memory_in_gbs=4),
       container_restart_policy="ALWAYS", freeform_tags={"managed_by":"sandbox-factory","role":"worker"},
       vnics=[m.CreateContainerVnicDetails(subnet_id=fnd["network"]["private_subnet_id"],

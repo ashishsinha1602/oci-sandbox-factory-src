@@ -1,0 +1,19 @@
+# OCI DevOps build pipeline, stage 3: replace the workers with the image the
+# pipeline just pushed. Runs as the pipeline's resource principal.
+version: 0.1
+component: build
+timeoutInSeconds: 1800
+shell: bash
+env:
+  variables:
+    WORKER_SHAPE: "CI.Standard.E4.Flex"
+    WORKER_COUNT: "6"
+steps:
+  - type: Command
+    name: Install the OCI SDK
+    command: python3 -m pip install --quiet oci
+  - type: Command
+    name: Roll the workers
+    command: |
+      cd "${OCI_PRIMARY_SOURCE_DIR}/factory"
+      python3 roll_workers.py "phx.ocir.io/ax3sbu0rnjhx/sbx/factory/worker:${IMAGE_TAG}"

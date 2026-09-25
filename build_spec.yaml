@@ -1,21 +1,26 @@
-# OCI DevOps build pipeline: on every push to main, build the worker image
-# inside OCI and roll the workers onto it. Runs as the pipeline's own resource
-# principal (dynamic group sbx-devops-dg).
+# OCI DevOps build pipeline, stage 1: build the worker image on the OCI build
+# runner from the commit being built. Stage 2 (deliver artifacts) pushes it to
+# OCIR as the pipeline's own identity; stage 3 (roll_spec.yaml) replaces the
+# workers with it. Nothing outside OCI is involved.
 version: 0.1
 component: build
-timeoutInSeconds: 3600
+timeoutInSeconds: 1800
 shell: bash
 env:
-  variables:
-    SBX_WORKER_KIND: "oci"
+  exportedVariables:
+    - IMAGE_TAG
 steps:
   - type: Command
-    name: Install the factory's Python dependencies
+    name: Tag
     command: |
-      python3 -m pip install --quiet --upgrade pip
-      python3 -m pip install --quiet oci oracledb requests
+      export IMAGE_TAG="b${OCI_BUILD_RUN_ID: -10}"
+      echo "image tag ${IMAGE_TAG}"
   - type: Command
-    name: Build the worker image in OCI and roll the workers
+    name: Build the worker image
     command: |
       cd "${OCI_PRIMARY_SOURCE_DIR}"
-      python3 factory/ci_build_and_roll.py
+      docker build -f factory/Dockerfile -t worker:${IMAGE_TAG} .
+outputArtifacts:
+  - name: worker
+    type: DOCKER_IMAGE
+    location: worker:${IMAGE_TAG}

@@ -60,7 +60,7 @@ resource "oci_container_instances_container_instance" "worker" {
   compartment_id           = oci_identity_compartment.control.id
   availability_domain      = data.oci_identity_availability_domains.worker[0].availability_domains[0].name
   display_name             = "${var.prefix}-worker"
-  shape                    = "CI.Standard.A1.Flex"
+  shape                    = "CI.Standard.E4.Flex"   # x86: the image is built by the OCI DevOps runner
   container_restart_policy = "ALWAYS"
   freeform_tags            = local.freeform_tags
 

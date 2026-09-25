@@ -1,12 +1,8 @@
-FROM fnproject/python:3.11-dev AS build
+# Plain Python image with the Fn FDK on top: builds for arm64 (the sandbox's
+# GENERIC_ARM function shape) without depending on fnproject base images.
+FROM python:3.11-slim
 WORKDIR /function
-ADD requirements.txt /function/
-RUN pip3 install --target /python/ --no-cache --no-cache-dir -r requirements.txt && rm -rf /root/.cache
-ADD func.py /function/
-
-FROM fnproject/python:3.11
-WORKDIR /function
-COPY --from=build /python /python
-COPY --from=build /function /function
-ENV PYTHONPATH=/function:/python
-ENTRYPOINT ["/python/bin/fdk", "/function/func.py", "handler"]
+COPY requirements.txt func.py /function/
+RUN pip install --no-cache-dir -r requirements.txt
+ENV PYTHONPATH=/function
+ENTRYPOINT ["python", "-m", "fdk", "/function/func.py", "handler"]

@@ -85,6 +85,24 @@ function sfInit(){
           if(o.nosql&&o.nosql.tables&&o.nosql.tables.length)h+='<code>nosql: '+esc(o.nosql.tables.join(', '))+'</code>';
           if(o.low_code&&o.low_code.rest_base)h+='<code>REST: '+esc(o.low_code.rest_base)+'</code>';
           if(o.kafka)h+='<code>kafka: '+esc(o.kafka.bootstrap_servers)+'</code>';
+          if(o.buckets&&o.buckets.length)h+='<code>buckets: '+esc(o.buckets.map(function(b){return b.name}).join(', '))+'</code>';
+          if(o.queues&&o.queues.length)h+='<code>queues: '+esc(o.queues.map(function(q){return q.name}).join(', '))+'</code>';
+          if(o.functions&&o.functions.length)h+='<code>functions: '+esc(o.functions.map(function(f){return f.name}).join(', '))+'</code>';
+          if(o.dataflow_jobs&&o.dataflow_jobs.length)h+='<code>spark: '+esc(o.dataflow_jobs.map(function(j){return j.name}).join(', '))+'</code>';
+          if(o.catalog&&o.catalog.display_name)h+='<code>catalog: '+esc(o.catalog.display_name)+'</code>';
+          if(o.databases&&o.databases.length>1){o.databases.slice(1).forEach(function(d){
+            h+='<code>'+esc(d.name)+': '+esc(d.db_name)+'</code>'})}
+          if(o.consoles){
+            var open=[];
+            if(o.dataflow_jobs&&o.dataflow_jobs.length)open.push(['Data Flow',o.consoles.data_flow]);
+            if(o.catalog)open.push(['Data Catalog',o.consoles.data_catalog]);
+            if(o.buckets&&o.buckets.length)open.push(['Buckets',o.consoles.object_storage]);
+            if(o.functions&&o.functions.length)open.push(['Functions',o.consoles.functions]);
+            if(o.queues&&o.queues.length)open.push(['Queues',o.consoles.queues]);
+            if(o.nosql)open.push(['NoSQL',o.consoles.nosql]);
+            if(open.length)h+='<div style="margin-top:6px">open in OCI: '+open.map(function(x){
+              return '<a href="'+esc(x[1])+'" target="_blank">'+esc(x[0])+'</a>'}).join(' &middot; ')+'</div>';
+          }
           if(o.destroyed)h+='destroyed';
           h+='</div>'}
         if(r.error)h+='<div class="sf-err">'+esc(r.error)+'</div>';

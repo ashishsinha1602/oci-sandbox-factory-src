@@ -206,8 +206,27 @@ function sfInit(){
     raw=raw||''; var tries=[], f=raw.match(/```(?:json)?\s*([\s\S]*?)```/i); if(f)tries.push(f[1]);
     var end=raw.lastIndexOf('}');
     for(var i=raw.indexOf('{'); i>=0 && i<end && tries.length<40; i=raw.indexOf('{',i+1)) tries.push(raw.slice(i,end+1));
-    for(var k=0;k<tries.length;k++){ try{ var o=JSON.parse(tries[k]); if(o&&typeof o==='object'&&!Array.isArray(o))return o; }catch(e){} }
+    for(var k=0;k<tries.length;k++){
+      var cand=[tries[k], fixCtl(tries[k])];
+      for(var q=0;q<2;q++){ try{ var o=JSON.parse(cand[q]); if(o&&typeof o==='object'&&!Array.isArray(o))return o; }catch(e){} }
+    }
     return null;
+  }
+  // A literal line break or tab inside a JSON string (multi-line SQL, say) is
+  // invalid JSON; escape control characters that sit inside strings.
+  function fixCtl(t){
+    var out='', inStr=false, esc=false;
+    for(var i=0;i<t.length;i++){ var ch=t.charAt(i), code=t.charCodeAt(i);
+      if(inStr){
+        if(esc){ esc=false; }
+        else if(code===92){ esc=true; }                 // backslash
+        else if(code===34){ inStr=false; }              // closing quote
+        else if(code===10){ out+=String.fromCharCode(92,110); continue; }   // raw line feed -> \n
+        else if(code===13){ out+=String.fromCharCode(92,114); continue; }   // raw carriage return -> \r
+        else if(code===9){ out+=String.fromCharCode(92,116); continue; }    // raw tab -> \t
+      } else if(code===34){ inStr=true; }
+      out+=ch; }
+    return out;
   }
   function addMsg(cls,html){var d=document.createElement('div');d.className='sf-msg '+cls;d.innerHTML=html;$('#sf-msgs').appendChild(d);$('#sf-msgs').scrollTop=1e9;return d}
   document.addEventListener('click',function(e){

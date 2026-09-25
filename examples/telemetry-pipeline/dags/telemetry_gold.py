@@ -152,10 +152,12 @@ def harvest_catalog(**ctx):
     if not cats:
         raise RuntimeError(f"Data Catalog {CATALOG} not found in the sandbox compartment")
     cid = cats[0].id
-    types = {(t.type_category, t.name): t.key for t in dc.list_types(cid, limit=500).data.items}
-    asset_type = types[("dataAsset", "Oracle Object Storage")]
-    conn_type = next(v for (cat, name), v in types.items() if cat == "connection" and name == "Resource Principal"
-                     and dc.get_type(cid, v).data.parent_type_name == "Oracle Object Storage")
+    # Type names repeat across parents ("Resource Principal" exists for Object
+    # Storage and for Data Integration), so keep every type and pick by parent.
+    all_types = dc.list_types(cid, limit=500).data.items
+    asset_type = next(t.key for t in all_types if t.type_category == "dataAsset" and t.name == "Oracle Object Storage")
+    conn_type = next(t.key for t in all_types if t.type_category == "connection" and t.name == "Resource Principal"
+                     and dc.get_type(cid, t.key).data.parent_type_name == "Oracle Object Storage")
 
     assets = [a for a in dc.list_data_assets(cid, display_name=BUCKET).data.items]
     if assets:

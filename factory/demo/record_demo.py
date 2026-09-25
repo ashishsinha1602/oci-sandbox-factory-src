@@ -25,6 +25,11 @@ OUT = "/tmp/rec"
 os.makedirs(OUT, exist_ok=True)
 
 
+T0 = [0.0]      # set when the page (and so the video) starts
+MCP_URLS = []   # MCP endpoints met on the tour
+WAITS = []      # [start, end] seconds into the video spent waiting; the editor speeds these up
+
+
 def wait_reply(pg, before, timeout=300000):
     # a new assistant bubble that is not the typing / "reading the repo" placeholder
     pg.wait_for_function(
@@ -39,7 +44,9 @@ def ask(pg, text, create=False):
     pg.type("textarea#sf-chat-in", text, delay=28)
     pg.wait_for_timeout(600)
     pg.keyboard.press("Enter")
+    t = time.time() - T0[0] + 1.0          # keep the first second of the spinner at normal speed
     wait_reply(pg, n)
+    WAITS.append([round(t, 2), round(time.time() - T0[0] - 1.5, 2)])
     pg.wait_for_timeout(4000)
     last = pg.locator("#sf-msgs .sf-msg.ai").last
     print("reply:", last.inner_text()[:160].replace("\n", " "), flush=True)
@@ -52,6 +59,36 @@ def ask(pg, text, create=False):
             print("  ->", last.locator(".sf-act").inner_text(), flush=True)
         else:
             print("  -> no Create button", flush=True)
+
+
+MASK_JS = r"""
+(() => {
+  const DOTS = '••••••••';
+  function secrets() {
+    const out = new Set();
+    const walk = (o, k) => {
+      if (o && typeof o === 'object') { for (const [kk, v] of Object.entries(o)) walk(v, kk); return; }
+      if (typeof o === 'string' && o.length >= 6 && /pass|secret|token|pwd/i.test(k || '')) out.add(o);
+    };
+    for (const r of (window.__sfRows || [])) { try { walk(r.outputs ? JSON.parse(r.outputs) : null, ''); } catch (e) {} }
+    return [...out];
+  }
+  function scrub(root) {
+    const list = secrets(); if (!list.length || !root) return;
+    const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    for (let n = w.nextNode(); n; n = w.nextNode()) {
+      let t = n.nodeValue, c = t; for (const x of list) if (c.includes(x)) c = c.split(x).join(DOTS);
+      if (c !== t) n.nodeValue = c;
+    }
+    for (const i of root.querySelectorAll ? root.querySelectorAll('input,textarea') : []) {
+      if (i.type !== 'password' && list.some(x => (i.value || '').includes(x))) i.value = DOTS;
+    }
+  }
+  new MutationObserver(() => scrub(document.body)).observe(document, {subtree: true, childList: true, characterData: true});
+  document.addEventListener('DOMContentLoaded', () => scrub(document.body));
+  setInterval(() => scrub(document.body), 200);
+})();
+"""
 
 
 def show(pg, url, wait=6000, scroll=True):
@@ -86,6 +123,69 @@ def airflow(pg, base, login):
             pg.wait_for_timeout(6000)
 
 
+MCP_PAGE = """<!doctype html><html><head><meta charset="utf-8"><title>MCP client</title><style>
+body{margin:0;font:14px/1.45 -apple-system,Segoe UI,Roboto,sans-serif;background:#0f172a;color:#e2e8f0}
+header{padding:18px 28px;background:#111827;border-bottom:1px solid #1f2937}
+header h1{margin:0;font-size:20px}header p{margin:4px 0 0;color:#94a3b8;font-size:13px}
+main{padding:18px 28px;display:grid;gap:14px}
+.step{background:#111827;border:1px solid #1f2937;border-radius:10px;padding:12px 16px}
+.step h2{margin:0 0 8px;font-size:15px;color:#a5b4fc}.step h2 span{color:#94a3b8;font-weight:400;font-size:13px;margin-left:8px}
+pre{margin:0;white-space:pre-wrap;word-break:break-word;font:12.5px/1.45 ui-monospace,Consolas,monospace;color:#cbd5e1;max-height:260px;overflow:hidden}
+.req{color:#fbbf24}.ok{color:#34d399}
+table{border-collapse:collapse;margin-top:6px}td,th{border:1px solid #334155;padding:5px 12px;text-align:left}th{color:#94a3b8}
+</style></head><body><header><h1>An agent talking to the sandbox over MCP</h1><p>__URL__</p></header><main id="m"></main></body></html>"""
+
+
+def mcp_scene(pg, url):
+    """Drive the sandbox's MCP endpoint as an agent would and show each call."""
+    import html
+    import requests
+    print("  mcp", url, flush=True)
+    pg.set_content(MCP_PAGE.replace("__URL__", html.escape(url)))
+    pg.wait_for_timeout(2500)
+    hdr = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
+
+    def rpc(body):
+        r = requests.post(url, json=body, headers=hdr, timeout=90)
+        if r.headers.get("mcp-session-id"):
+            hdr["Mcp-Session-Id"] = r.headers["mcp-session-id"]
+        t = r.text
+        if "data: " in t:
+            t = [ln[6:] for ln in t.splitlines() if ln.startswith("data: ")][-1]
+        return json.loads(t) if t.strip() else {}
+
+    def add(title, sub, req, resp_html):
+        block = (f'<div class="step"><h2>{html.escape(title)}<span>{html.escape(sub)}</span></h2>'
+                 f'<pre class="req">&rarr; {html.escape(req)}</pre><pre class="ok">{resp_html}</pre></div>')
+        pg.evaluate("h => { const m=document.getElementById('m'); m.insertAdjacentHTML('beforeend', h); window.scrollTo(0, document.body.scrollHeight); }", block)
+        pg.wait_for_timeout(4500)
+
+    init = rpc({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+        "protocolVersion": "2025-03-26", "capabilities": {}, "clientInfo": {"name": "demo-agent", "version": "1"}}})
+    info = (init.get("result") or {}).get("serverInfo") or {}
+    add("1. initialize", "handshake", "initialize", html.escape(f"connected to {info.get('name')} {info.get('version')}"))
+    rpc({"jsonrpc": "2.0", "method": "notifications/initialized"})
+    tools = ((rpc({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}).get("result") or {}).get("tools") or [])
+    add("2. tools/list", f"{len(tools)} tools", "tools/list",
+        "<br>".join(f"<b>{html.escape(t['name'])}</b> &mdash; {html.escape((t.get('description') or '').split('.')[0][:90])}" for t in tools))
+    q = "Which customers placed orders, and for which products?"
+    sel = ((rpc({"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "select_schema", "arguments": {"question": q}}})
+            .get("result") or {}).get("structuredContent") or {}).get("result") or {}
+    picked = [e["object"] for e in (sel.get("explain") or []) if e.get("object", "").startswith("admin.")][:3]
+    add("3. tools/call select_schema", "the server picks the tables a question needs", f'select_schema(question="{q}")',
+        html.escape("tables: " + ", ".join(picked or [str(sel)[:200]])))
+    sql = ("select c.name as customer, c.country, p.name as product, o.status "
+           "from customers c join orders o on o.customer_id = c.id join products p on p.id = o.product_id order by c.name")
+    res = ((rpc({"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "run_query", "arguments": {"sql": sql}}})
+            .get("result") or {}).get("structuredContent") or {}).get("result") or {}
+    cols, rows = res.get("columns") or [], res.get("rows") or []
+    table = ("<table><tr>" + "".join(f"<th>{html.escape(str(c))}</th>" for c in cols) + "</tr>"
+             + "".join("<tr>" + "".join(f"<td>{html.escape(str(v))}</td>" for v in r) + "</tr>" for r in rows) + "</table>")
+    add("4. tools/call run_query", "one read-only SELECT, rows back", "run_query(sql=" + sql + ")",
+        f"{len(rows)} rows" + table if cols else html.escape(str(res)[:400]))
+    pg.wait_for_timeout(4000)
+
+
 def tour(pg, sid, o):
     print(f"tour {sid}", flush=True)
     app = o.get("app") or {}
@@ -95,7 +195,8 @@ def tour(pg, sid, o):
     logins = {(x.get("service") or "").lower(): x for x in (o.get("logins") or [])}
     for u in urls:
         if u.rstrip("/").endswith("/mcp"):
-            continue       # an MCP endpoint answers JSON-RPC, not a page
+            MCP_URLS.append(u)
+            continue       # an MCP endpoint answers JSON-RPC, not a page: played as a scene at the end
         if "airflow" in (app.get("containers") or []) or "airflow" in logins:
             airflow(pg, u, logins.get("airflow"))
         else:
@@ -103,6 +204,8 @@ def tour(pg, sid, o):
     for inst in o.get("app_instances") or []:
         for u in (inst.get("urls") or [])[:1]:
             show(pg, u, 8000)
+            if u.startswith("https://"):
+                MCP_URLS.append(u.rstrip("/") + "/mcp")
     # the tables the sandbox holds (the pipeline's gold tables), through ORDS
     lc = o.get("low_code") or {}
     pw = (o.get("adb") or {}).get("admin_password")
@@ -131,7 +234,9 @@ def tour(pg, sid, o):
 with sync_playwright() as p:
     b = p.chromium.launch()
     ctx = b.new_context(viewport={"width": 1366, "height": 860}, record_video_dir=OUT, record_video_size={"width": 1366, "height": 860})
+    ctx.add_init_script(MASK_JS)
     pg = ctx.new_page()
+    T0[0] = time.time()
     pg.goto(URL, wait_until="networkidle", timeout=90000)
     if pg.locator("#P9999_USERNAME").count():
         pg.fill("#P9999_USERNAME", USER)
@@ -176,11 +281,16 @@ with sync_playwright() as p:
                 tour(pg, r["sandbox_id"], json.loads(r["outputs"]))
             except Exception as e:  # noqa: BLE001
                 print(f"tour {r.get('sandbox_id')}: {type(e).__name__}: {str(e)[:160]}", flush=True)
-        pg.goto(URL, wait_until="networkidle", timeout=90000)
-        pg.wait_for_timeout(3000)
+        # finish on the agent's view: MCP against each sandbox that has it
+        for u in dict.fromkeys(MCP_URLS):
+            try:
+                mcp_scene(pg, u)
+            except Exception as e:  # noqa: BLE001
+                print(f"mcp {u}: {type(e).__name__}: {str(e)[:160]}", flush=True)
     ctx.close()
     b.close()
 
+print("waits:", json.dumps(WAITS), flush=True)
 files = [f for f in os.listdir(OUT) if f.endswith(".webm")]
 print("recorded:", files, flush=True)
 bucket, ns = os.environ.get("REPORT_BUCKET"), os.environ.get("REPORT_NAMESPACE")

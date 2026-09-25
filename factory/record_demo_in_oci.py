@@ -78,7 +78,7 @@ def main():
             volume_mounts=[m.CreateVolumeMountDetails(volume_name="script", mount_path="/workspace")],
             command=["bash", "-c", "pip install --quiet oci playwright==1.49.0 && python -u /workspace/record_demo.py"])])).data
     print(f"started {name}", flush=True)
-    seen, uploaded = 0, None
+    seen, uploaded, waits = 0, None, "[]"
     while True:
         ci = cc.get_container_instance(inst.id).data
         try:
@@ -90,6 +90,8 @@ def main():
                 print(text, flush=True)
                 if text.startswith("uploaded: "):
                     uploaded = text.split(": ", 1)[1].strip()
+                if text.startswith("waits: "):
+                    waits = text.split(": ", 1)[1].strip()
             seen = len(lines)
         except Exception:  # noqa: BLE001
             pass
@@ -102,6 +104,8 @@ def main():
     if uploaded and a.out:
         body = osc.get_object(ns, BUCKET, uploaded).data.content
         pathlib.Path(a.out).write_bytes(body)
+        # seconds spent waiting on the assistant, for the editor to speed up
+        pathlib.Path(a.out + ".waits.json").write_text(waits, encoding="utf-8")
         print(f"downloaded {len(body)} bytes to {a.out}", flush=True)
     sys.exit(0 if code == 0 and uploaded else 1)
 

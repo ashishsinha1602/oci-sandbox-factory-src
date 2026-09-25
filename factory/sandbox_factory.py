@@ -429,7 +429,28 @@ def cmd_create(args, app_containers: list | None = None) -> dict:
         )).data
         stack_id = stack.id
 
-    job = run_job(rm, stack_id, "APPLY", args.sandbox_id)
+    try:
+        job = run_job(rm, stack_id, "APPLY", args.sandbox_id)
+    except SystemExit:
+        # Region limits are shared by every request in flight, so a check made
+        # a minute ago can be stale by the time Terraform asks. When the apply
+        # died on one of the two we know how to live without, re-apply once
+        # without that piece and say so on the card.
+        last = rm.list_jobs(stack_id=stack_id, sort_by="TIMECREATED", sort_order="DESC").data[0]
+        log = rm.get_job_logs_content(last.id).data
+        retry = {}
+        if "gateway-count" in log and variables.get("app_gateway") != "false":
+            retry.update(app_gateway="false", functions_gateway="false", app_public="true")
+            NOTES.append("No API Gateway was left in this region's limit, so the app is on a public IP (HTTP) instead of an Oracle HTTPS hostname.")
+        if "catalog-count" in log and variables.get("enable_catalog") == "true":
+            retry["enable_catalog"] = "false"
+            NOTES.append("Built without a Data Catalog: this region's limit is used up. Ask for a catalog-count increase, or destroy a sandbox that has one.")
+        if not retry:
+            raise
+        variables.update(retry)
+        print(f"apply hit a region limit; re-applying without {', '.join(retry)}", flush=True)
+        rm.update_stack(stack_id, rmm.UpdateStackDetails(variables=variables))
+        job = run_job(rm, stack_id, "APPLY", args.sandbox_id)
     outputs = job_outputs(rm, job.id)
     pws = adb_passwords_from_state(rm, stack_id)
     if isinstance(outputs.get("adb"), dict):

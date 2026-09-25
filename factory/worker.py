@@ -285,7 +285,10 @@ def seed_database(outputs: dict, seed_sql: str) -> None:
     print(f"seeded {done}/{len(stmts)} statements into {adb.get('db_name')}", flush=True)
 
 
-SELECT_AI_MODEL = os.environ.get("SELECT_AI_MODEL", "meta.llama-3.3-70b-instruct")
+# A model the region actually serves on demand: llama-3.3-70b is listed but
+# 404s in us-phoenix-1 (as do llama-4, command-a and grok-4); Gemini 2.5 Flash
+# and grok-4.6 answer. Override per tenancy with SELECT_AI_MODEL.
+SELECT_AI_MODEL = os.environ.get("SELECT_AI_MODEL", "google.gemini-2.5-flash")
 
 
 def _dedicated_genai_credential() -> tuple[str, dict] | None:
@@ -374,9 +377,11 @@ def enable_select_ai(outputs: dict, region: str, cfg: dict) -> None:
                 "region": region,
                 "model": SELECT_AI_MODEL,
                 "comments": "true",
-                # Spell the endpoint out: left to itself the database builds
-                # ...oci.my$cloud_domain and every SELECT AI fails with ORA-20404.
-                "provider_endpoint": f"inference.generativeai.{region}.oci.oraclecloud.com",
+                # Spell the endpoint out, WITH the scheme: left to itself the
+                # database builds ...oci.my$cloud_domain (ORA-20404), and a bare
+                # host is taken for an object-store URI (ORA-20006). Proven on
+                # both 19c and 23ai: only https://<host> reaches the service.
+                "provider_endpoint": f"https://inference.generativeai.{region}.oci.oraclecloud.com",
                 "oci_compartment_id": (outputs.get("sandbox") or {}).get("compartment_id") or sf.foundation()["compartments"]["sandboxes"],
                 "oci_apiformat": "GENERIC",
                 "object_list": object_list,

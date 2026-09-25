@@ -203,7 +203,7 @@ def verify_data(o, fnd):
     fns = [f for f in o.get("functions") or [] if f.get("url")]
     if fns:
         r = None
-        for _ in range(6):
+        for _ in range(9):
             try:
                 r = requests.post(fns[0]["url"], json={"name": "factory"}, timeout=90)
                 if r.status_code == 200:
@@ -211,7 +211,18 @@ def verify_data(o, fnd):
             except Exception:  # noqa: BLE001
                 pass
             time.sleep(20)
-        record("data: function public URL", r is not None and r.status_code == 200 and "hello factory" in r.text, f"{fns[0]['url']} -> {getattr(r, 'status_code', None)} {getattr(r, 'text', '')[:80]}")
+        detail = f"{fns[0]['url']} -> {getattr(r, 'status_code', None)} {getattr(r, 'text', '')[:80]}"
+        if not (r is not None and r.status_code == 200) and fns[0].get("id") and fns[0].get("invoke_endpoint"):
+            # The gateway hides the function's own error; invoke it directly so the
+            # report says whether the function or the gateway route is at fault.
+            try:
+                fi = sf.client(oci.functions.FunctionsInvokeClient)
+                fi.base_client.endpoint = fns[0]["invoke_endpoint"]
+                d = fi.invoke_function(fns[0]["id"], invoke_function_body=json.dumps({"name": "factory"}).encode())
+                detail += f" | direct invoke: {d.status} {d.data.content[:120]!r}"
+            except Exception as e:  # noqa: BLE001
+                detail += f" | direct invoke: {type(e).__name__}: {str(e)[:200]}"
+        record("data: function public URL", r is not None and r.status_code == 200 and "hello factory" in r.text, detail)
 
 
 def verify_lake(o, fnd):

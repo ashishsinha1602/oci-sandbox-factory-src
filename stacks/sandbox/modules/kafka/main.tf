@@ -85,6 +85,13 @@ resource "oci_managed_kafka_kafka_cluster_config" "this" {
       "log.retention.hours"       = "24"
     }
   }
+
+  # A re-apply (a retry after a failed build) must not touch the config: the
+  # provider bumps its version during the apply and the cluster, planned
+  # against the old version, fails with "inconsistent final plan".
+  lifecycle {
+    ignore_changes = [latest_config]
+  }
 }
 
 resource "oci_managed_kafka_kafka_cluster" "this" {

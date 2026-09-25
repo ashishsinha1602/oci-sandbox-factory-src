@@ -663,7 +663,8 @@ function sfInit(){
         args:['airflow db migrate && airflow users create --role Admin --username admin --password "$AIRFLOW_ADMIN_PASSWORD" --firstname Sandbox --lastname Admin --email admin@example.com; airflow scheduler & exec airflow webserver --port 8080'],
         env:{AIRFLOW_ADMIN_PASSWORD:'{{GENERATE_PASSWORD}}',AIRFLOW__CORE__LOAD_EXAMPLES:'False',AIRFLOW__WEBSERVER__WORKERS:'2',AIRFLOW__WEBSERVER__EXPOSE_CONFIG:'False',
              AIRFLOW__API__AUTH_BACKENDS:'airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session',
-             DATA_BUCKET:'sbx-'+id+'-'+bucket, DATAFLOW_APP_NAME:'sbx-'+id+'-'+jobName, DATA_CATALOG_NAME:'sbx-'+id+'-catalog'}}];
+             DATA_BUCKET:'sbx-'+id+'-'+bucket, DATAFLOW_APP_NAME:'sbx-'+id+'-'+jobName, DATA_CATALOG_NAME:'sbx-'+id+'-catalog',
+             PIPELINE_SCHEDULE:(w.schedule||'@once')}}];
       a.enable_app=true; a.app_port=8080;
     }
   }

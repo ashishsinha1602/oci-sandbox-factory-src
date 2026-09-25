@@ -22,7 +22,10 @@ injects:
                                               the gold tables are loaded into it as well
 
 It runs once when the scheduler loads it (schedule "@once", unpaused), and
-can be re-run from the Airflow UI any time.
+can be re-run from the Airflow UI any time. Set PIPELINE_SCHEDULE to a cron
+expression (e.g. "*/10 * * * *") or an Airflow preset ("@hourly") to keep it
+running on a schedule; every run lands fresh readings, rebuilds the gold tables
+and reloads the database.
 """
 from __future__ import annotations
 
@@ -43,6 +46,7 @@ BUCKET = os.environ.get("DATA_BUCKET", f"sbx-{SANDBOX}-data")
 NAMESPACE = os.environ.get("OCI_NAMESPACE", "")
 DATAFLOW_APP = os.environ.get("DATAFLOW_APP_NAME", f"sbx-{SANDBOX}-gold-etl")
 CATALOG = os.environ.get("DATA_CATALOG_NAME", f"sbx-{SANDBOX}-catalog")
+SCHEDULE = os.environ.get("PIPELINE_SCHEDULE", "@once").strip() or "@once"
 
 
 # ---------------------------------------------------------------------------
@@ -259,9 +263,10 @@ def load_gold_to_oracle(**ctx):
 with DAG(
     dag_id="telemetry_gold",
     description="raw readings -> Spark gold tables -> Data Catalog",
-    schedule="@once",
-    start_date=datetime(2024, 1, 1),
-    catchup=True,
+    schedule=SCHEDULE,
+    start_date=datetime(2024, 1, 1) if SCHEDULE == "@once" else datetime.utcnow() - timedelta(minutes=1),
+    catchup=SCHEDULE == "@once",
+    max_active_runs=1,
     is_paused_upon_creation=False,
     default_args={"retries": 1, "retry_delay": timedelta(minutes=2)},
     tags=["telemetry", "gold", "data-flow", "data-catalog"],

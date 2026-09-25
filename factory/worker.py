@@ -583,7 +583,10 @@ def handle(req: dict, conn=None) -> dict:
         try:
             args.path = str(built)
             args.app = True
-            return sf.cmd_deploy(args)
+            # app_files + containers: the files are built into an image that
+            # runs as the first container, with that container's command, env
+            # and generated secrets (Airflow with the user's DAGs, for one).
+            return sf.cmd_deploy(args, app_containers=containers_for(req))
         finally:
             shutil.rmtree(built, ignore_errors=True)
     if (req.get("functions") or req.get("app_instances") or req.get("buckets")

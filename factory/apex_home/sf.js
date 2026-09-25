@@ -549,7 +549,7 @@ function sfInit(){
     var cs=(a.containers&&a.containers.length)?a.containers:((a.enable_app||a.git_url||a.app_image)?[{name:'web',image:a.git_url||a.app_image||'nginx:alpine',port:a.app_port||80}]:[]);
     if(cs.length)L.push('<li><b>'+(cs.length>1?cs.length+' containers in one instance':'1 container')+'</b> on CI.Standard.A1.Flex (Arm)'
       +(cs.length>1?' &mdash; they share a host and reach each other on localhost':'')+', behind a public HTTPS URL: '+cs.map(function(c){return '<code>'+esc(c.name||'web')+'</code> &rarr; '+esc(c.image)+':'+esc(c.port||80)}).join(', ')+'.</li>');
-    if(a.app_files){var n=Object.keys(JSON.parse(a.app_files)).length;
+    if(a.app_files){var n=Object.keys(typeof a.app_files==='string'?JSON.parse(a.app_files):a.app_files).length;
       L.push('<li><b>Your app, built here</b> &mdash; '+n+' source files are sent with the request, built into an image in OCI and deployed. Nothing to push to a registry.</li>')}
     (a.functions||[]).forEach(function(f){L.push('<li><b>Function '+esc(f.name)+'</b> &mdash; '+esc(f.image||'')+', serverless, billed per call, free when idle. You get a plain HTTPS URL for it.</li>')});
     (a.buckets||[]).forEach(function(b){L.push('<li><b>Bucket '+esc(b.name)+'</b> &mdash; Object Storage, '+(b.public?'public read':'private')+'.</li>')});
@@ -562,6 +562,91 @@ function sfInit(){
     return '<h4 style="margin:10px 0 4px">What this builds in OCI</h4><ul style="margin:0;padding-left:18px">'+L.join('')+'</ul>';
   }
   function nz(x){return (x&&x.length)?x:undefined}
+
+  // ---- Code the user hands to the chat ------------------------------------
+  // A GitHub URL in the message, or a folder picked with the clip button, is
+  // read in the browser: text files only, small, and never sent anywhere but
+  // to the factory's own model as part of the message. The model answers with
+  // `workload`, and the page turns that into the request (bucket, Data Flow
+  // job per Spark file, catalog, Airflow image with the DAGs baked in).
+  var CODE=null;   // {source, files:{path:content}}
+  var TEXT_EXT=/\.(py|sql|md|txt|ya?ml|json|toml|cfg|ini|sh|csv|tsv|env\.example|dockerfile)$|(^|\/)(Dockerfile|requirements\.txt|Makefile)$/i;
+  function ghParse(url){
+    var m=String(url).match(/^https?:\/\/github\.com\/([^\/\s]+)\/([^\/\s#?]+)(?:\/tree\/([^\/\s]+)(?:\/([^\s#?]*))?)?/);
+    if(!m)return null;
+    return {owner:m[1], repo:m[2].replace(/\.git$/,''), ref:m[3]||null, dir:(m[4]||'').replace(/\/+$/,'')};
+  }
+  function fetchGitHub(url){
+    var g=ghParse(url); if(!g)return Promise.reject(new Error('not a GitHub URL'));
+    var api='https://api.github.com/repos/'+g.owner+'/'+g.repo;
+    var refP=g.ref?Promise.resolve(g.ref):fetch(api).then(function(r){if(!r.ok)throw new Error('GitHub: '+r.status);return r.json()}).then(function(x){return x.default_branch});
+    return refP.then(function(ref){
+      return fetch(api+'/git/trees/'+encodeURIComponent(ref)+'?recursive=1').then(function(r){if(!r.ok)throw new Error('GitHub tree: '+r.status);return r.json()}).then(function(t){
+        var paths=(t.tree||[]).filter(function(e){return e.type==='blob'&&TEXT_EXT.test(e.path)&&(!g.dir||e.path.indexOf(g.dir+'/')===0)&&e.size<200000}).slice(0,40);
+        var files={};
+        return Promise.all(paths.map(function(e){
+          return fetch('https://raw.githubusercontent.com/'+g.owner+'/'+g.repo+'/'+ref+'/'+e.path).then(function(r){return r.ok?r.text():''}).then(function(txt){
+            var rel=g.dir?e.path.slice(g.dir.length+1):e.path; if(txt)files[rel]=txt; });
+        })).then(function(){ return {source:url, files:files}; });
+      });
+    });
+  }
+  function readFolder(fileList){
+    var files={}, jobs=[], root=null;
+    Array.prototype.forEach.call(fileList,function(f){
+      var rel=f.webkitRelativePath||f.name; if(!TEXT_EXT.test(rel)||f.size>200000)return;
+      if(rel.indexOf('/')>0){ if(root===null)root=rel.split('/')[0]; if(rel.indexOf(root+'/')===0)rel=rel.slice(root.length+1); }
+      if(/(^|\/)(node_modules|\.git|__pycache__|\.venv|venv)\//.test(rel))return;
+      jobs.push(f.text().then(function(t){files[rel]=t}));
+    });
+    return Promise.all(jobs).then(function(){ return {source:'folder '+(root||''), files:files}; });
+  }
+  function codeDigest(code){
+    var names=Object.keys(code.files), out='', budget=24000;
+    var rank=function(n){return /dag|airflow/i.test(n)?0:/spark|etl|glue|job/i.test(n)?1:/requirements|Dockerfile/i.test(n)?2:/\.sql$/i.test(n)?3:/readme/i.test(n)?4:5};
+    names.sort(function(a,b){return rank(a)-rank(b)||a.localeCompare(b)});
+    out+='\n\nATTACHED CODE ('+names.length+' files from '+code.source+'):\nfiles: '+names.join(', ')+'\n';
+    names.forEach(function(n){ if(budget<=0)return; var c=code.files[n]; if(!/\.(py|sql|txt|ya?ml|toml|cfg|md)$|Dockerfile|requirements/i.test(n))return;
+      var take=Math.min(c.length, Math.min(8000,budget)); out+='\n=== '+n+' ===\n'+c.slice(0,take)+(take<c.length?'\n... ('+(c.length-take)+' more chars)':'')+'\n'; budget-=take; });
+    return out;
+  }
+  function showCodeChip(){
+    var bar=$('#sf-code-chip'); if(!bar){bar=document.createElement('div'); bar.id='sf-code-chip'; bar.style.cssText='margin:6px 0 0;font-size:12px;color:#374151'; var c=$('#sf-chat-in').closest('.sf-composer'); (c&&c.parentNode).insertBefore(bar,c.nextSibling);}
+    if(!CODE){bar.innerHTML='';return}
+    var n=Object.keys(CODE.files).length;
+    bar.innerHTML='<span class="sf-chip">&#128206; '+n+' file'+(n===1?'':'s')+' from '+esc(CODE.source)+'</span> <button type="button" class="sf-btn sec" style="padding:2px 8px;font-size:11px" id="sf-code-x">remove</button>';
+    $('#sf-code-x').onclick=function(){CODE=null;showCodeChip()};
+  }
+  function attachFolder(){
+    var inp=document.createElement('input'); inp.type='file'; inp.multiple=true; inp.setAttribute('webkitdirectory','');
+    inp.onchange=function(){ readFolder(inp.files).then(function(c){CODE=c;showCodeChip(); if(!Object.keys(c.files).length)addMsg('ai','<span class="sf-err">No readable code files in that folder.</span>');}); };
+    inp.click();
+  }
+  // Expand the model's `workload` into the pieces of a request.
+  function expandWorkload(a){
+    var w=a.workload; if(!w||!CODE)return;
+    var files=CODE.files, id=a.sandbox_id;
+    var dags=(w.dags||[]).filter(function(p){return files[p]}), spark=(w.spark||[]).filter(function(p){return files[p]});
+    var reqs=(w.requirements||[]).filter(function(p){return files[p]});
+    var bucket=w.bucket||'data';
+    a.buckets=(a.buckets||[]); if(!a.buckets.some(function(b){return b.name===bucket}))a.buckets.push({name:bucket});
+    a.dataflow_jobs=(a.dataflow_jobs||[]).concat(spark.map(function(p){
+      var name=p.split('/').pop().replace(/\.py$/,'').replace(/[^a-z0-9]+/gi,'-').toLowerCase();
+      return {name:name, script:files[p], language:'PYTHON'}; }));
+    if(w.catalog!==false)a.enable_catalog=true;
+    if(dags.length){
+      var extra=reqs.map(function(p){return files[p]}).join('\n').split('\n').map(function(l){return l.trim()}).filter(function(l){return l&&l[0]!=='#'&&!/^apache-airflow\b/.test(l)});
+      var app={'Dockerfile':'FROM docker.io/apache/airflow:2.10.3\nUSER airflow\nRUN pip install --no-cache-dir oci'+(extra.length?' '+extra.map(function(x){return JSON.stringify(x)}).join(' '):'')+'\nCOPY dags/ /opt/airflow/dags/\n'};
+      dags.forEach(function(p){ app['dags/'+p.split('/').pop()]=files[p]; });
+      a.app_files=app;
+      var jobName=(a.dataflow_jobs[0]||{}).name||'gold-etl';
+      a.containers=[{name:'airflow',image:'built',port:8080,command:['bash','-c'],
+        args:['airflow db migrate && airflow users create --role Admin --username admin --password "$AIRFLOW_ADMIN_PASSWORD" --firstname Sandbox --lastname Admin --email admin@example.com; airflow scheduler & exec airflow webserver --port 8080'],
+        env:{AIRFLOW_ADMIN_PASSWORD:'{{GENERATE_PASSWORD}}',AIRFLOW__CORE__LOAD_EXAMPLES:'False',AIRFLOW__WEBSERVER__WORKERS:'2',AIRFLOW__WEBSERVER__EXPOSE_CONFIG:'False',
+             DATA_BUCKET:'sbx-'+id+'-'+bucket, DATAFLOW_APP_NAME:'sbx-'+id+'-'+jobName, DATA_CATALOG_NAME:'sbx-'+id+'-catalog'}}];
+      a.enable_app=true; a.app_port=8080;
+    }
+  }
 
   // AI answers come back as widgets, not bullet lists: the sandboxes a reply is
   // about render as live cards from the dashboard's own data, and a cost
@@ -612,7 +697,16 @@ function sfInit(){
   function sendChat(){
     var t=$('#sf-chat-in').value.trim(); if(!t)return;
     hideSugg();
-    $('#sf-chat-in').value=''; $('#sf-chat-in').style.height='auto'; $('#sf-chat-send').classList.remove('ready'); dropQuickChips(); addMsg('me',esc(t)); pushHist({role:'user',text:t});
+    var gh=(t.match(/https?:\/\/github\.com\/[^\s)]+/)||[])[0];
+    if(gh&&!(CODE&&CODE.source===gh)){
+      $('#sf-chat-in').value=''; addMsg('me',esc(t)); var fetching=addMsg('ai','<span class="sf-typing"><i></i><i></i><i></i></span> reading '+esc(gh));
+      fetchGitHub(gh).then(function(c){ CODE=c; showCodeChip(); fetching.remove(); $('#sf-chat-in').value=t; sendChat(); })
+        .catch(function(e){ fetching.innerHTML='<span class="sf-err">Could not read '+esc(gh)+': '+esc(e.message||e)+'. Is it public? You can attach the folder instead.</span>'; });
+      return;
+    }
+    var shown=t; if(CODE){ t=t+codeDigest(CODE); }
+    $('#sf-chat-in').value=''; $('#sf-chat-in').style.height='auto'; $('#sf-chat-send').classList.remove('ready'); dropQuickChips();
+    addMsg('me',esc(shown)+(CODE?'<div style="font-size:11px;opacity:.8;margin-top:4px">&#128206; '+Object.keys(CODE.files).length+' files attached</div>':'')); pushHist({role:'user',text:t});
     var typing=typingBubble(); $('#sf-chat-send').disabled=true;
     call('chat',{messages:hist.slice(-12)}).then(function(r){
       if(typing)typing.remove(); $('#sf-chat-send').disabled=false; $('#sf-chat-in').focus();
@@ -627,6 +721,7 @@ function sfInit(){
         return;   // hold the action until they answer
       }
       var a=j&&j.action; if(a&&a.type){
+        try{ expandWorkload(a); }catch(e){ console.error('workload', e); }
         var box=document.createElement('div'); box.className='sf-act';
         if(a.type!=='destroy'&&a.type!=='retry')d.insertAdjacentHTML('beforeend','<div class="sf-w-plan">'+infraHtml(a)+'</div>');
         var label=a.type==='destroy'?'Destroy '+a.sandbox_id:(a.type==='retry'?'Retry setup of '+a.sandbox_id:(a.type==='deploy'?'Deploy it':'Create it'));
@@ -638,7 +733,8 @@ function sfInit(){
             :{sandbox_id:a.sandbox_id,action:a.git_url?'DEPLOY':'CREATE',ttl_days:a.ttl_days||3,enable_adb:!!a.enable_adb,enable_kafka:!!a.enable_kafka,enable_nosql:!!a.enable_nosql,enable_app:!!a.enable_app||!!a.git_url||!!a.app_image||!!(a.containers&&a.containers.length),
               app_image:a.app_image||null,git_url:a.git_url||null,app_port:a.app_port||80,text:t,containers:(a.containers&&a.containers.length)?a.containers:undefined,seed_sql:a.seed_sql||undefined,
               enable_catalog:!!a.enable_catalog,databases:nz(a.databases),buckets:nz(a.buckets),queues:nz(a.queues),
-              functions:nz(a.functions),dataflow_jobs:nz(a.dataflow_jobs),app_instances:nz(a.app_instances)};
+              functions:nz(a.functions),dataflow_jobs:nz(a.dataflow_jobs),app_instances:nz(a.app_instances),
+              app_files:a.app_files?JSON.stringify(a.app_files):undefined};
           call('submit',payload).then(function(s){ if(s.err){box.innerHTML='<span class="sf-err">'+esc(s.err)+'</span>';return}
             box.innerHTML='<span class="sf-chip">Queued as request #'+esc(s.id)+'</span>'; pushHist({role:'user',text:'(confirmed: '+a.type+' '+a.sandbox_id+' queued)'}); refresh(); });
         };
@@ -776,6 +872,9 @@ function sfInit(){
     ta.style.resize='none'; ta.style.overflowY='auto'; ta.style.maxHeight='160px';
     i.parentNode.replaceChild(ta,i);
     var row=ta.closest('.sf-row'); if(row)row.classList.add('sf-composer');
+    var clip=document.createElement('button'); clip.type='button'; clip.id='sf-attach'; clip.title='Attach a folder of code'; clip.innerHTML='&#128206;';
+    clip.style.cssText='border:0;background:transparent;font-size:18px;cursor:pointer;padding:6px 4px;color:#6b7280'; clip.onclick=attachFolder;
+    ta.parentNode.insertBefore(clip, ta.parentNode.firstChild);
     var send=$('#sf-chat-send'); if(send){send.title='Send (Enter)'; send.setAttribute('aria-label','Send');
       send.innerHTML='<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg>';}
     var sync=function(){if(send)send.classList.toggle('ready',!!ta.value.trim())};

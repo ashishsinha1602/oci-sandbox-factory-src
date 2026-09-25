@@ -28,5 +28,9 @@ resource "oci_identity_policy" "kafka_superuser" {
   statements = [
     "allow service rawfka to {SECRET_UPDATE} in compartment id ${oci_identity_compartment.sandboxes.id}",
     "allow service rawfka to use secrets in compartment id ${oci_identity_compartment.sandboxes.id} where request.operation = 'UpdateSecret'",
+    # brokers attach to the shared VCN in sbx-control; the public add-on needs the sandboxes side too
+    "allow service rawfka to use virtual-network-family in compartment id ${oci_identity_compartment.control.id}",
+    "allow service rawfka to use virtual-network-family in compartment id ${oci_identity_compartment.sandboxes.id}",
+    "allow service rawfka to read secrets in compartment id ${oci_identity_compartment.sandboxes.id}",
   ]
 }

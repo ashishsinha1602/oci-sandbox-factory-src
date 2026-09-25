@@ -543,7 +543,7 @@ def ensure_public_repo(cfg: dict, compartment_id: str, repo: str):
     )).data
 
 
-def cmd_deploy(args):
+def cmd_deploy(args, app_containers: list | None = None):
     """Build an image and run it in a sandbox.
 
     args.path is a local folder (laptop worker, Docker) or a Git URL (any worker:
@@ -597,7 +597,13 @@ def cmd_deploy(args):
             subprocess.run(["podman", "push", image], check=True)
 
     env = dict(kv.split("=", 1) for kv in (args.env or []))
-    containers = [{"name": args.name, "image": image, "port": args.port, "env": env}]
+    if app_containers:
+        # The request described the containers (start command, env, generated
+        # passwords); the image just built is the first one's image.
+        containers = [dict(c) for c in app_containers]
+        containers[0] = {**containers[0], "image": image, "env": {**env, **(containers[0].get("env") or {})}}
+    else:
+        containers = [{"name": args.name, "image": image, "port": args.port, "env": env}]
     args.app = True
     return cmd_create(args, app_containers=containers)
 

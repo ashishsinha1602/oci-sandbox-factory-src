@@ -153,16 +153,28 @@ function sfInit(){
   }
   // What a sandbox has, each with the place to open it. Used by the dashboard
   // card, the chat widget and the landing page so they never disagree.
+  // Deep links: the resource's own console page, not a compartment listing.
+  // Everything a sandbox makes is in the sandboxes compartment, so the id is
+  // all the console needs.
+  function resourceUrls(o){
+    var k=consolesFor(o), rg=window.__sfRegion||'us-phoenix-1', u={};
+    (o.buckets||[]).forEach(function(b){u['bucket:'+b.name]=b.namespace?'https://cloud.oracle.com/object-storage/buckets/'+b.namespace+'/'+b.name+'/objects?region='+rg:k.object_storage});
+    (o.dataflow_jobs||[]).forEach(function(d){u['spark:'+d.name]=d.id?'https://cloud.oracle.com/data-flow/apps/details/'+d.id+'?region='+rg:k.data_flow});
+    if(o.catalog)u['catalog']=o.catalog.id?'https://cloud.oracle.com/data-catalog/data-catalogs/'+o.catalog.id+'?region='+rg:k.data_catalog;
+    (o.queues||[]).forEach(function(q){u['queue:'+q.name]=q.id?'https://cloud.oracle.com/queue/queues/'+q.id+'?region='+rg:k.queues});
+    if(o.nosql&&o.nosql.tables)o.nosql.tables.forEach(function(n){u['nosql:'+n]=(o.nosql.table_urls||{})[n]||k.nosql});
+    return u;
+  }
   function resourceLinks(o){
-    var k=consolesFor(o), L=[];
+    var k=consolesFor(o), L=[], u=resourceUrls(o);
     if(o.nosql&&o.nosql.tables&&o.nosql.tables.length){ var tu=o.nosql.table_urls||{};
       o.nosql.tables.forEach(function(n){L.push(['NoSQL table '+n, tu[n]||k.nosql])}); }
-    if(o.buckets&&o.buckets.length)L.push(['Buckets: '+o.buckets.map(function(b){return b.name}).join(', '),k.object_storage]);
-    if(o.queues&&o.queues.length)L.push(['Queues: '+o.queues.map(function(x){return x.name}).join(', '),k.queues]);
+    (o.buckets||[]).forEach(function(b){L.push(['Bucket '+b.name,u['bucket:'+b.name]])});
+    (o.queues||[]).forEach(function(q){L.push(['Queue '+q.name,u['queue:'+q.name]])});
     (o.functions||[]).forEach(function(f){ if(f.url)L.push(['Function '+f.name,f.url]); });
     if(o.functions&&o.functions.length&&!o.functions.some(function(f){return f.url}))L.push(['Functions: '+o.functions.map(function(f){return f.name}).join(', '),k.functions]);
-    if(o.dataflow_jobs&&o.dataflow_jobs.length)L.push(['Spark (Data Flow): '+o.dataflow_jobs.map(function(j){return j.name}).join(', '),k.data_flow]);
-    if(o.catalog)L.push(['Data Catalog: '+(o.catalog.display_name||''),k.data_catalog]);
+    (o.dataflow_jobs||[]).forEach(function(d){L.push(['Spark job '+d.name,u['spark:'+d.name]])});
+    if(o.catalog)L.push(['Data Catalog '+(o.catalog.display_name||''),u['catalog']]);
     return L;
   }
   function primaryUrl(o){
@@ -297,6 +309,7 @@ function sfInit(){
     return '<tr><td style="padding:5px 12px 5px 0;color:#6b7280;white-space:nowrap;vertical-align:top">'
       + esc(label)+'</td><td style="padding:5px 0;word-break:break-all">'+body
       + (opts.copy===false?'':copyBtn(value))
+      + (opts.open?' <a class="sf-btn" style="padding:3px 10px;font-size:12px;text-decoration:none;margin-left:6px" href="'+esc(opts.open)+'" target="_blank" rel="noopener">Open &#8599;</a>':'')
       + (opts.hint?'<div style="font-size:11.5px;color:#6b7280;margin-top:2px">'+opts.hint+'</div>':'')
       + '</td></tr>';
   }
@@ -325,26 +338,27 @@ function sfInit(){
     });
     if(o.kafka) t += row('Kafka bootstrap', o.kafka.bootstrap_servers || '',
       {hint:'topics: '+esc((o.kafka.topics||[]).join(', '))});
+    var ru=resourceUrls(o);
     (o.buckets||[]).forEach(function(b){
-      t += row('Bucket', b.name, {hint:'oci os object put -bn '+esc(b.name)+' --file ./x --namespace '+esc(b.namespace)});
+      t += row('Bucket', b.name, {open:ru['bucket:'+b.name], hint:'Open it to upload or browse files. From a terminal: oci os object put -bn '+esc(b.name)+' --file ./x --namespace '+esc(b.namespace)});
     });
     (o.queues||[]).forEach(function(q){
-      t += row('Queue', q.name, {});
+      t += row('Queue', q.name, {open:ru['queue:'+q.name], hint:'Open it to send a test message; consumers read from the endpoint below.'});
       if(q.messages_endpoint) t += row('  endpoint', q.messages_endpoint, {link:true});
     });
     if(o.nosql&&o.nosql.tables) o.nosql.tables.forEach(function(n){
       var tu=(o.nosql.table_urls||{})[n];
-      if(tu) t += row('NoSQL table '+n, tu, {link:true, hint:'oci nosql query --compartment-id '+esc(o.nosql.compartment_id||(o.sandbox&&o.sandbox.compartment_id)||'')+' --statement "select * from '+esc(n)+'"   (Table Explorer in the console lets you add rows by hand)'});
+      if(tu) t += row('NoSQL table', n, {open:tu, hint:'Open it, then Table Explorer, to add and query rows. From a terminal: oci nosql query --compartment-id '+esc(o.nosql.compartment_id||(o.sandbox&&o.sandbox.compartment_id)||'')+' --statement "select * from '+esc(n)+'"'});
       else t += row('NoSQL table', n, {hint:'oci nosql query --compartment-id '+esc((o.sandbox&&o.sandbox.compartment_id)||'')+' --statement "select * from '+esc(n)+'"'});
     });
     (o.functions||[]).forEach(function(f){
       if(f.url){ t += row('Function '+f.name, f.url, {link:true, hint:"curl -s -X POST "+esc(f.url)+" -d '{\"name\":\"world\"}'   (any method, no signing needed)"}); }
       else { t += row('Function', f.name, {hint:"oci fn function invoke --function-id "+esc(f.id||'')+" --body '{}' --file -"}); }
     });
-    (o.dataflow_jobs||[]).forEach(function(j){
-      t += row('Spark job', j.name, {hint:'script: '+esc(j.file_uri||'')});
+    (o.dataflow_jobs||[]).forEach(function(d){
+      t += row('Spark job', d.name, {open:ru['spark:'+d.name], hint:'Open it and press Run; each run shows its logs there. Script: '+esc(d.file_uri||'')});
     });
-    if(o.catalog) t += row('Data Catalog', o.catalog.display_name || '', {});
+    if(o.catalog) t += row('Data Catalog', o.catalog.display_name || '', {open:ru['catalog'], hint:'Open it to harvest the bucket and browse the tables it finds.'});
     if(o.low_code&&o.low_code.rest_base) t += row('REST (ORDS)', o.low_code.rest_base,
       {hint:'authenticated as ADMIN with the password above'});
     t += '</table>';

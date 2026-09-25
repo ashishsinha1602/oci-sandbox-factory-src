@@ -681,7 +681,7 @@ def add_sandbox_options(p):
     p.add_argument("--ttl", type=int, default=3, choices=range(1, 31), metavar="1-30", help="days until auto-destroy (max 30)")
     p.add_argument("--allowed-cidr", default="0.0.0.0/0")
     p.add_argument("--adb", action="store_true")
-    p.add_argument("--adb-tier", choices=["free", "paid"], default="free")
+    p.add_argument("--adb-tier", choices=["free", "paid"], default="paid")
     p.add_argument("--adb-workload", choices=["OLTP", "DW", "AJD", "APEX"], default="OLTP")
     p.add_argument("--kafka", action="store_true")
     p.add_argument("--nosql", action="store_true", help="add OCI NoSQL tables to the sandbox")

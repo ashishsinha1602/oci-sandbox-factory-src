@@ -175,7 +175,7 @@ def factory_args(req: dict) -> argparse.Namespace:
     return argparse.Namespace(
         sandbox_id=req["sandbox_id"], owner=req["requester"], team="hackathon",
         ttl=int(req["ttl_days"] or 3), allowed_cidr="0.0.0.0/0",
-        adb=req["enable_adb"] == "Y", adb_tier=req["adb_tier"] or "free", adb_workload="OLTP",
+        adb=req["enable_adb"] == "Y", adb_tier=req["adb_tier"] or "paid", adb_workload="OLTP",
         kafka=req["enable_kafka"] == "Y", nosql=req.get("enable_nosql") == "Y", kafka_mode=req["kafka_mode"] or "cluster", topics="events",
         app=req["enable_app"] == "Y", image=req["app_image"] or None,
         shape="CI.Standard.A1.Flex", port=int(req["app_port"] or 80),

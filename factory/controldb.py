@@ -81,7 +81,7 @@ create table {SCHEMA}.sandbox_requests (
   ttl_days      number(2)     default 3 not null
                 constraint sandbox_requests_ttl_ck check (ttl_days between 1 and 30),
   enable_adb    varchar2(1)   default 'N' not null check (enable_adb in ('Y','N')),
-  adb_tier      varchar2(4)   default 'free' check (adb_tier in ('free','paid')),
+  adb_tier      varchar2(4)   default 'paid' check (adb_tier in ('free','paid')),
   enable_kafka  varchar2(1)   default 'N' not null check (enable_kafka in ('Y','N')),
   enable_nosql  varchar2(1)   default 'N' not null check (enable_nosql in ('Y','N')),
   kafka_mode    varchar2(9)   default 'streaming' check (kafka_mode in ('streaming','cluster')),

@@ -1,0 +1,21 @@
+# OCI DevOps build pipeline, stage 4: prove the workers just rolled. Starts
+# the end-to-end suite as a container instance in sbx-control (every sandbox
+# kind, Kafka cluster included), streams its log here, and fails the pipeline
+# when the suite fails. The report lands in bucket sbx-factory-reports.
+version: 0.1
+component: build
+timeoutInSeconds: 10800
+shell: bash
+env:
+  variables:
+    E2E_ARGS: "--kafka"
+steps:
+  - type: Command
+    name: Install the OCI SDK
+    command: python3 -m pip install --quiet oci
+  - type: Command
+    name: Run the end-to-end suite in OCI
+    timeoutInSeconds: 10500
+    command: |
+      cd "${OCI_PRIMARY_SOURCE_DIR}/factory"
+      python3 -u run_tests_in_oci.py ${E2E_ARGS}

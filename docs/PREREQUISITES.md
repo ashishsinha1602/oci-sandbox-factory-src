@@ -131,7 +131,7 @@ python ../tests/e2e.py               # proves every path in this tenancy, then d
 
 ### 5a. Building the worker inside OCI (DevOps)
 
-The worker image is built and rolled by an OCI DevOps build pipeline (`build_spec.yaml` → deliver to OCIR → `roll_spec.yaml`), triggered by a push to the mirrored code repository. Two things the pipeline needs that are easy to miss:
+The worker image is built, rolled and proven by an OCI DevOps build pipeline, triggered by a push to the mirrored code repository: `build_spec.yaml` (docker build on the OCI runner) → deliver to OCIR → `roll_spec.yaml` (replace the workers) → `e2e_spec.yaml` (`run_tests_in_oci.py --kafka`: the whole suite as a container instance, report to bucket `sbx-factory-reports`, pipeline fails when the suite fails). The product demo video is produced the same way: `record_demo_in_oci.py` drives a Playwright container against the live application and drops the `.webm` in the same bucket. Two things the pipeline needs that are easy to miss:
 
 - **OCI Logging must be enabled on the DevOps project**, or every run fails at once with *"Logs need to be enabled in order to run the builds"*. Create a log group in `sbx-control` and a service log for the project (service `devops`, category `all`), then re-run.
 - The DevOps project needs a **notification topic** at creation and the build runner needs `sbx-devops-build` (read repos, manage container images in `sbx-control`, manage container instances in `sbx-control` for the roll).

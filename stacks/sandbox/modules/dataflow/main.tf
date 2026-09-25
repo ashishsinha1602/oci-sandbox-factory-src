@@ -26,6 +26,16 @@ variable "jobs" {
     warehouse_uri   = optional(string)
   }))
 }
+variable "scripts_bucket" {
+  description = "Bucket that holds job scripts uploaded with the request."
+  type        = string
+  default     = ""
+}
+variable "namespace" {
+  type    = string
+  default = ""
+}
+
 variable "logs_bucket_uri" {
   description = "Where Data Flow writes run logs, e.g. oci://bucket@namespace/"
   type        = string
@@ -37,6 +47,21 @@ variable "injected_env" {
 variable "defined_tags" { type = map(string) }
 variable "freeform_tags" { type = map(string) }
 
+# Data Flow checks that the script exists when the application is created, so a
+# job whose script is uploaded later fails with FILE_URL_INVALID. When a request
+# carries the script inline, put it in the bucket first and point the job at it.
+resource "oci_objectstorage_object" "script" {
+  for_each = {
+    for j in var.jobs : j.name => j
+    if try(j.script, "") != "" && var.scripts_bucket != ""
+  }
+
+  namespace = var.namespace
+  bucket    = var.scripts_bucket
+  object    = "${each.value.name}.py"
+  content   = each.value.script
+}
+
 # A Data Flow application is a job definition, not a running cluster. Spark is
 # started for a run and torn down afterwards, so an idle job costs nothing and
 # consumes no quota - the same reason Functions suit a sandbox.
@@ -45,7 +70,8 @@ resource "oci_dataflow_application" "this" {
 
   compartment_id = var.compartment_id
   display_name   = "${var.name}-${each.value.name}"
-  file_uri       = each.value.file_uri
+  # Prefer the script uploaded with the request over a URI the caller supplied.
+  file_uri = try(each.value.script, "") != "" && var.scripts_bucket != "" ? "oci://${var.scripts_bucket}@${var.namespace}/${each.value.name}.py" : each.value.file_uri
   language       = each.value.language
   spark_version  = each.value.spark_version
   num_executors  = each.value.num_executors
@@ -57,6 +83,8 @@ resource "oci_dataflow_application" "this" {
   configuration  = var.injected_env
   defined_tags   = var.defined_tags
   freeform_tags  = var.freeform_tags
+
+  depends_on = [oci_objectstorage_object.script]
 
   driver_shape_config {
     ocpus         = each.value.ocpus

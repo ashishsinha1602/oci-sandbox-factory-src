@@ -236,6 +236,8 @@ module "dataflow" {
   name            = local.name
   jobs            = var.dataflow_jobs
   logs_bucket_uri = "oci://${module.storage[0].buckets[0].name}@${module.storage[0].namespace}/"
+  scripts_bucket  = module.storage[0].buckets[0].name
+  namespace       = module.storage[0].namespace
   injected_env    = local.injected_env
   defined_tags    = local.defined_tags
   freeform_tags   = local.freeform_tags

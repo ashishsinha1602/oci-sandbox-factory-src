@@ -198,7 +198,8 @@ variable "dataflow_jobs" {
   EOT
   type = list(object({
     name           = string
-    file_uri       = string
+    file_uri       = optional(string, "")
+    script         = optional(string, "")
     language       = optional(string, "PYTHON")
     spark_version  = optional(string, "3.5.0")
     driver_shape   = optional(string, "VM.Standard.E4.Flex")

@@ -142,13 +142,54 @@ def in_oci() -> bool:
     return "signer" in auth()
 
 
+def foundation_from_workers() -> dict | None:
+    """Find sbx-control by name and copy SBX_FOUNDATION from a running worker.
+
+    Needs `inspect compartments in tenancy` and `read compute-container-family
+    in compartment sbx-control` for the calling principal (the DevOps runner's
+    dynamic group has both). None when nothing is found; the caller then falls
+    back to terraform output and fails the usual way.
+    """
+    try:
+        idc = client(oci.identity.IdentityClient)
+        name = os.environ.get("SBX_CONTROL_COMPARTMENT_NAME", "sbx-control")
+        comps = oci.pagination.list_call_get_all_results(
+            idc.list_compartments, config()["tenancy"], compartment_id_in_subtree=True,
+            access_level="ACCESSIBLE", lifecycle_state="ACTIVE").data
+        ctl = next((c for c in comps if c.name == name), None)
+        if not ctl:
+            print(f"foundation: no compartment named {name} visible to this principal", flush=True)
+            return None
+        cc = client(oci.container_instances.ContainerInstanceClient)
+        for x in cc.list_container_instances(compartment_id=ctl.id).data.items:
+            if "worker" not in x.display_name.lower() or x.lifecycle_state != "ACTIVE":
+                continue
+            for k in cc.get_container_instance(x.id).data.containers:
+                env = cc.get_container(k.container_id).data.environment_variables or {}
+                if env.get("SBX_FOUNDATION"):
+                    print(f"foundation: borrowed from worker {x.display_name}", flush=True)
+                    return json.loads(env["SBX_FOUNDATION"])
+        print(f"foundation: no running worker in {name} carries SBX_FOUNDATION", flush=True)
+    except Exception as e:  # noqa: BLE001
+        print(f"foundation: lookup through the workers failed ({type(e).__name__}: {e})", flush=True)
+    return None
+
+
 def foundation() -> dict:
     """OCIDs produced by the foundation stack. From SBX_FOUNDATION (JSON, set on the
-    OCI-hosted worker), else cached in foundation.json, else terraform output."""
+    OCI-hosted worker), else cached in foundation.json, else borrowed from a running
+    worker (on OCI), else terraform output."""
     if os.environ.get("SBX_FOUNDATION"):
         return json.loads(os.environ["SBX_FOUNDATION"])
     if FOUNDATION_JSON.exists():
         return json.loads(FOUNDATION_JSON.read_text())
+    if in_oci():
+        # A DevOps build runner or any other OCI principal with nothing
+        # configured: the running workers carry the foundation in their
+        # environment, so borrow it from one of them.
+        borrowed = foundation_from_workers()
+        if borrowed:
+            return borrowed
     tf = shutil.which("terraform") or str(pathlib.Path.home() / "bin" / "terraform.exe")
     raw = subprocess.check_output([tf, "output", "-json"], cwd=FOUNDATION_DIR, text=True)
     out = json.loads(raw)

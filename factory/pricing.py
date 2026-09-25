@@ -54,6 +54,9 @@ SKUS = {
     "nosql_storage": ["Oracle NoSQL Database Cloud - Storage"],
     "gateway_calls": ["API Gateway"],
     "egress_gb":     ["Outbound Data Transfer - Originating in North America"],
+    "di_workspace":  ["OCI Data Integration - Workspace Usage"],
+    "di_data_gb":    ["OCI Data Integration - Data Processed"],
+    "di_pipeline":   ["OCI Data Integration - Pipeline Operator Execution"],
 }
 
 # Published AWS on-demand list prices, us-east-1, for the same unit. Kept here
@@ -70,6 +73,7 @@ AWS = {
     "gateway_calls": (3.5000, "API Gateway REST, per 1M calls"),
     "egress_gb":   (0.0900, "Data transfer out, GB"),
     "spark_ocpu":  (0.4400, "Glue ETL, per DPU-hour"),
+    "di_workspace": (0.4900, "MWAA mw1.small environment, per hour"),
 }
 
 # How an AWS stack lands on OCI. Two routes for each: lift the code as it is,
@@ -120,6 +124,21 @@ MIGRATION = {
         "better": ("Autonomous Database external tables",
                    "Query object storage directly from SQL with no cluster at all."),
     },
+    "airflow": {
+        "aws": "Amazon MWAA (managed Airflow)",
+        "same": ("Apache Airflow in a container on OCI",
+                 "Oracle has no managed Airflow. Run the same Airflow image on a container instance "
+                 "or OKE; DAGs move unchanged. About 8x cheaper than MWAA, and you do the patching."),
+        "better": ("OCI Data Integration",
+                   "Oracle's managed pipeline service - tasks, dependencies, schedules. Roughly 3x "
+                   "cheaper than MWAA and nothing to operate, but DAGs are rebuilt as pipelines."),
+    },
+    "mwaa": {"aws": "Amazon MWAA", "same": ("Apache Airflow in a container on OCI",
+             "Same image, same DAGs."), "better": ("OCI Data Integration", "Managed, but not Airflow.")},
+    "step-functions": {"aws": "AWS Step Functions",
+             "same": ("OCI Data Integration pipelines", "Visual orchestration of tasks."),
+             "better": ("DBMS_SCHEDULER job chains", "When the steps are mostly SQL, chain them inside "
+                        "the database with dependencies and retries and skip the extra service.")},
     "sqs":  {"aws": "Amazon SQS", "same": ("OCI Queue", "Same model: one consumer per message, "
              "visibility timeout, dead-letter after N failures."),
              "better": ("OCI Queue", "Already the right shape.")},

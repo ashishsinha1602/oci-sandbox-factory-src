@@ -41,6 +41,7 @@ def main(argv):
                                              environment_variables={**(c.environment_variables or {}), "OCIR_USER": (c.environment_variables or {}).get("OCIR_USER", "")},
                                              working_directory="/app", command=["python", "-u", "tests/e2e.py"] + argv)])).data
     print(f"started {name} from {c.image_url.split(':')[-1]}", flush=True)
+    started_at = time.time() - 60
     seen = 0
     while True:
         ci = cc.get_container_instance(inst.id).data
@@ -58,8 +59,25 @@ def main(argv):
     cont = cc.get_container(ci.containers[0].container_id).data
     code = getattr(cont, "exit_code", None)
     cc.delete_container_instance(inst.id)
-    print(f"runner finished with exit code {code}; report in bucket sbx-factory-reports", flush=True)
-    sys.exit(0 if code == 0 else 1)
+    # An exit code alone is not proof: a container that cannot start (wrong
+    # architecture, image pull) has been seen to report 0 having run nothing.
+    # The suite passes only if it wrote a report during this run and that
+    # report says every check passed.
+    osc = oci.object_storage.ObjectStorageClient(**auth)
+    ns = osc.get_namespace().data
+    reports = [o for o in osc.list_objects(ns, "sbx-factory-reports", prefix="e2e-", fields="name,timeCreated").data.objects
+               if o.name.endswith(".md")
+               if o.time_created and o.time_created.timestamp() >= started_at]
+    if not reports:
+        print(f"runner finished with exit code {code} but wrote NO report: the suite did not run", flush=True)
+        sys.exit(1)
+    rep = max(reports, key=lambda o: o.time_created)
+    text = osc.get_object(ns, "sbx-factory-reports", rep.name).data.content.decode("utf-8", "replace")
+    fails = [ln for ln in text.splitlines() if "| FAIL |" in ln]
+    print(f"runner finished with exit code {code}; report {rep.name}: {len(fails)} failed check(s)", flush=True)
+    for ln in fails:
+        print("  " + ln[:300], flush=True)
+    sys.exit(0 if code == 0 and not fails else 1)
 
 
 if __name__ == "__main__":

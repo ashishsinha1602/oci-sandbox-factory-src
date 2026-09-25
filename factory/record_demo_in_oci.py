@@ -76,7 +76,7 @@ def main():
             environment_variables={"SF_URL": url, "SF_USER": a.user, "SF_PASSWORD": password, "SF_PART": a.part,
                                    "SF_PROMPTS": json.dumps(PROMPTS), "REPORT_BUCKET": BUCKET, "REPORT_NAMESPACE": ns},
             volume_mounts=[m.CreateVolumeMountDetails(volume_name="script", mount_path="/workspace")],
-            command=["bash", "-c", "pip install --quiet oci && python -u /workspace/record_demo.py"])])).data
+            command=["bash", "-c", "pip install --quiet oci playwright==1.49.0 && python -u /workspace/record_demo.py"])])).data
     print(f"started {name}", flush=True)
     seen, uploaded = 0, None
     while True:
@@ -86,6 +86,7 @@ def main():
             lines = log.splitlines()
             for line in lines[seen:]:
                 text = line.split(" ", 2)[-1] if line.startswith("20") else line
+                text = text[2:] if text.startswith(("F ", "P ")) else text
                 print(text, flush=True)
                 if text.startswith("uploaded: "):
                     uploaded = text.split(": ", 1)[1].strip()

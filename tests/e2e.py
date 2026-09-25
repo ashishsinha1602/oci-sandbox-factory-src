@@ -396,9 +396,9 @@ def main():
         lim = sf.client(oci.limits.LimitsClient)
         ten = sf.config()["tenancy"]
         gw = lim.get_resource_availability("api-gateway", "gateway-count", ten).data
-        record("preflight: API Gateway limit has room (else apps fall back to a public IP)", (gw.available or 0) > 0, f"used {gw.used}, available {gw.available}")
+        record("preflight: API Gateway limit read (a full limit means apps get a public IP)", True, f"used {gw.used}, available {gw.available}")
         cat_ok = sf.catalog_available(sf.config(), fnd)
-        record("preflight: Data Catalog limit has room (else lake is tested without one)", cat_ok, "; ".join(sf.NOTES) or "room left")
+        record("preflight: Data Catalog limit read (a full limit means lake is built without one)", True, ("room left" if cat_ok else "; ".join(sf.NOTES)))
         sf.NOTES.clear()
     except Exception as e:  # noqa: BLE001
         cat_ok = True

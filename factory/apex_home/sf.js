@@ -86,7 +86,10 @@ function sfInit(){
       rows.forEach(function(r){
         if(r.status==='QUEUED'||r.status==='RUNNING')active=true;
         var o=null; try{o=r.outputs?JSON.parse(r.outputs):null}catch(e){}
-        h+='<div class="sf-req"><div class="hd">'+(r.status==='RUNNING'?'<span class="sf-spin"></span>':'')+'<b>'+esc(r.sandbox_id)+'</b><span class="sf-badge '+esc(r.status)+'">'+esc(r.status)+'</span><span>'+esc(r.action)+'</span><span class="meta">'+esc(r.created)+' &middot; '+esc(r.elapsed)+'s</span></div>';
+        var exp=o&&o.sandbox&&o.sandbox.expires;
+        h+='<div class="sf-req"><div class="hd">'+(r.status==='RUNNING'?'<span class="sf-spin"></span>':'')+'<b>'+esc(r.sandbox_id)+'</b><span class="sf-badge '+esc(r.status)+'">'+esc(r.status)+'</span><span>'+esc(r.action)+'</span>'
+          +(exp&&r.status==='DONE'&&r.action!=='DESTROY'?'<span style="font-size:12px;color:#6b7280">expires '+esc(exp)+' &middot; <label>lifetime <select class="sf-ttl-pick" data-ttl="'+esc(r.sandbox_id)+'" title="Re-applies the sandbox with a new lifetime from now"><option value="">change&hellip;</option><option value="1">1 day</option><option value="2">2 days</option><option value="3">3 days</option><option value="5">5 days</option><option value="7">7 days</option><option value="14">14 days</option><option value="21">21 days</option><option value="30">30 days</option></select></label></span>':'')
+          +'<span class="meta">'+esc(r.created)+' &middot; '+esc(r.elapsed)+'s</span></div>';
         if(r.status==='DONE'&&r.action!=='DESTROY'&&r.outputs){
           h+='<button type="button" class="sf-btn sec" style="padding:4px 12px;font-size:12px;margin-top:6px" '
             +'data-open="'+esc(r.sandbox_id)+'">Open everything</button>';
@@ -418,12 +421,21 @@ function sfInit(){
     box.scrollIntoView({behavior:'smooth',block:'start'});
     $('#sf-landing-close').onclick=function(){box.remove()};
   }
+  document.addEventListener('change', function(e){
+    var sel = e.target.closest && e.target.closest('select[data-ttl]');
+    if(!sel || !sel.value) return;
+    var sid=sel.getAttribute('data-ttl'), days=+sel.value; sel.disabled=true;
+    call('retry',{sandbox_id:sid, ttl_days:days}).then(function(s){
+      addMsg&&$('#sf-msgs')&&addMsg('ai', s&&s.err ? '<span class="sf-err">'+esc(s.err)+'</span>' : 'Lifetime of <b>'+esc(sid)+'</b> set to '+days+' day'+(days===1?'':'s')+' from now (request #'+esc(s.id)+'). The expiry updates when it finishes.');
+      refresh(); });
+  });
   document.addEventListener('click', function(e){
     var tb = e.target.closest && e.target.closest('[data-tab]');
     if(tb){ window.__sfTab = tb.getAttribute('data-tab'); refresh(); return; }
     var op = e.target.closest && e.target.closest('[data-open]');
     if(op){ showLanding(op.getAttribute('data-open')); return; }
     var rt = e.target.closest && e.target.closest('[data-retry]');
+    // (lifetime changes are handled on 'change', below)
     if(rt){ rt.disabled=true; rt.textContent='Queueing...';
       call('retry',{sandbox_id:rt.getAttribute('data-retry')}).then(function(s){
         rt.textContent = s&&s.err ? s.err : 'Queued as request #'+(s&&s.id); refresh(); }); return; }
@@ -730,11 +742,11 @@ function sfInit(){
         try{ expandWorkload(a); }catch(e){ console.error('workload', e); }
         var box=document.createElement('div'); box.className='sf-act';
         if(a.type!=='destroy'&&a.type!=='retry')d.insertAdjacentHTML('beforeend','<div class="sf-w-plan">'+infraHtml(a)+'</div>');
-        var label=a.type==='destroy'?'Destroy '+a.sandbox_id:(a.type==='retry'?'Retry setup of '+a.sandbox_id:(a.type==='deploy'?'Deploy it':'Create it'));
+        var label=a.type==='destroy'?'Destroy '+a.sandbox_id:(a.type==='retry'?(a.ttl_days?'Set '+a.sandbox_id+' to '+a.ttl_days+' days':'Retry setup of '+a.sandbox_id):(a.type==='deploy'?'Deploy it':'Create it'));
         box.innerHTML='<button type="button" class="sf-btn">'+esc(label)+'</button><button type="button" class="sf-btn sec">Not now</button>';
         d.appendChild(box);
         box.children[0].onclick=function(){ box.innerHTML='<span class="sf-spin"></span>Queueing...';
-          if(a.type==='retry'){ call('retry',{sandbox_id:a.sandbox_id}).then(function(s){ box.innerHTML = s.err ? '<span class="sf-err">'+esc(s.err)+'</span>' : '<span class="sf-chip">Queued as request #'+esc(s.id)+'</span>'; refresh(); }); return; }
+          if(a.type==='retry'){ call('retry',{sandbox_id:a.sandbox_id, ttl_days:a.ttl_days||undefined}).then(function(s){ box.innerHTML = s.err ? '<span class="sf-err">'+esc(s.err)+'</span>' : '<span class="sf-chip">Queued as request #'+esc(s.id)+'</span>'; refresh(); }); return; }
           var payload=a.type==='destroy'?{sandbox_id:a.sandbox_id,action:'DESTROY',ttl_days:1,enable_adb:false,enable_kafka:false,enable_app:false}
             :{sandbox_id:a.sandbox_id,action:a.git_url?'DEPLOY':'CREATE',ttl_days:a.ttl_days||3,enable_adb:!!a.enable_adb,enable_kafka:!!a.enable_kafka,enable_nosql:!!a.enable_nosql,enable_app:!!a.enable_app||!!a.git_url||!!a.app_image||!!(a.containers&&a.containers.length),
               app_image:a.app_image||null,git_url:a.git_url||null,app_port:a.app_port||80,text:t,containers:(a.containers&&a.containers.length)?a.containers:undefined,seed_sql:a.seed_sql||undefined,
@@ -764,6 +776,7 @@ function sfInit(){
       // was height:min(64vh,720px);min-height:360px - sized for the card grid
       '#sf-msgs{height:auto;min-height:120px;max-height:min(56vh,520px);overflow-y:auto}',
       '.sf-msg p{margin:0 0 8px}',
+      '.sf-ttl-pick{font-size:12px;border:1px solid #d6dde6;border-radius:6px;padding:1px 4px;background:#fff;color:#374151}',
       '.sf-reslink{display:inline-block;background:#eef4fb;color:#0b4a8b;border-radius:6px;padding:3px 9px;font-size:12px;margin:6px 6px 0 0;text-decoration:none}.sf-reslink:hover{background:#dbe8f8}',
       '.sf-w-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px;margin:10px 0 2px}',
       '.sf-w-card{background:#fff;border:1px solid #dde4ec;border-radius:12px;padding:11px 13px;box-shadow:0 1px 3px rgba(15,23,42,.05)}',

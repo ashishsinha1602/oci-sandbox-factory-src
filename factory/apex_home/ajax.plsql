@@ -337,6 +337,12 @@ begin
       -- Read first, then insert: the ownership trigger queries this table,
       -- and an INSERT ... SELECT on it raises ORA-04091 (mutating table).
       select * into l_r from sandbox_requests where id = l_src;
+      -- A new lifetime: the re-apply re-tags everything with now + ttl_days,
+      -- and the reaper follows the tag.
+      if l_in.get_number('ttl_days') is not null then
+        l_r.ttl_days := least(30, greatest(1, round(l_in.get_number('ttl_days'))));
+        l_r.request_text := 'lifetime set to ' || l_r.ttl_days || ' day(s) from now';
+      end if;
       insert into sandbox_requests (requester, sandbox_id, action, ttl_days, enable_adb, adb_tier, enable_kafka, kafka_mode, enable_app, app_image, git_url, app_port, request_text, seed_sql, app_containers, app_files, seed_key, app_template, enable_nosql, adb_databases, functions, app_instances, buckets, queues, dataflow_jobs, enable_catalog, catalog_assets)
       values (l_r.requester, l_r.sandbox_id, l_r.action, l_r.ttl_days, l_r.enable_adb, l_r.adb_tier, l_r.enable_kafka, l_r.kafka_mode, l_r.enable_app, l_r.app_image, l_r.git_url, l_r.app_port, l_r.request_text, l_r.seed_sql, l_r.app_containers, l_r.app_files, l_r.seed_key, l_r.app_template, l_r.enable_nosql, l_r.adb_databases, l_r.functions, l_r.app_instances, l_r.buckets, l_r.queues, l_r.dataflow_jobs, l_r.enable_catalog, l_r.catalog_assets);
       select max(id) into l_id from sandbox_requests where sandbox_id = l_sid and requester = :APP_USER;

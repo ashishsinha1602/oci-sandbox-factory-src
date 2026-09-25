@@ -727,8 +727,10 @@ function sfInit(){
     hideSugg();
     var gh=(t.match(/https?:\/\/github\.com\/[^\s)]+/)||[])[0];
     if(gh&&!(CODE&&CODE.source===gh)){
-      $('#sf-chat-in').value=''; addMsg('me',esc(t)); var fetching=addMsg('ai','<span class="sf-typing"><i></i><i></i><i></i></span> reading '+esc(gh));
-      fetchGitHub(gh).then(function(c){ CODE=c; showCodeChip(); fetching.remove(); $('#sf-chat-in').value=t; sendChat(); })
+      // show the message while the repository is read, then let the real send
+      // replace it (with the file count), so it appears once, not twice
+      $('#sf-chat-in').value=''; var pending=addMsg('me',esc(t)); var fetching=addMsg('ai','<span class="sf-typing"><i></i><i></i><i></i></span> reading '+esc(gh));
+      fetchGitHub(gh).then(function(c){ CODE=c; showCodeChip(); fetching.remove(); pending.remove(); $('#sf-chat-in').value=t; sendChat(); })
         .catch(function(e){ fetching.innerHTML='<span class="sf-err">Could not read '+esc(gh)+': '+esc(e.message||e)+'. Is it public? You can attach the folder instead.</span>'; });
       return;
     }

@@ -7,6 +7,10 @@ terraform {
 variable "compartment_id" { type = string }
 variable "name" { type = string }
 variable "subnet_id" { type = string }
+variable "public_subnet_id" {
+  description = "Where the gateway that fronts the functions lives."
+  type        = string
+}
 variable "functions" {
   description = "Functions to create. Each image must already exist in a registry the tenancy can pull from."
   type = list(object({
@@ -50,6 +54,50 @@ resource "oci_functions_function" "this" {
   freeform_tags      = var.freeform_tags
 }
 
+# Invoking a function directly needs a signed OCI request, which is not
+# something a user can paste into a browser or curl. A gateway in front of the
+# application turns every function into a plain HTTPS URL, /<function name>,
+# with nothing to sign. The gateway is allowed to call the functions by the
+# tenancy policy sbx-apigateway-functions.
+resource "oci_apigateway_gateway" "fn" {
+  compartment_id = var.compartment_id
+  endpoint_type  = "PUBLIC"
+  subnet_id      = var.public_subnet_id
+  display_name   = "${var.name}-fn-gw"
+  defined_tags   = var.defined_tags
+  freeform_tags  = var.freeform_tags
+}
+
+resource "oci_apigateway_deployment" "fn" {
+  compartment_id = var.compartment_id
+  gateway_id     = oci_apigateway_gateway.fn.id
+  path_prefix    = "/"
+  display_name   = "${var.name}-fn"
+  defined_tags   = var.defined_tags
+  freeform_tags  = var.freeform_tags
+
+  specification {
+    request_policies {
+      cors {
+        allowed_origins = ["*"]
+        allowed_methods = ["*"]
+        allowed_headers = ["*"]
+      }
+    }
+    dynamic "routes" {
+      for_each = oci_functions_function.this
+      content {
+        path    = "/${routes.key}"
+        methods = ["ANY"]
+        backend {
+          type        = "ORACLE_FUNCTIONS_BACKEND"
+          function_id = routes.value.id
+        }
+      }
+    }
+  }
+}
+
 output "application_id" {
   value = oci_functions_application.this.id
 }
@@ -64,6 +112,7 @@ output "functions" {
       name            = k
       id              = f.id
       invoke_endpoint = f.invoke_endpoint
+      url             = "https://${oci_apigateway_gateway.fn.hostname}/${k}"
     }
   ]
 }

@@ -88,6 +88,7 @@ output "databases" {
 output "nosql" {
   value = var.enable_nosql ? {
     tables         = module.nosql[0].tables
+    table_urls     = { for n, id in module.nosql[0].table_ids : "${replace(local.name, "-", "_")}_${n}" => "https://cloud.oracle.com/nosql/tables/${id}?region=${var.region}" }
     compartment_id = local.compartment_id
   } : null
 }

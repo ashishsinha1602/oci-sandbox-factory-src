@@ -612,7 +612,9 @@ def process_one(conn) -> bool:
                     note = f"{type(e).__name__}: {e}"
                     print(f"sandbox is up; database setup did not finish ({note[:200]})", flush=True)
                     outputs.setdefault("warnings", []).append(
-                        "Database setup (seed / Select AI / REST) did not finish: " + note[:300])
+                        "The database is up, but its sample data, Select AI and REST endpoints were not set up. "
+                        "Ask the factory to \"retry setup\" for this sandbox, or run the SQL yourself in SQL Developer Web. "
+                        f"(detail: {note[:160]})")
         if isinstance(outputs, dict) and req.get("_logins"):
             outputs["logins"] = req["_logins"]
         finish(conn, req["id"], True, outputs)

@@ -252,6 +252,7 @@ module "functions" {
   compartment_id = local.compartment_id
   name           = local.name
   subnet_id      = var.private_subnet_id
+  public_subnet_id = var.public_subnet_id
   functions      = var.functions
   injected_env   = local.injected_env
   defined_tags   = local.defined_tags

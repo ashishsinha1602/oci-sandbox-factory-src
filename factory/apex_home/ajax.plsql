@@ -123,6 +123,26 @@ declare
   exception when no_data_found then return '';
   end;
 
+  -- One brief for both the planner and the chat, so "AI plans it" and
+  -- "Chat with the factory" give the same answer to the same AWS stack.
+  function migration_brief return clob is
+  begin
+    return ''
+     || 'MOVING A WORKLOAD FROM AWS. When the user describes an existing stack - Lambda, Glue, S3, Iceberg, Athena, SQS, Kinesis, DynamoDB, RDS, EKS - do not just name the OCI service. Answer in this order: '
+     || '(1) what you would build, as two options: RUN THE SAME CODE (the closest service, what changes - usually an endpoint and credentials) and CHANGE THE CODE (the service that fits OCI better, and why it is worth the edit). '
+     || '(2) what it costs per month at their volume, as line items with a total in the cost key (not in reply). Say which pieces are billed per use and cost nothing idle, and if a cluster is shared across N workloads divide it by N and say so. '
+     || '(3) ask for the code: a Git URL or a folder path. Say you will read it and point out anything missing before deploying. '
+     || '(4) only once you have the repo, propose the action that builds it. '
+     || 'The mapping: Lambda -> OCI Functions (same handler in a container) or a small container instance when it runs for minutes or holds a database connection. S3 -> Object Storage, S3-compatible so usually only the endpoint changes. Glue ETL -> Data Flow, managed Spark, PySpark runs unchanged. Glue Data Catalog -> OCI Data Catalog. Iceberg -> the same iceberg jar on Data Flow writing to Object Storage, or an Autonomous Database instead if the data is under a few terabytes, because it already has ACID tables and time travel. Athena -> Data Flow SQL or Autonomous Database external tables. SQS -> OCI Queue. Kinesis/MSK -> OCI Streaming. DynamoDB -> OCI NoSQL. RDS -> Autonomous Database. EKS -> OKE, or container instances when it is a few containers rather than a platform. '
+     || 'Live OCI unit prices, use these and show your arithmetic: ' || l_prices || '. '
+     || 'Be honest about what you cannot price: there is no published rate for Data Flow, Data Catalog or Container Instances, so estimate those from the compute shape and say that is what you did. Never present a free-tier allowance as the real price. '
+     || 'Match services one to one and say so as a list: each AWS piece, its OCI counterpart, and what changes in the code (nothing / endpoint and credentials / a rewrite). '
+     || 'Airflow, MWAA or any DAG scheduler -> Airflow in a container instance here (image apache/airflow:2.10.4, port 8080): the same DAG files run unchanged; OCI Data Integration is the managed alternative when they want to leave Airflow behind. '
+     || 'Never add Kafka or OCI Streaming unless the user describes streaming, events, topics or real-time consumers. Lambda writing files to S3 and Glue building tables is a BATCH pipeline: Functions + Object Storage + Data Flow (+ Data Catalog), no stream. '
+     || 'Iceberg: a Data Flow Spark job with the iceberg-spark runtime writing to an Object Storage bucket, plus a Data Catalog entry; say the table format stays Iceberg, so downstream readers keep working. '
+     || 'Always ask, in questions, for code to analyse: a Git URL or a folder path. Say that if it is a normal Lambda + Glue flow you can build it one to one, and that you will read it and point out anything missing before deploying. ';
+  end;
+
   function msg(p_role varchar2, p_text clob) return json_object_t is
     l_m json_object_t := json_object_t();
     l_p json_object_t := json_object_t();
@@ -256,7 +276,12 @@ begin
         || 'containers (array, optional: several containers in one sandbox, each {name, image, port}; the first is served at / on the Oracle hostname, the others at /<name>; use it for bundles such as MCP + Studio, where <registry> is ' || nvl(l_registry,'(none configured)') || ': [{"name":"studio","image":"<registry>studio/app:latest","port":8770},{"name":"mcp","image":"<registry>schemagate/app:latest","port":8765}]), '
         || 'seed_sql (string or null: when the user wants sample data or a named domain schema such as telemetry, orders, IoT, HR, write Oracle SQL that creates 2-4 small tables with primary keys and inserts 5-10 realistic rows each, statements separated by semicolons, no PL/SQL blocks, no comments; it runs once in the new database before the containers start), '
         || 'Every database this factory creates gets Oracle Select AI (NL2SQL) and AI cataloguing switched on automatically over all its schemas, so an agent that answers questions in plain English needs only enable_adb plus seed_sql - no container. Add containers only when the user wants a UI, an MCP endpoint, or an app of their own. '
-        || 'questions (array of 0-3 short questions the user should answer before creating when something essential is missing or ambiguous, e.g. which producer or consumer app, which image or repository, which port; empty array when nothing is missing). '
+        || 'questions (array of 0-3 short questions the user should answer before creating when something essential is missing or ambiguous, e.g. which image or repository, which port; empty array when nothing is missing), '
+        || 'buckets (optional array of {name}), queues (optional array of {name}), functions (optional array of {name, image}), dataflow_jobs (optional array of Spark jobs on OCI Data Flow, each {name, file_uri}), enable_catalog (boolean: OCI Data Catalog), '
+        || 'cost (null, or {items: [{name, detail, monthly_usd}], total_usd, note} whenever you can price what you propose; the page renders it as a table). '
+        || 'Pick only what the request needs: a batch pipeline gets Object Storage, Functions and Data Flow, not Kafka; a database is only added when the user stores or queries relational data. '
+        || migration_brief()
+        || 'Live OCI unit prices, use these and show your arithmetic in cost: ' || l_prices || '. '
         || 'User request: ' || l_in.get_string('text')));
       l_out.put('raw', ai_chat(l_msgs));
     end;
@@ -278,7 +303,7 @@ begin
         || 'reply (string, friendly, concise, may contain short line breaks; explain what and how), '
         || 'sandboxes (array of the sandbox_ids your reply is about - every one the user asked about, e.g. all of them for "what do I have running"; the page renders each as a live card with its status, expiry, resources, links and passwords, so do NOT repeat that detail as a list in reply, just summarise in one sentence), '
         || 'cost (null, or when you give any price: {items: [{name, detail (how it is billed), monthly_usd (number)}], total_usd (number), note (one line on assumptions)}; the page renders it as a table, so keep the arithmetic out of reply), '
-        || 'action (null, or an object when the user clearly wants something done: {type: "create"|"deploy"|"destroy", sandbox_id, ttl_days (1-30, default 3), '
+        || 'action (null, or an object when the user clearly wants something done: {type: "create"|"deploy"|"destroy"|"retry" (retry = run the last build of an existing sandbox again, which repeats its database setup; use it when the user asks to retry, re-run or fix setup), sandbox_id, ttl_days (1-30, default 3), '
         || 'enable_catalog (boolean: OCI Data Catalog, the metastore a Spark job resolves table names against - the counterpart to the AWS Glue Data Catalog), buckets (optional array of Object Storage buckets, each {name, public}; cheap and outside the container quota), queues (optional array of OCI Queues, each {name}; serverless point-to-point messaging, the counterpart to Kafka streams), dataflow_jobs (optional array of Spark applications on OCI Data Flow, the equivalent of an AWS Glue ETL job, each {name, file_uri}; managed Spark billed per run), databases (optional array of EXTRA Autonomous Databases, each {name, tier}; every one is a real database with its own ADMIN credential and uses a tenancy slot), functions (optional array of OCI Functions, each {name, image}; serverless, billed per invocation, free when idle, and they do not consume the container core quota), app_instances (optional array of ADDITIONAL container instances, each {name, containers:[{name,image,port}]}; containers within ONE instance share a host and localhost, separate instances do not), enable_adb, enable_kafka, enable_nosql (OCI NoSQL: serverless JSON/key-value tables, good for events, sessions, device state, anything schemaless), enable_app (booleans), app_image (string or null), git_url (string or null: a Git repository URL, or a local folder path the user gave such as C:\Users\me\myapp, kept exactly as given), app_port (integer), '
         || 'containers (optional array of {name, image, port} for bundles, first served at /, others at /<name>), '
         || 'seed_sql (optional string: Oracle SQL creating 2-4 small tables with 5-10 realistic rows each for the domain the user named, semicolon-separated, no PL/SQL, no comments; runs once in the new database)}). '
@@ -287,14 +312,7 @@ begin
         || 'MCP turns the database into something Claude or any agent can query directly - it reads the live schema, so it stays correct as tables change. '
         || 'To include it, add a container {"name":"mcp","image":"<registry>schemagate/app:latest","port":8765}; add the Studio chat UI as well ({"name":"studio","image":"<registry>studio/app:latest","port":8770}) when they want to explore the data by talking to it rather than wiring up an agent. '
         || 'Offer it once, do not insist, and never add it silently - a user who did not ask for an MCP endpoint should not be given one. '
-        || 'MOVING A WORKLOAD FROM AWS. When the user describes an existing stack - Lambda, Glue, S3, Iceberg, Athena, SQS, Kinesis, DynamoDB, RDS, EKS - do not just name the OCI service. Answer in this order: '
-        || '(1) what you would build, as two options: RUN THE SAME CODE (the closest service, what changes - usually an endpoint and credentials) and CHANGE THE CODE (the service that fits OCI better, and why it is worth the edit). '
-        || '(2) what it costs per month at their volume, as line items with a total in the cost key (not in reply). Say which pieces are billed per use and cost nothing idle, and if a cluster is shared across N workloads divide it by N and say so. '
-        || '(3) ask for the code: a Git URL or a folder path. Say you will read it and point out anything missing before deploying. '
-        || '(4) only once you have the repo, propose the action that builds it. '
-        || 'The mapping: Lambda -> OCI Functions (same handler in a container) or a small container instance when it runs for minutes or holds a database connection. S3 -> Object Storage, S3-compatible so usually only the endpoint changes. Glue ETL -> Data Flow, managed Spark, PySpark runs unchanged. Glue Data Catalog -> OCI Data Catalog. Iceberg -> the same iceberg jar on Data Flow writing to Object Storage, or an Autonomous Database instead if the data is under a few terabytes, because it already has ACID tables and time travel. Athena -> Data Flow SQL or Autonomous Database external tables. SQS -> OCI Queue. Kinesis/MSK -> OCI Streaming. DynamoDB -> OCI NoSQL. RDS -> Autonomous Database. EKS -> OKE, or container instances when it is a few containers rather than a platform. '
-        || 'Live OCI unit prices, use these and show your arithmetic: ' || l_prices || '. '
-        || 'Be honest about what you cannot price: there is no published rate for Data Flow, Data Catalog or Container Instances, so estimate those from the compute shape and say that is what you did. Never present a free-tier allowance as the real price. '
+        || migration_brief()
         || 'You may also return questions (array of 0-3 short questions). Ask when a detail you need is genuinely missing and the answer would change what gets built: which domain the sample data should cover, how many days they need it for, whether they want a UI on top or just the database, or which repo or image to deploy. When you ask questions, leave action out entirely and wait for the answer - do not guess and build. Ask at most two at a time, and do not ask about anything they already told you or anything with an obvious default. '
         || 'In your reply, say in one or two plain sentences what will actually be created in OCI - the database and its tier, the Kafka cluster, the containers - so the user knows what is being spun up before they confirm. '
         || 'When the user asks for an MCP server plus a way to chat with or explore the data, propose containers [studio on 8770, mcp on 8765] with a database and seed_sql for their domain. '
@@ -316,6 +334,30 @@ begin
   elsif l_action = 'history' then
     htp.p(my_history());
     return;
+
+  elsif l_action = 'retry' then
+    -- Queue the sandbox's last build again. The stack is idempotent, so this
+    -- re-applies (no changes) and re-runs the database setup: sample data,
+    -- Select AI, REST. Only the owner may do it, and only for a live sandbox.
+    declare
+      l_sid varchar2(64) := l_in.get_string('sandbox_id');
+    begin
+      insert into sandbox_requests (requester, sandbox_id, action, ttl_days, enable_adb, adb_tier, enable_kafka, kafka_mode, enable_app, app_image, git_url, app_port, request_text, seed_sql, app_containers, app_files, seed_key, app_template, enable_nosql, adb_databases, functions, app_instances, buckets, queues, dataflow_jobs, enable_catalog, catalog_assets)
+      select requester, sandbox_id, action, ttl_days, enable_adb, adb_tier, enable_kafka, kafka_mode, enable_app, app_image, git_url, app_port, request_text, seed_sql, app_containers, app_files, seed_key, app_template, enable_nosql, adb_databases, functions, app_instances, buckets, queues, dataflow_jobs, enable_catalog, catalog_assets
+        from (select r.* from sandbox_requests r
+               where r.sandbox_id = l_sid and r.requester = :APP_USER
+                 and r.action in ('CREATE', 'DEPLOY') and r.status = 'DONE'
+               order by r.id desc)
+       where rownum = 1
+      returning id into l_id;
+      if l_id is null then
+        l_out.put('err', 'No finished build of ' || l_sid || ' to retry.');
+      else
+        l_out.put('id', l_id);
+      end if;
+    exception when others then
+      l_out.put('err', substr(sqlerrm, 1, 300));
+    end;
 
   elsif l_action = 'status' then
     htp.p(my_sandboxes());

@@ -38,6 +38,7 @@ function sfInit(){
       if(plan.steps&&plan.steps.length){h+='<h4 style="margin-top:10px">What to do next</h4><ol>'+plan.steps.map(function(s){return '<li>'+esc(s)+'</li>'}).join('')+'</ol>'}
       h+=infraHtml(plan);
       if(plan.tips&&plan.tips.length){h+='<ul>'+plan.tips.map(function(s){return '<li>'+esc(s)+'</li>'}).join('')+'</ul>'}
+      h+=widgetsHtml({cost:plan.cost,sandboxes:[]},'','');
       if(plan.questions&&plan.questions.length){h+='<h4 style="margin-top:10px">Before I create it, tell me</h4><ol>'+plan.questions.map(function(s){return '<li>'+esc(s)+'</li>'}).join('')+'</ol><p class="sf-err">Add the answers to your description and ask again, or adjust the form.</p>'}
       h+='<div class="sf-actions" style="margin-top:12px"><button type="button" class="sf-btn" id="sf-usePlan">Looks good, create it</button><button type="button" class="sf-btn sec" id="sf-editPlan">Adjust first</button></div>';
       showAI(h);
@@ -54,10 +55,13 @@ function sfInit(){
   function submit(){
     var id=$('#sf-id').value.trim().toLowerCase(); $('#sf-err').classList.add('sf-hide');
     if(!/^[a-z][a-z0-9-]{1,19}$/.test(id)){err('Sandbox id: 2-20 chars, lowercase letters, digits, dashes, starting with a letter.');return}
-    if(!cfg.enable_adb&&!cfg.enable_kafka&&!cfg.enable_nosql&&!cfg.enable_app){err('Pick at least one piece.');return}
+    var planHas=mode==='describe'&&plan&&['buckets','queues','functions','dataflow_jobs','databases','app_instances'].some(function(k){return plan[k]&&plan[k].length})||(plan&&plan.enable_catalog);
+    if(!cfg.enable_adb&&!cfg.enable_kafka&&!cfg.enable_nosql&&!cfg.enable_app&&!planHas){err('Pick at least one piece.');return}
     var git=$('#sf-git').value.trim(), payload={sandbox_id:id, ttl_days:+$('#sf-ttl').value, enable_adb:cfg.enable_adb, enable_kafka:cfg.enable_kafka, enable_nosql:cfg.enable_nosql, enable_app:cfg.enable_app,
       action:(cfg.enable_app&&git)?'DEPLOY':'CREATE', git_url:git||null, app_image:$('#sf-image').value.trim()||null, app_port:+$('#sf-port').value||80, text:mode==='describe'?$('#sf-text').value.trim():null};
-    if(mode==='describe'&&plan){ if(plan.containers&&plan.containers.length)payload.containers=plan.containers; if(plan.seed_sql)payload.seed_sql=plan.seed_sql; }
+    if(mode==='describe'&&plan){ if(plan.containers&&plan.containers.length)payload.containers=plan.containers; if(plan.seed_sql)payload.seed_sql=plan.seed_sql;
+      payload.buckets=nz(plan.buckets); payload.queues=nz(plan.queues); payload.functions=nz(plan.functions); payload.dataflow_jobs=nz(plan.dataflow_jobs);
+      payload.databases=nz(plan.databases); payload.app_instances=nz(plan.app_instances); payload.enable_catalog=!!plan.enable_catalog; }
     $('#sf-submit').disabled=true; $('#sf-submit-wait').classList.remove('sf-hide');
     call('submit',payload).then(function(r){
       $('#sf-submit').disabled=false; $('#sf-submit-wait').classList.add('sf-hide');
@@ -107,7 +111,8 @@ function sfInit(){
           if(o.databases&&o.databases.length>1){o.databases.slice(1).forEach(function(d){
             h+='<code>'+esc(d.name)+': '+esc(d.db_name)+'</code>'})}
           if(o.warnings&&o.warnings.length)h+='<div class="sf-err" style="margin-top:6px">'
-              +o.warnings.map(esc).join('<br>')+'</div>';
+              +o.warnings.map(esc).join('<br>')
+              +' <button type="button" class="sf-btn sec" style="padding:3px 10px;font-size:12px;margin-left:6px" data-retry="'+esc(r.sandbox_id)+'">Retry setup</button></div>';
           if(o.destroyed)h+='destroyed';
           h+='</div>'}
         if(r.error)h+='<div class="sf-err">'+esc(r.error)+'</div>';
@@ -150,10 +155,12 @@ function sfInit(){
   // card, the chat widget and the landing page so they never disagree.
   function resourceLinks(o){
     var k=consolesFor(o), L=[];
-    if(o.nosql&&o.nosql.tables&&o.nosql.tables.length)L.push(['NoSQL: '+o.nosql.tables.join(', '),k.nosql]);
+    if(o.nosql&&o.nosql.tables&&o.nosql.tables.length){ var tu=o.nosql.table_urls||{};
+      o.nosql.tables.forEach(function(n){L.push(['NoSQL table '+n, tu[n]||k.nosql])}); }
     if(o.buckets&&o.buckets.length)L.push(['Buckets: '+o.buckets.map(function(b){return b.name}).join(', '),k.object_storage]);
     if(o.queues&&o.queues.length)L.push(['Queues: '+o.queues.map(function(x){return x.name}).join(', '),k.queues]);
-    if(o.functions&&o.functions.length)L.push(['Functions: '+o.functions.map(function(f){return f.name}).join(', '),k.functions]);
+    (o.functions||[]).forEach(function(f){ if(f.url)L.push(['Function '+f.name,f.url]); });
+    if(o.functions&&o.functions.length&&!o.functions.some(function(f){return f.url}))L.push(['Functions: '+o.functions.map(function(f){return f.name}).join(', '),k.functions]);
     if(o.dataflow_jobs&&o.dataflow_jobs.length)L.push(['Spark (Data Flow): '+o.dataflow_jobs.map(function(j){return j.name}).join(', '),k.data_flow]);
     if(o.catalog)L.push(['Data Catalog: '+(o.catalog.display_name||''),k.data_catalog]);
     return L;
@@ -167,6 +174,7 @@ function sfInit(){
       return https[0]||o.app.urls[0];
     }
     if(o.adb)return o.adb.apex_url||o.adb.sql_web_url;
+    var fu=(o.functions||[]).filter(function(f){return f.url})[0]; if(fu)return fu.url;
     return null;
   }
   function addMsg(cls,html){var d=document.createElement('div');d.className='sf-msg '+cls;d.innerHTML=html;$('#sf-msgs').appendChild(d);$('#sf-msgs').scrollTop=1e9;return d}
@@ -325,11 +333,13 @@ function sfInit(){
       if(q.messages_endpoint) t += row('  endpoint', q.messages_endpoint, {link:true});
     });
     if(o.nosql&&o.nosql.tables) o.nosql.tables.forEach(function(n){
-      t += row('NoSQL table', n, {hint:'oci nosql row get --table-name-or-id '+esc(n)});
+      var tu=(o.nosql.table_urls||{})[n];
+      if(tu) t += row('NoSQL table '+n, tu, {link:true, hint:'oci nosql query --compartment-id '+esc(o.nosql.compartment_id||(o.sandbox&&o.sandbox.compartment_id)||'')+' --statement "select * from '+esc(n)+'"   (Table Explorer in the console lets you add rows by hand)'});
+      else t += row('NoSQL table', n, {hint:'oci nosql query --compartment-id '+esc((o.sandbox&&o.sandbox.compartment_id)||'')+' --statement "select * from '+esc(n)+'"'});
     });
     (o.functions||[]).forEach(function(f){
-      t += row('Function', f.name, {});
-      if(f.invoke_endpoint) t += row('  invoke', f.invoke_endpoint, {hint:'oci fn function invoke --function-id '+esc(f.id||'')});
+      if(f.url){ t += row('Function '+f.name, f.url, {link:true, hint:"curl -s -X POST "+esc(f.url)+" -d '{\"name\":\"world\"}'   (any method, no signing needed)"}); }
+      else { t += row('Function', f.name, {hint:"oci fn function invoke --function-id "+esc(f.id||'')+" --body '{}' --file -"}); }
     });
     (o.dataflow_jobs||[]).forEach(function(j){
       t += row('Spark job', j.name, {hint:'script: '+esc(j.file_uri||'')});
@@ -382,6 +392,10 @@ function sfInit(){
     if(tb){ window.__sfTab = tb.getAttribute('data-tab'); refresh(); return; }
     var op = e.target.closest && e.target.closest('[data-open]');
     if(op){ showLanding(op.getAttribute('data-open')); return; }
+    var rt = e.target.closest && e.target.closest('[data-retry]');
+    if(rt){ rt.disabled=true; rt.textContent='Queueing...';
+      call('retry',{sandbox_id:rt.getAttribute('data-retry')}).then(function(s){
+        rt.textContent = s&&s.err ? s.err : 'Queued as request #'+(s&&s.id); refresh(); }); return; }
     var b = e.target.closest && e.target.closest('[data-copy]');
     if(b){ navigator.clipboard.writeText(b.getAttribute('data-copy'));
            var t=b.textContent; b.textContent='copied'; setTimeout(function(){b.textContent=t},900); }
@@ -501,7 +515,7 @@ function sfInit(){
   // What a plan or a chat action will actually build in OCI, in plain words.
   function infraHtml(a){
     var L=[];
-    if(a.enable_adb)L.push('<li><b>Autonomous Database</b> &mdash; '+esc(a.adb_tier||'always free')+' tier, Oracle 23ai, private subnet. Select AI (plain-English queries) and AI cataloguing are switched on for you. Every table is also published as a REST endpoint through ORDS, and an APEX workspace is waiting if you want to click a low-code app together. You get SQL Developer Web and APEX URLs.</li>');
+    if(a.enable_adb)L.push('<li><b>Autonomous Database</b> &mdash; '+esc(a.adb_tier||'paid, 2 ECPU')+', Oracle 23ai, private subnet. Select AI (plain-English queries) and AI cataloguing are switched on for you. Every table is also published as a REST endpoint through ORDS, and an APEX workspace is waiting if you want to click a low-code app together. You get SQL Developer Web and APEX URLs.</li>');
     if(a.enable_nosql)L.push('<li><b>OCI NoSQL</b> &mdash; serverless JSON tables with on-demand capacity. You get the table names and the compartment; no cluster to size and nothing running when idle.</li>');
     if(a.enable_kafka)L.push('<li><b>Kafka</b> &mdash; '+esc(a.kafka_mode||'OCI Streaming')+', topic <code>events</code>. You get a bootstrap server address.</li>');
     var cs=(a.containers&&a.containers.length)?a.containers:((a.enable_app||a.git_url||a.app_image)?[{name:'web',image:a.git_url||a.app_image||'nginx:alpine',port:a.app_port||80}]:[]);
@@ -509,6 +523,12 @@ function sfInit(){
       +(cs.length>1?' &mdash; they share a host and reach each other on localhost':'')+', behind a public HTTPS URL: '+cs.map(function(c){return '<code>'+esc(c.name||'web')+'</code> &rarr; '+esc(c.image)+':'+esc(c.port||80)}).join(', ')+'.</li>');
     if(a.app_files){var n=Object.keys(JSON.parse(a.app_files)).length;
       L.push('<li><b>Your app, built here</b> &mdash; '+n+' source files are sent with the request, built into an image in OCI and deployed. Nothing to push to a registry.</li>')}
+    (a.functions||[]).forEach(function(f){L.push('<li><b>Function '+esc(f.name)+'</b> &mdash; '+esc(f.image||'')+', serverless, billed per call, free when idle. You get a plain HTTPS URL for it.</li>')});
+    (a.buckets||[]).forEach(function(b){L.push('<li><b>Bucket '+esc(b.name)+'</b> &mdash; Object Storage, '+(b.public?'public read':'private')+'.</li>')});
+    (a.queues||[]).forEach(function(q){L.push('<li><b>Queue '+esc(q.name)+'</b> &mdash; OCI Queue, serverless point-to-point messaging (the SQS counterpart).</li>')});
+    (a.dataflow_jobs||[]).forEach(function(d){L.push('<li><b>Spark job '+esc(d.name)+'</b> &mdash; OCI Data Flow, managed Spark billed per run (the Glue counterpart).</li>')});
+    if(a.enable_catalog)L.push('<li><b>Data Catalog</b> &mdash; the metastore Spark resolves table names against (the Glue Data Catalog counterpart).</li>');
+    (a.databases||[]).forEach(function(d){L.push('<li><b>Extra database '+esc(d.name)+'</b> &mdash; its own Autonomous Database with its own ADMIN password.</li>')});
     if(a.seed_sql)L.push('<li><b>Sample data</b> &mdash; '+esc(String(a.seed_sql).split(';').filter(function(x){return x.trim()}).length)+' SQL statements loaded into the new database before anything starts.</li>');
     L.push('<li>Everything is tagged with your sandbox id and <b>auto-destroyed after '+esc(a.ttl_days||3)+' day'+((a.ttl_days||3)==1?'':'s')+'</b>.</li>');
     return '<h4 style="margin:10px 0 4px">What this builds in OCI</h4><ul style="margin:0;padding-left:18px">'+L.join('')+'</ul>';
@@ -579,11 +599,12 @@ function sfInit(){
       }
       var a=j&&j.action; if(a&&a.type){
         var box=document.createElement('div'); box.className='sf-act';
-        if(a.type!=='destroy')d.insertAdjacentHTML('beforeend','<div class="sf-w-plan">'+infraHtml(a)+'</div>');
-        var label=a.type==='destroy'?'Destroy '+a.sandbox_id:(a.type==='deploy'?'Deploy it':'Create it');
+        if(a.type!=='destroy'&&a.type!=='retry')d.insertAdjacentHTML('beforeend','<div class="sf-w-plan">'+infraHtml(a)+'</div>');
+        var label=a.type==='destroy'?'Destroy '+a.sandbox_id:(a.type==='retry'?'Retry setup of '+a.sandbox_id:(a.type==='deploy'?'Deploy it':'Create it'));
         box.innerHTML='<button type="button" class="sf-btn">'+esc(label)+'</button><button type="button" class="sf-btn sec">Not now</button>';
         d.appendChild(box);
         box.children[0].onclick=function(){ box.innerHTML='<span class="sf-spin"></span>Queueing...';
+          if(a.type==='retry'){ call('retry',{sandbox_id:a.sandbox_id}).then(function(s){ box.innerHTML = s.err ? '<span class="sf-err">'+esc(s.err)+'</span>' : '<span class="sf-chip">Queued as request #'+esc(s.id)+'</span>'; refresh(); }); return; }
           var payload=a.type==='destroy'?{sandbox_id:a.sandbox_id,action:'DESTROY',ttl_days:1,enable_adb:false,enable_kafka:false,enable_app:false}
             :{sandbox_id:a.sandbox_id,action:a.git_url?'DEPLOY':'CREATE',ttl_days:a.ttl_days||3,enable_adb:!!a.enable_adb,enable_kafka:!!a.enable_kafka,enable_nosql:!!a.enable_nosql,enable_app:!!a.enable_app||!!a.git_url||!!a.app_image||!!(a.containers&&a.containers.length),
               app_image:a.app_image||null,git_url:a.git_url||null,app_port:a.app_port||80,text:t,containers:(a.containers&&a.containers.length)?a.containers:undefined,seed_sql:a.seed_sql||undefined,

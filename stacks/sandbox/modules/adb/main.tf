@@ -67,6 +67,17 @@ resource "oci_core_network_security_group_security_rule" "adb_in" {
   }
 }
 
+# A paid database's private endpoint keeps its VNIC attached to the security
+# group for a minute or two after the database is gone, and deleting the
+# group in that window fails with "still has vnics attached". This sleep sits
+# between the two in the dependency chain, so on destroy Terraform removes the
+# database, waits, then removes the group.
+resource "time_sleep" "nsg_release" {
+  count            = local.free ? 0 : 1
+  destroy_duration = "180s"
+  depends_on       = [oci_core_network_security_group.adb]
+}
+
 resource "oci_database_autonomous_database" "this" {
   compartment_id = var.compartment_id
   db_name        = local.db_name
@@ -89,6 +100,8 @@ resource "oci_database_autonomous_database" "this" {
   whitelisted_ips             = local.public_acl ? var.allowed_cidrs : null
   subnet_id                   = local.free ? null : var.subnet_id
   nsg_ids                     = local.free ? null : [oci_core_network_security_group.adb[0].id]
+
+  depends_on = [time_sleep.nsg_release]
   private_endpoint_label      = local.free ? null : replace(var.name, "-", "")
   is_mtls_connection_required = local.public_acl || !local.free ? false : true
 

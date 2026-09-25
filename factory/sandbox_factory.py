@@ -475,7 +475,16 @@ def cmd_list(args) -> list:
 
 
 def destroy_stack(rm, stack, keep_stack: bool = False):
-    run_job(rm, stack.id, "DESTROY", stack.freeform_tags.get("sandbox_id", stack.display_name))
+    label = stack.freeform_tags.get("sandbox_id", stack.display_name)
+    try:
+        run_job(rm, stack.id, "DESTROY", label)
+    except SystemExit:
+        # Cloud resources detach and release on their own clock (a private
+        # endpoint's VNIC, a bucket emptied a moment ago). A second pass a
+        # couple of minutes later removes what the first could not.
+        print("  destroy did not finish; waiting 120s and trying once more", flush=True)
+        time.sleep(120)
+        run_job(rm, stack.id, "DESTROY", label)
     if not keep_stack:
         rm.delete_stack(stack.id)
         print(f"  stack {stack.display_name} deleted")

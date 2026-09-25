@@ -231,6 +231,19 @@ def tour(pg, sid, o):
             show(pg, f["url"], 4000, scroll=False)
 
 
+def open_chat(pg):
+    """Click the chat card until its panel opens: a click that lands before the
+    page script has wired the cards does nothing."""
+    for _ in range(10):
+        pg.click(".sf-card[data-mode=chat]")
+        try:
+            pg.wait_for_selector("textarea#sf-chat-in", state="visible", timeout=3000)
+            return
+        except Exception:  # noqa: BLE001
+            pg.wait_for_timeout(1000)
+    raise RuntimeError("the chat panel did not open")
+
+
 with sync_playwright() as p:
     b = p.chromium.launch()
     ctx = b.new_context(viewport={"width": 1366, "height": 860}, record_video_dir=OUT, record_video_size={"width": 1366, "height": 860})
@@ -246,8 +259,7 @@ with sync_playwright() as p:
     pg.wait_for_selector(".sf-card[data-mode=chat]", timeout=60000)
     pg.wait_for_timeout(2500)
     if PART == "part1":
-        pg.click(".sf-card[data-mode=chat]")   # the chat panel is hidden until the card is chosen
-        pg.wait_for_selector("textarea#sf-chat-in", state="visible", timeout=30000)
+        open_chat(pg)   # the chat panel is hidden until the card is chosen
         pg.wait_for_timeout(1200)
         for q in PROMPTS:
             create = q.endswith(" => create")

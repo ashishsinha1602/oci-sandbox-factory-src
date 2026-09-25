@@ -92,6 +92,8 @@ function sfInit(){
           if(o.catalog&&o.catalog.display_name)h+='<code>catalog: '+esc(o.catalog.display_name)+'</code>';
           if(o.databases&&o.databases.length>1){o.databases.slice(1).forEach(function(d){
             h+='<code>'+esc(d.name)+': '+esc(d.db_name)+'</code>'})}
+          if(o.warnings&&o.warnings.length)h+='<div class="sf-err" style="margin-top:6px">'
+              +o.warnings.map(esc).join('<br>')+'</div>';
           if(o.consoles){
             var open=[];
             if(o.dataflow_jobs&&o.dataflow_jobs.length)open.push(['Data Flow',o.consoles.data_flow]);

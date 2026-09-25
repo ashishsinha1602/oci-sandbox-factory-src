@@ -556,12 +556,22 @@ def process_one(conn) -> bool:
             if req["action"] != "DESTROY" and isinstance(outputs, dict) and (outputs.get("adb") or {}).get("connect_string"):
                 # Select AI first: it creates the credential that a seed needs in
                 # order to embed anything with DBMS_VECTOR.
-                cfg = sf.config()
-                enable_select_ai(outputs, cfg.get("region", "us-phoenix-1"), cfg)
-                seed = (req.get("seed_sql") or "").strip()
-                if seed:
-                    seed_database(outputs, seed)
-                enable_low_code(outputs)
+                # The infrastructure is already built and usable at this point.
+                # Seeding and Select AI are conveniences on top, and the worker
+                # cannot always reach a private endpoint, so a failure here must
+                # not mark a working sandbox as failed - record it and move on.
+                try:
+                    cfg = sf.config()
+                    enable_select_ai(outputs, cfg.get("region", "us-phoenix-1"), cfg)
+                    seed = (req.get("seed_sql") or "").strip()
+                    if seed:
+                        seed_database(outputs, seed)
+                    enable_low_code(outputs)
+                except Exception as e:  # noqa: BLE001
+                    note = f"{type(e).__name__}: {e}"
+                    print(f"sandbox is up; database setup did not finish ({note[:200]})", flush=True)
+                    outputs.setdefault("warnings", []).append(
+                        "Database setup (seed / Select AI / REST) did not finish: " + note[:300])
         finish(conn, req["id"], True, outputs)
         print(f"  request {req['id']} DONE")
     except SystemExit as e:

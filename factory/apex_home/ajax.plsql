@@ -94,8 +94,11 @@ declare
     return l_blob;
   end;
 
+  function msg(p_role varchar2, p_text clob) return json_object_t;   -- defined below
+
   function ai_chat(p_messages json_array_t, p_retry boolean default true) return clob is
-    l_text clob;
+    l_text  clob;
+    l_again json_array_t;
     l_resp dbms_cloud_types.resp;
     l_req  json_object_t := json_object_t();
     l_sm   json_object_t := json_object_t();
@@ -133,9 +136,10 @@ declare
     -- Every caller expects one JSON object. Now and then the model answers in
     -- prose instead; ask once more, pointedly, before handing that back.
     if p_retry and instr(l_text, '{') = 0 then
-      p_messages.append(msg('ASSISTANT', l_text));
-      p_messages.append(msg('USER', 'Answer again with ONLY the JSON object described above, no prose, no fences.'));
-      return ai_chat(p_messages, false);
+      l_again := p_messages;
+      l_again.append(msg('ASSISTANT', l_text));
+      l_again.append(msg('USER', 'Answer again with ONLY the JSON object described above, no prose, no fences.'));
+      return ai_chat(l_again, false);
     end if;
     return l_text;
   end;

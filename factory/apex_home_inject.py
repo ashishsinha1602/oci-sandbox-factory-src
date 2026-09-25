@@ -127,7 +127,7 @@ def split_home() -> tuple[str, str]:
 def home_blocks() -> str:
     html, _ = split_home()
     plsql = (HERE / "apex_home" / "ajax.plsql").read_text(encoding="utf-8")
-    if len(plsql.encode()) > 30000:
+    if len(plsql.encode()) > 32000:
         raise SystemExit(f"ajax.plsql is {len(plsql.encode())} bytes; the APEX limit is 32767")
     return f"""wwv_flow_imp_page.create_page_plug(
  p_id=>wwv_flow_imp.id({HOME_REGION_ID})

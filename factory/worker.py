@@ -374,6 +374,11 @@ def enable_select_ai(outputs: dict, region: str, cfg: dict) -> None:
                 "region": region,
                 "model": SELECT_AI_MODEL,
                 "comments": "true",
+                # Spell the endpoint out: left to itself the database builds
+                # ...oci.my$cloud_domain and every SELECT AI fails with ORA-20404.
+                "provider_endpoint": f"inference.generativeai.{region}.oci.oraclecloud.com",
+                "oci_compartment_id": (outputs.get("sandbox") or {}).get("compartment_id") or sf.foundation()["compartments"]["sandboxes"],
+                "oci_apiformat": "GENERIC",
                 "object_list": object_list,
             }))
             # Persist the profile so every new session can just say SELECT AI ...
@@ -496,8 +501,27 @@ def enable_low_code(outputs: dict) -> None:
             db.commit()
         if rested:
             base = (adb.get("sql_web_url") or "").split("/ords/")[0]
-            outputs.setdefault("low_code", {})["rest_base"] = f"{base}/ords/admin/" if base else "(see ADB REST endpoint)"
-            outputs["low_code"]["rest_tables"] = sorted(t.lower() for t in tables)
+            # Only promise a REST endpoint that answers. ORDS takes a moment to
+            # publish a mapping, and some databases refuse to REST-enable ADMIN.
+            ok = False
+            if base:
+                import requests
+                for _ in range(4):
+                    try:
+                        r = requests.get(f"{base}/ords/admin/metadata-catalog/", auth=("ADMIN", pw), timeout=30)
+                        ok = r.status_code == 200
+                    except Exception:  # noqa: BLE001
+                        ok = False
+                    if ok:
+                        break
+                    time.sleep(20)
+            if ok:
+                outputs.setdefault("low_code", {})["rest_base"] = f"{base}/ords/admin/"
+                outputs["low_code"]["rest_tables"] = sorted(t.lower() for t in tables)
+            else:
+                outputs.setdefault("warnings", []).append(
+                    "REST endpoints for the ADMIN tables did not come up on this database; use SQL Developer Web or APEX instead.")
+                rested = 0
         print(f"ORDS auto-REST on for {rested}/{len(tables)} table(s), authenticated (basic auth as ADMIN); "
               f"APEX is ready at the APEX URL", flush=True)
     except Exception as e:  # noqa: BLE001

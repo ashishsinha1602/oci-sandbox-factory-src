@@ -493,6 +493,37 @@ def enable_low_code(outputs: dict) -> None:
                    and table_name not like 'LOGMNR%' and table_name not like 'SCHEDULER%'
             """)
             tables = [r[0] for r in cur.fetchall()]
+            # Tables that appear later (a pipeline's gold tables, anything the
+            # user creates) are published by the database itself, every 2 min.
+            try:
+                cur.execute("""
+                    begin
+                      begin dbms_scheduler.drop_job('ADMIN.SANDBOX_REST_NEW', true); exception when others then null; end;
+                      dbms_scheduler.create_job(
+                        job_name        => 'ADMIN.SANDBOX_REST_NEW',
+                        job_type        => 'PLSQL_BLOCK',
+                        job_action      => q'[begin
+                          for t in (select table_name from user_tables
+                                     where table_name not like 'DEF$%' and table_name not like 'SYS%'
+                                       and table_name not like 'AQ$%' and table_name not like 'MVIEW$%'
+                                       and table_name not like 'LOGMNR%' and table_name not like 'SCHEDULER%'
+                                       and table_name not in (select parsing_object from user_ords_enabled_objects)) loop
+                            begin
+                              ords.enable_object(p_enabled => true, p_schema => 'ADMIN', p_object => t.table_name,
+                                                 p_object_type => 'TABLE', p_object_alias => lower(t.table_name),
+                                                 p_auto_rest_auth => true);
+                            exception when others then null;
+                            end;
+                          end loop;
+                          commit;
+                        end;]',
+                        repeat_interval => 'FREQ=MINUTELY;INTERVAL=2',
+                        enabled         => true,
+                        comments        => 'Sandbox Factory: publish new ADMIN tables through ORDS');
+                    end;
+                """)
+            except Exception as e:  # noqa: BLE001
+                print(f"auto-publish job not created ({type(e).__name__}: {e})", flush=True)
             rested = 0
             for t in tables:
                 try:
@@ -511,7 +542,7 @@ def enable_low_code(outputs: dict) -> None:
                 except Exception:  # noqa: BLE001 - skip what will not REST
                     pass
             db.commit()
-        if rested:
+        if True:   # the schema is published even with no tables yet (a pipeline adds them)
             base = (adb.get("sql_web_url") or "").split("/ords/")[0]
             # Only promise a REST endpoint that answers. ORDS takes a moment to
             # publish a mapping, and some databases refuse to REST-enable ADMIN.

@@ -106,11 +106,20 @@ def tour(pg, sid, o):
     # the tables the sandbox holds (the pipeline's gold tables), through ORDS
     lc = o.get("low_code") or {}
     pw = (o.get("adb") or {}).get("admin_password")
-    if lc.get("rest_base") and lc.get("rest_tables") and pw:
+    if lc.get("rest_base") and pw:
         token = base64.b64encode(f"ADMIN:{pw}".encode()).decode()
+        tables = list(lc.get("rest_tables") or [])
+        if not tables:
+            # created after the build (a pipeline's gold tables): ask ORDS what it publishes now
+            try:
+                r = pg.request.get(lc["rest_base"].rstrip("/") + "/metadata-catalog/",
+                                   headers={"Authorization": "Basic " + token}, timeout=30000)
+                tables = [i.get("name") for i in (r.json().get("items") or []) if i.get("name")]
+            except Exception as e:  # noqa: BLE001
+                print(f"  metadata-catalog: {type(e).__name__}", flush=True)
         pg.context.set_extra_http_headers({"Authorization": "Basic " + token})
         try:
-            for t in lc["rest_tables"][:3]:
+            for t in tables[:3]:
                 show(pg, lc["rest_base"].rstrip("/") + "/" + t + "/", 5000)
         finally:
             pg.context.set_extra_http_headers({})

@@ -75,6 +75,20 @@ for nm in names:
         containers=[m.CreateContainerDetails(display_name="worker", image_url=IMAGE,
                                              environment_variables={**env, "WORKER_NAME": nm})])).data
     st = wait(new.id, ("ACTIVE", "FAILED"), 600)
+    if st == "ACTIVE":
+        # ACTIVE only means the container started. A worker that crashes at
+        # start is restarted by the policy and still shows ACTIVE, so watch it
+        # for 90 s: any restart means the image is bad and the roll stops here.
+        time.sleep(90)
+        cid = cc.get_container_instance(new.id).data.containers[0].container_id
+        restarts = cc.get_container(cid).data.container_restart_attempt_count or 0
+        if restarts:
+            try:
+                tail = cc.retrieve_logs(cid).data.content.decode("utf-8", "replace").splitlines()[-8:]
+                print("\n".join("    " + ln[-200:] for ln in tail), flush=True)
+            except Exception:  # noqa: BLE001
+                pass
+            st = f"CRASHING ({restarts} restarts)"
     print(f"{nm}: {st} on {IMAGE.split(':')[-1]}", flush=True)
     if st != "ACTIVE":
         print(f"{nm} did not come up; stopping the roll so the remaining workers keep serving", flush=True)

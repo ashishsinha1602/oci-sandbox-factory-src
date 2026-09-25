@@ -1,0 +1,222 @@
+[
+ {
+  "check": "build: function image built inside OCI from the repo",
+  "ok": true,
+  "detail": "phx.ocir.io/ax3sbu0rnjhx/sbx/hello-fn/app:e2e"
+ },
+ {
+  "check": "preflight: API Gateway limit has room (else apps fall back to a public IP)",
+  "ok": false,
+  "detail": "used 5, available 0"
+ },
+ {
+  "check": "preflight: Data Catalog limit has room (else lake is tested without one)",
+  "ok": false,
+  "detail": "Built without a Data Catalog: this region's limit (2) is used up. Ask for a catalog-count increase, or destroy a sandbox that has one."
+ },
+ {
+  "check": "web: request accepted by the page's back end",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "check": "data: request accepted by the page's back end",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "check": "lake: request accepted by the page's back end",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "check": "db: request accepted by the page's back end",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "check": "rag: request accepted by the page's back end",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "check": "airflow: request accepted by the page's back end",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "check": "ai: chat answers as JSON with a sandboxes widget",
+  "ok": true,
+  "detail": "{'reply': 'You have 6 sandboxes currently active or queued: e2e-airflow, e2e-rag, e2e-db, e2e-lake, e2e-data, and e2e-web. You can see their status and details on the page.', 'sandboxes': ['e2e-airflo"
+ },
+ {
+  "check": "ai: planner returns a build plan",
+  "ok": true,
+  "detail": "{'sandbox_id': 'sales-api-db', 'enable_adb': True, 'enable_app': True}"
+ },
+ {
+  "check": "ai: attached code becomes a workload plan (DAG + Spark) with a cost table",
+  "ok": true,
+  "detail": "{'dags': ['dags/telemetry_gold.py'], 'spark': ['spark/gold_etl.py'], 'bucket': 'data', 'catalog': True, 'oracle': True}"
+ },
+ {
+  "check": "users: the second user sees none of the first user's sandboxes",
+  "ok": true,
+  "detail": "TEAMUSER2: []"
+ },
+ {
+  "check": "users: the second user cannot destroy the first user's sandbox",
+  "ok": true,
+  "detail": "{'err': 'Sandbox \"e2e-web\" belongs to someone else. Pick another name.'}"
+ },
+ {
+  "check": "lake: sandbox built by the worker",
+  "ok": true,
+  "detail": "DONE"
+ },
+ {
+  "check": "lake: expiry stamped on the sandbox",
+  "ok": true,
+  "detail": "2026-09-26"
+ },
+ {
+  "check": "web: sandbox built by the worker",
+  "ok": true,
+  "detail": "DONE"
+ },
+ {
+  "check": "web: expiry stamped on the sandbox",
+  "ok": true,
+  "detail": "2026-09-26"
+ },
+ {
+  "check": "data: sandbox built by the worker",
+  "ok": false,
+  "detail": "APPLY failed"
+ },
+ {
+  "check": "airflow: sandbox built by the worker",
+  "ok": true,
+  "detail": "DONE"
+ },
+ {
+  "check": "airflow: expiry stamped on the sandbox",
+  "ok": true,
+  "detail": "2026-09-26"
+ },
+ {
+  "check": "db: sandbox built by the worker",
+  "ok": true,
+  "detail": "DONE"
+ },
+ {
+  "check": "db: expiry stamped on the sandbox",
+  "ok": true,
+  "detail": "2026-09-26"
+ },
+ {
+  "check": "rag: sandbox built by the worker",
+  "ok": true,
+  "detail": "DONE"
+ },
+ {
+  "check": "rag: expiry stamped on the sandbox",
+  "ok": true,
+  "detail": "2026-09-26"
+ },
+ {
+  "check": "lake: Data Flow run writes Parquet to the bucket",
+  "ok": true,
+  "detail": "run SUCCEEDED ; objects 4"
+ },
+ {
+  "check": "web: app URL answers over HTTPS",
+  "ok": true,
+  "detail": "http://158.101.18.212:80 -> 200"
+ },
+ {
+  "check": "airflow: generated admin login on the card",
+  "ok": true,
+  "detail": "[{'service': 'airflow', 'user': 'admin', 'password': 'WFrM7aevZ78Jr989i1s'}]"
+ },
+ {
+  "check": "airflow: REST API accepts the generated login",
+  "ok": true,
+  "detail": "http://129.146.3.161:8080 -> 200"
+ },
+ {
+  "check": "db: seeded tables visible through the API",
+  "ok": true,
+  "detail": "['CUSTOMERS', 'ORDERS', 'ORDER_ITEMS', 'PRODUCTS']"
+ },
+ {
+  "check": "db: Select AI answers a plain-English question",
+  "ok": false,
+  "detail": "{\"detail\":\"DatabaseError: ORA-20404: Object not found - https://inference.generativeai.us-phoenix-1.oci.my$cloud_domain/20231130/actions/chat\\nORA-06512: at \\\"C##CLOUD$SERVICE.DBMS_CLOUD$PDBCS_260904_"
+ },
+ {
+  "check": "db: ADMIN password on the card",
+  "ok": true,
+  "detail": "SBXE2EDB"
+ },
+ {
+  "check": "db: ORDS REST endpoint (authenticated)",
+  "ok": false,
+  "detail": "https://sbxe2edb.adb.us-phoenix-1.oraclecloudapps.com/ords/admin/customers/ -> 404"
+ },
+ {
+  "check": "rag: starter documents embedded in the database",
+  "ok": true,
+  "detail": "{'total': 7, 'embedded': 7}"
+ },
+ {
+  "check": "rag: Ask the documents answers",
+  "ok": true,
+  "detail": "{'answer': 'VECTOR_DISTANCE compares two vectors with COSINE, EUCLIDEAN or DOT metrics [1].', 'chunks': [{'id': 1005, 'title': 'AI Vector Search in 23ai', 'source': 'oracle/docs', 'body': 'VECTOR_DIST"
+ },
+ {
+  "check": "rag: second Ask is served from the cache",
+  "ok": true,
+  "detail": "cached=True in 0.3s"
+ },
+ {
+  "check": "lake: destroyed",
+  "ok": true,
+  "detail": "DONE"
+ },
+ {
+  "check": "web: destroyed",
+  "ok": true,
+  "detail": "DONE"
+ },
+ {
+  "check": "airflow: destroyed",
+  "ok": true,
+  "detail": "DONE"
+ },
+ {
+  "check": "db: destroyed",
+  "ok": false,
+  "detail": "DESTROY failed"
+ },
+ {
+  "check": "rag: destroyed",
+  "ok": false,
+  "detail": "DESTROY failed"
+ },
+ {
+  "check": "data: destroyed",
+  "ok": true,
+  "detail": "DONE"
+ },
+ {
+  "check": "cleanup: no e2e container instances or buckets left",
+  "ok": true,
+  "detail": "instances [] buckets []"
+ },
+ {
+  "check": "cleanup: destroyed sandboxes appear in History",
+  "ok": false,
+  "detail": "['e2e-data', 'e2e-airflow', 'e2e-web', 'e2e-lake']"
+ }
+]

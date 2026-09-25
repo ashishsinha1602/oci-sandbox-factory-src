@@ -1,0 +1,67 @@
+[
+ {
+  "check": "build: function image built inside OCI from the repo",
+  "ok": true,
+  "detail": "phx.ocir.io/ax3sbu0rnjhx/sbx/hello-fn/app:e2e"
+ },
+ {
+  "check": "preflight: API Gateway limit has room (else apps fall back to a public IP)",
+  "ok": false,
+  "detail": "used 5, available 0"
+ },
+ {
+  "check": "preflight: Data Catalog limit has room (else lake is tested without one)",
+  "ok": false,
+  "detail": "Built without a Data Catalog: this region's limit (2) is used up. Ask for a catalog-count increase, or destroy a sandbox that has one."
+ },
+ {
+  "check": "data: request accepted by the page's back end",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "check": "ai: chat answers as JSON with a sandboxes widget",
+  "ok": false,
+  "detail": "{}"
+ },
+ {
+  "check": "ai: planner returns a build plan",
+  "ok": true,
+  "detail": "{'sandbox_id': 'sales-api-db', 'enable_adb': True, 'enable_app': True}"
+ },
+ {
+  "check": "ai: attached code becomes a workload plan (DAG + Spark) with a cost table",
+  "ok": true,
+  "detail": "{'dags': ['dags/telemetry_gold.py'], 'spark': ['spark/gold_etl.py'], 'bucket': 'data', 'catalog': True, 'oracle': True}"
+ },
+ {
+  "check": "users: the second user sees none of the first user's sandboxes",
+  "ok": true,
+  "detail": "TEAMUSER2: []"
+ },
+ {
+  "check": "users: the second user cannot destroy the first user's sandbox",
+  "ok": true,
+  "detail": "{'err': 'Sandbox \"e2e-web\" belongs to someone else. Pick another name.'}"
+ },
+ {
+  "check": "data: sandbox built by the worker",
+  "ok": false,
+  "detail": "APPLY failed"
+ },
+ {
+  "check": "data: destroyed",
+  "ok": true,
+  "detail": "DONE"
+ },
+ {
+  "check": "cleanup: no e2e container instances or buckets left",
+  "ok": true,
+  "detail": "instances [] buckets []"
+ },
+ {
+  "check": "cleanup: destroyed sandboxes appear in History",
+  "ok": true,
+  "detail": "['e2e-data', 'e2e-airflow', 'e2e-web', 'e2e-db', 'e2e-rag', 'e2e-lake']"
+ }
+]

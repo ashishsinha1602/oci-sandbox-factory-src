@@ -108,7 +108,7 @@ variable "worker_image" {
 
 variable "worker_shape" {
   type    = string
-  default = "CI.Standard.A1.Flex"
+  default = "CI.Standard.E4.Flex" # x86: the image is built by the OCI DevOps runner
 }
 
 variable "worker_ocpus" {

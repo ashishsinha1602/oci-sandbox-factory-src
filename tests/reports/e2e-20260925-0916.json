@@ -1,0 +1,187 @@
+[
+ {
+  "check": "build: function image built inside OCI from the repo",
+  "ok": false,
+  "detail": "SystemExit: image build failed (instance INACTIVE, exit code 1)"
+ },
+ {
+  "check": "preflight: API Gateway limit has room (else apps fall back to a public IP)",
+  "ok": false,
+  "detail": "used 5, available 0"
+ },
+ {
+  "check": "preflight: Data Catalog limit has room",
+  "ok": true,
+  "detail": "used None, available None"
+ },
+ {
+  "check": "web: request accepted by the page's back end",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "check": "data: request accepted by the page's back end",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "check": "lake: request accepted by the page's back end",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "check": "db: request accepted by the page's back end",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "check": "rag: request accepted by the page's back end",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "check": "airflow: request accepted by the page's back end",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "check": "ai: chat answers as JSON with a sandboxes widget",
+  "ok": true,
+  "detail": "{'reply': 'You have 7 sandboxes currently: `e2e-airflow`, `e2e-rag`, `e2e-db`, `e2e-lake` are QUEUED, `e2e-data` and `e2e-web` are RUNNING, and `tele-pipe` is DONE.', 'sandboxes': ['e2e-airflow', 'e2e"
+ },
+ {
+  "check": "ai: planner returns a build plan",
+  "ok": true,
+  "detail": "{'sandbox_id': 'database-sales-api', 'enable_adb': True, 'enable_app': True}"
+ },
+ {
+  "check": "ai: attached code becomes a workload plan (DAG + Spark) with a cost table",
+  "ok": true,
+  "detail": "{'dags': ['dags/telemetry_gold.py'], 'spark': ['spark/gold_etl.py'], 'bucket': 'data', 'catalog': True, 'oracle': True}"
+ },
+ {
+  "check": "users: the second user sees none of the first user's sandboxes",
+  "ok": true,
+  "detail": "TEAMUSER2: []"
+ },
+ {
+  "check": "users: the second user cannot destroy the first user's sandbox",
+  "ok": true,
+  "detail": "{'err': 'Sandbox \"e2e-web\" belongs to someone else. Pick another name.'}"
+ },
+ {
+  "check": "lake: sandbox built by the worker",
+  "ok": false,
+  "detail": "APPLY failed"
+ },
+ {
+  "check": "web: sandbox built by the worker",
+  "ok": true,
+  "detail": "DONE"
+ },
+ {
+  "check": "web: expiry stamped on the sandbox",
+  "ok": true,
+  "detail": "2026-09-26"
+ },
+ {
+  "check": "data: sandbox built by the worker",
+  "ok": true,
+  "detail": "DONE"
+ },
+ {
+  "check": "data: expiry stamped on the sandbox",
+  "ok": true,
+  "detail": "2026-09-26"
+ },
+ {
+  "check": "airflow: sandbox built by the worker",
+  "ok": true,
+  "detail": "DONE"
+ },
+ {
+  "check": "airflow: expiry stamped on the sandbox",
+  "ok": true,
+  "detail": "2026-09-26"
+ },
+ {
+  "check": "db: sandbox built by the worker",
+  "ok": false,
+  "detail": "APPLY failed"
+ },
+ {
+  "check": "rag: sandbox built by the worker",
+  "ok": false,
+  "detail": "APPLY failed"
+ },
+ {
+  "check": "web: app URL answers over HTTPS",
+  "ok": true,
+  "detail": "http://129.146.105.31:80 -> 200"
+ },
+ {
+  "check": "data: bucket put/get",
+  "ok": true,
+  "detail": "sbx-e2e-data-files"
+ },
+ {
+  "check": "data: queue put/get",
+  "ok": true,
+  "detail": "sbx-e2e-data-jobs"
+ },
+ {
+  "check": "data: NoSQL put/get row",
+  "ok": true,
+  "detail": "sbx_e2e_data_events columns ['id', 'created_at', 'kind', 'payload']"
+ },
+ {
+  "check": "airflow: generated admin login on the card",
+  "ok": true,
+  "detail": "[{'service': 'airflow', 'user': 'admin', 'password': 'Ip3nyCn0NTHYF7btV3Q'}]"
+ },
+ {
+  "check": "airflow: REST API accepts the generated login",
+  "ok": true,
+  "detail": "http://129.146.103.77:8080 -> 200"
+ },
+ {
+  "check": "lake: destroyed",
+  "ok": true,
+  "detail": "DONE"
+ },
+ {
+  "check": "rag: destroyed",
+  "ok": true,
+  "detail": "DONE"
+ },
+ {
+  "check": "web: destroyed",
+  "ok": true,
+  "detail": "DONE"
+ },
+ {
+  "check": "db: destroyed",
+  "ok": true,
+  "detail": "DONE"
+ },
+ {
+  "check": "data: destroyed",
+  "ok": true,
+  "detail": "DONE"
+ },
+ {
+  "check": "airflow: destroyed",
+  "ok": true,
+  "detail": "DONE"
+ },
+ {
+  "check": "cleanup: no e2e container instances or buckets left",
+  "ok": true,
+  "detail": "instances [] buckets []"
+ },
+ {
+  "check": "cleanup: destroyed sandboxes appear in History",
+  "ok": true,
+  "detail": "['e2e-airflow', 'e2e-data', 'e2e-web', 'e2e-db', 'e2e-rag', 'e2e-lake']"
+ }
+]

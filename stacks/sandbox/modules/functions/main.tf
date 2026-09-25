@@ -7,6 +7,11 @@ terraform {
 variable "compartment_id" { type = string }
 variable "name" { type = string }
 variable "subnet_id" { type = string }
+variable "gateway" {
+  description = "Create the gateway that gives each function a URL. Off when the region has no gateway left."
+  type        = bool
+  default     = true
+}
 variable "public_subnet_id" {
   description = "Where the gateway that fronts the functions lives."
   type        = string
@@ -60,6 +65,7 @@ resource "oci_functions_function" "this" {
 # with nothing to sign. The gateway is allowed to call the functions by the
 # tenancy policy sbx-apigateway-functions.
 resource "oci_apigateway_gateway" "fn" {
+  count          = var.gateway ? 1 : 0
   compartment_id = var.compartment_id
   endpoint_type  = "PUBLIC"
   subnet_id      = var.public_subnet_id
@@ -69,8 +75,9 @@ resource "oci_apigateway_gateway" "fn" {
 }
 
 resource "oci_apigateway_deployment" "fn" {
+  count          = var.gateway ? 1 : 0
   compartment_id = var.compartment_id
-  gateway_id     = oci_apigateway_gateway.fn.id
+  gateway_id     = oci_apigateway_gateway.fn[0].id
   path_prefix    = "/"
   display_name   = "${var.name}-fn"
   defined_tags   = var.defined_tags
@@ -112,7 +119,7 @@ output "functions" {
       name            = k
       id              = f.id
       invoke_endpoint = f.invoke_endpoint
-      url             = "https://${oci_apigateway_gateway.fn.hostname}/${k}"
+      url             = var.gateway ? "https://${oci_apigateway_gateway.fn[0].hostname}/${k}" : null
     }
   ]
 }

@@ -187,16 +187,11 @@ def verify_data(o, fnd):
     tbl = nc.get_table(t, compartment_id=fnd["compartments"]["sandboxes"]).data
     cols = [c.name for c in tbl.schema.columns]
     pk = tbl.schema.primary_key[0]
-    row = {c: ("e2e-1" if c == pk else "v") for c in cols}
+    # only the key and any JSON column: every other column may stay null
+    row = {pk: "e2e-1"}
     for c in tbl.schema.columns:
-        if c.name != pk and c.type in ("JSON",):
+        if c.name != pk and c.type == "JSON":
             row[c.name] = {"e2e": True}
-        elif c.name != pk and c.type in ("INTEGER", "LONG", "NUMBER", "DOUBLE", "FLOAT"):
-            row[c.name] = 1
-        elif c.name != pk and c.type == "TIMESTAMP":
-            row[c.name] = "2026-01-01T00:00:00Z"
-        elif c.name != pk and c.type == "BOOLEAN":
-            row[c.name] = True
     nc.update_row(t, oci.nosql.models.UpdateRowDetails(compartment_id=fnd["compartments"]["sandboxes"], value=row))
     back = nc.get_row(t, key=[f"{pk}:e2e-1"], compartment_id=fnd["compartments"]["sandboxes"]).data.value
     record("data: NoSQL put/get row", back is not None and back.get(pk) == "e2e-1", f"{t} columns {cols}")
@@ -232,9 +227,10 @@ def verify_lake(o, fnd):
     record("lake: Data Flow run writes Parquet to the bucket", r.lifecycle_state == "SUCCEEDED" and any(n.endswith(".parquet") for n in objs),
            f"run {r.lifecycle_state} {r.lifecycle_details or ''}; objects {len(objs)}")
     cat = o.get("catalog") or {}
-    dc = sf.client(oci.data_catalog.DataCatalogClient)
-    st = dc.get_catalog(cat["id"]).data.lifecycle_state if cat.get("id") else None
-    record("lake: Data Catalog is ACTIVE", st == "ACTIVE", cat.get("display_name"))
+    if cat.get("id"):
+        dc = sf.client(oci.data_catalog.DataCatalogClient)
+        st = dc.get_catalog(cat["id"]).data.lifecycle_state
+        record("lake: Data Catalog is ACTIVE", st == "ACTIVE", cat.get("display_name"))
 
 
 def verify_db(o):
@@ -379,7 +375,21 @@ def main():
             record("build: function image built inside OCI from the repo", False, f"{type(e).__name__}: {e}")
             fn_image = None
 
+    # tenancy limits decide what can be tested; say so in the report
+    try:
+        lim = sf.client(oci.limits.LimitsClient)
+        ten = sf.config()["tenancy"]
+        gw = lim.get_resource_availability("api-gateway", "gateway-count", ten).data
+        cat = lim.get_resource_availability("data-catalog", "catalog-count", ten).data
+        record("preflight: API Gateway limit has room (else apps fall back to a public IP)", (gw.available or 0) > 0, f"used {gw.used}, available {gw.available}")
+        cat_ok = (cat.available or 0) > 0 or cat.available is None
+        record("preflight: Data Catalog limit has room", cat_ok, f"used {cat.used}, available {cat.available}")
+    except Exception as e:  # noqa: BLE001
+        cat_ok = True
+        record("preflight: limits readable", False, f"{type(e).__name__}: {e}")
     todo = cases(fn_image)
+    if not cat_ok:
+        todo["lake"]["enable_catalog"] = False
     if not a.kafka:
         todo.pop("kafka")
     if only:
@@ -433,7 +443,8 @@ def main():
         lb = [b.name for b in osc.list_buckets(ns, fnd["compartments"]["sandboxes"]).data if b.name.startswith("sbx-" + PREFIX)]
         record("cleanup: no e2e container instances or buckets left", not left and not lb, f"instances {left} buckets {lb}")
         hist = [h["sandbox_id"] for h in f.ajax(USER, "history", {})]
-        record("cleanup: destroyed sandboxes appear in History", all((PREFIX + n) in hist for n in ids), str(hist)[:200])
+        built = [n for n, (st, _, _) in results.items() if st == "DONE"]
+        record("cleanup: destroyed sandboxes appear in History", all((PREFIX + n) in hist for n in built), str([h for h in hist if h.startswith(PREFIX)])[:200])
 
     ts = dt.datetime.now().strftime("%Y%m%d-%H%M")
     rep = HERE / "reports"

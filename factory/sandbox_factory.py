@@ -274,8 +274,34 @@ def adb_password_from_state(rm, stack_id: str) -> str | None:
 # Commands
 # ---------------------------------------------------------------------------
 
+_GATEWAY_OK = None
+
+
+def gateway_available(cfg: dict) -> bool:
+    """Is there an API Gateway left in this region's limit (gateway-count)?
+
+    A tenancy's default is small (5). When it is used up, a sandbox that
+    asked for a gateway would fail its apply, so the app is exposed on a public
+    IP instead and the card says so. Unknown (no permission, API error) counts
+    as available: the apply, not this check, has the last word.
+    """
+    global _GATEWAY_OK
+    if _GATEWAY_OK is None:
+        try:
+            lim = client(oci.limits.LimitsClient)
+            av = lim.get_resource_availability("api-gateway", "gateway-count", cfg["tenancy"]).data
+            _GATEWAY_OK = (av.available or 0) > 0
+            if not _GATEWAY_OK:
+                print("no API Gateway left in this region's limit (gateway-count); the app gets a public IP instead", flush=True)
+        except Exception as e:  # noqa: BLE001
+            print(f"gateway limit check skipped ({type(e).__name__}); assuming one is available", flush=True)
+            _GATEWAY_OK = True
+    return _GATEWAY_OK
+
+
 def build_variables(args, fnd: dict, cfg: dict, app_containers: list | None) -> dict:
     """Resource Manager variables are strings; lists/objects go as JSON."""
+    gw = gateway_available(cfg)
     v = {
         "tenancy_ocid": cfg["tenancy"],
         "region": cfg["region"],
@@ -302,7 +328,11 @@ def build_variables(args, fnd: dict, cfg: dict, app_containers: list | None) -> 
         # A paid database is reachable only on its private endpoint, which lives in
         # the private subnet. Put the app there too, beside it - the API Gateway
         # still gives the sandbox a public HTTPS URL, so nothing is lost.
-        "app_public": json.dumps(not (bool(args.adb) and args.adb_tier == "paid")),
+        # Behind a gateway the app can sit in the private subnet (it must, next
+        # to a paid database). Without one it needs a public IP to be reachable.
+        "app_public": json.dumps((not (bool(args.adb) and args.adb_tier == "paid")) or not gw),
+        "app_gateway": json.dumps(gw),
+        "functions_gateway": json.dumps(gw),
         "enable_app": json.dumps(app_containers is not None),
     }
     if getattr(args, "enable_catalog", False):

@@ -1,0 +1,152 @@
+[
+ {
+  "check": "build: function image built inside OCI from the repo",
+  "ok": false,
+  "detail": "SystemExit: image build failed (instance INACTIVE, exit code 1)"
+ },
+ {
+  "check": "web: request accepted by the page's back end",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "check": "data: request accepted by the page's back end",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "check": "lake: request accepted by the page's back end",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "check": "db: request accepted by the page's back end",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "check": "rag: request accepted by the page's back end",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "check": "airflow: request accepted by the page's back end",
+  "ok": true,
+  "detail": ""
+ },
+ {
+  "check": "ai: chat answers as JSON with a sandboxes widget",
+  "ok": true,
+  "detail": "{'reply': 'You have 5 sandboxes currently running or queued: `e2e-airflow`, `e2e-rag`, `e2e-db`, `e2e-lake`, `e2e-data`, and `e2e-web`. One sandbox, `tele-pipe`, completed successfully, and `t-kafka` "
+ },
+ {
+  "check": "ai: planner returns a build plan",
+  "ok": true,
+  "detail": "{'sandbox_id': 'sales-api-demo', 'enable_adb': True, 'enable_app': True}"
+ },
+ {
+  "check": "ai: attached code becomes a workload plan (DAG + Spark) with a cost table",
+  "ok": true,
+  "detail": "{'dags': ['dags/telemetry_gold.py'], 'spark': ['spark/gold_etl.py'], 'bucket': 'data', 'catalog': True, 'oracle': True}"
+ },
+ {
+  "check": "users: the second user sees none of the first user's sandboxes",
+  "ok": true,
+  "detail": "TEAMUSER2: []"
+ },
+ {
+  "check": "users: the second user cannot destroy the first user's sandbox",
+  "ok": true,
+  "detail": "{'err': 'Sandbox \"e2e-web\" belongs to someone else. Pick another name.'}"
+ },
+ {
+  "check": "lake: sandbox built by the worker",
+  "ok": false,
+  "detail": "APPLY failed"
+ },
+ {
+  "check": "db: sandbox built by the worker",
+  "ok": false,
+  "detail": "ValueError: an app was requested with seed data but no image; name a container, give app_image, or use an app_template"
+ },
+ {
+  "check": "web: sandbox built by the worker",
+  "ok": false,
+  "detail": "APPLY failed"
+ },
+ {
+  "check": "data: sandbox built by the worker",
+  "ok": true,
+  "detail": "DONE"
+ },
+ {
+  "check": "data: expiry stamped on the sandbox",
+  "ok": true,
+  "detail": "2026-09-26"
+ },
+ {
+  "check": "airflow: sandbox built by the worker",
+  "ok": false,
+  "detail": "APPLY failed"
+ },
+ {
+  "check": "rag: sandbox built by the worker",
+  "ok": false,
+  "detail": "APPLY failed"
+ },
+ {
+  "check": "data: bucket put/get",
+  "ok": true,
+  "detail": "sbx-e2e-data-files"
+ },
+ {
+  "check": "data: queue put/get",
+  "ok": true,
+  "detail": "sbx-e2e-data-jobs"
+ },
+ {
+  "check": "data: verification ran",
+  "ok": false,
+  "detail": "ServiceError: {'target_service': 'nosql', 'status': 400, 'code': 'InvalidParameter', 'opc-request-id': 'E3AFFE75ADC04E6292D79C8261D333C2', 'message': \"PUT: Illegal Argument: Failed to parse the timestamp string 'v' with the pattern: uuuu-MM-dd['T'HH:mm:ss]: invalid character 'v' while parsing component year\", 'operation_name': 'update_row', 'timestamp': '2026-09-25T14:58:01.644419+00:00', 'client_version': 'Oracle-PythonSDK/2.185.2', 'request_endpoint': 'PUT https://nosql.us-phoenix-1.oci.oraclecloud.com/20190828/tables/sbx_e2e_data_events/rows', 'logging_tips': 'To get more info on the failin"
+ },
+ {
+  "check": "db: destroyed",
+  "ok": false,
+  "detail": "No sandbox named e2e-db"
+ },
+ {
+  "check": "lake: destroyed",
+  "ok": true,
+  "detail": "DONE"
+ },
+ {
+  "check": "rag: destroyed",
+  "ok": true,
+  "detail": "DONE"
+ },
+ {
+  "check": "web: destroyed",
+  "ok": true,
+  "detail": "DONE"
+ },
+ {
+  "check": "airflow: destroyed",
+  "ok": true,
+  "detail": "DONE"
+ },
+ {
+  "check": "data: destroyed",
+  "ok": true,
+  "detail": "DONE"
+ },
+ {
+  "check": "cleanup: no e2e container instances or buckets left",
+  "ok": true,
+  "detail": "instances [] buckets []"
+ },
+ {
+  "check": "cleanup: destroyed sandboxes appear in History",
+  "ok": false,
+  "detail": "['e2e-data', 'e2e-web', 'e2e-airflow', 'e2e-rag', 'e2e-lake', 'burst-09', 'burst-01', 'burst-04', 'burst-10', 'burst-07', 'burst-08', 'burst-06', 'burst-05', 'burst-03', 'burst-02', 'load-05', 'load-0"
+ }
+]

@@ -339,6 +339,12 @@ variable "app_public" {
   description = "true = public subnet with a public IP. false = private subnet only."
 }
 
+variable "functions_gateway" {
+  type        = bool
+  default     = true
+  description = "Front every function with an API Gateway so it has a plain HTTPS URL. Off when the region's gateway limit is used up."
+}
+
 variable "app_gateway" {
   type        = bool
   default     = true

@@ -81,7 +81,19 @@ allow service rawfka to use virtual-network-family in compartment <sbx-sandboxes
 
 Nothing grants anything outside `sbx-*`, and no policy grants a human user anything.
 
-## 3. Quotas and limits the tenancy must have
+## 3. Service limits that decide how many sandboxes can run at once
+
+These are per-region tenancy limits (Console > Governance > Limits). The defaults of a new tenancy are small; raise them before a team uses the factory:
+
+| Limit | Default | What it caps | Recommended |
+|---|---|---|---|
+| API Gateway `gateway-count` | 5 | one gateway per sandbox with an app, plus one per sandbox with functions. When it is used up the factory falls back to a **public IP** (HTTP, no Oracle hostname) and says so on the card | 50 |
+| Data Catalog `catalog-count` | 2 | one catalog per sandbox that asks for one | 10 |
+| Autonomous Database `atp-ecpu-count` | varies | 2 ECPU per paid database | 64 |
+| Container Instances A1 cores / memory | varies | 1 core, 4 GB per app container by default | 64 / 1 TB |
+| Streaming with Apache Kafka clusters | varies | one per Kafka sandbox | 5 |
+
+## 3a. Quotas and limits the tenancy must have
 
 The foundation sets **quotas** on `sbx` so the playground cannot outgrow its budget
 (defaults: 64 A1 cores / 1 TB memory, 64 ATP ECPUs + 16 ADW ECPUs, 2 OKE

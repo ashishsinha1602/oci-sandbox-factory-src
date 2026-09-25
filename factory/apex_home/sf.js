@@ -754,6 +754,12 @@ function sfInit(){
       }
       var a=j&&j.action; if(a&&a.type){
         try{ expandWorkload(a); }catch(e){ console.error('workload', e); }
+        // The first container is served at the sandbox URL and the rest under
+        // /<name>; a UI must be first and MCP answers at /mcp. The worker puts
+        // them in that order, so describe (and send) them in that order too.
+        var uiFirst=function(cs){return (cs||[]).slice().sort(function(x,y){return ((x.name||'').toLowerCase()==='mcp')-((y.name||'').toLowerCase()==='mcp')})};
+        if(a.containers)a.containers=uiFirst(a.containers);
+        (a.app_instances||[]).forEach(function(i){ if(i.containers)i.containers=uiFirst(i.containers); });
         var box=document.createElement('div'); box.className='sf-act';
         if(a.type!=='destroy'&&a.type!=='retry')d.insertAdjacentHTML('beforeend','<div class="sf-w-plan">'+infraHtml(a)+'</div>');
         var label=a.type==='destroy'?'Destroy '+a.sandbox_id:(a.type==='retry'?(a.ttl_days?'Set '+a.sandbox_id+' to '+a.ttl_days+' days':'Retry setup of '+a.sandbox_id):(a.type==='deploy'?'Deploy it':'Create it'));

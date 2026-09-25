@@ -366,7 +366,7 @@ def destroy_stack(rm, stack, keep_stack: bool = False):
         print(f"  stack {stack.display_name} deleted")
 
 
-def empty_buckets(sandbox_id: str) -> None:
+def empty_buckets(sandbox_id: str, namespace: str | None = None) -> None:
     """Delete every object in this sandbox's buckets before Terraform runs.
 
     Object Storage refuses to delete a bucket that still holds objects, so a
@@ -376,18 +376,20 @@ def empty_buckets(sandbox_id: str) -> None:
     try:
         fnd = foundation()
         osc = client(oci.object_storage.ObjectStorageClient)
-        # The namespace lookup is granted "in tenancy", so it must be asked for
-        # against the tenancy; a child compartment answers 404 NamespaceNotFound,
-        # and with no compartment at all an instance principal does too.
-        ns = None
-        for scope in (config().get("tenancy"), fnd["compartments"]["control"], None):
-            try:
-                ns = osc.get_namespace(compartment_id=scope).data if scope else osc.get_namespace().data
-                break
-            except Exception:  # noqa: BLE001 - try the next scope
-                continue
+        # Prefer the namespace the sandbox already recorded in its outputs.
+        # get_namespace() answers 404 NamespaceNotFound for this worker's
+        # instance principal whatever compartment it is asked for, and the
+        # sandbox knows its own namespace anyway, so do not depend on the call.
+        ns = namespace
         if not ns:
-            print("  bucket cleanup skipped: object storage namespace could not be resolved")
+            for scope in (config().get("tenancy"), fnd["compartments"]["control"], None):
+                try:
+                    ns = osc.get_namespace(compartment_id=scope).data if scope else osc.get_namespace().data
+                    break
+                except Exception:  # noqa: BLE001 - try the next scope
+                    continue
+        if not ns:
+            print("  bucket cleanup skipped: object storage namespace unknown")
             return
         prefix = f"sbx-{sandbox_id}-"
         for comp in {fnd["compartments"]["control"], fnd["compartments"]["sandboxes"]}:
@@ -418,7 +420,7 @@ def cmd_destroy(args):
     if not stack:
         raise SystemExit(f"No sandbox named {args.sandbox_id}")
     assert_owner(stack, getattr(args, "owner", None), "destroy")
-    empty_buckets(args.sandbox_id)
+    empty_buckets(args.sandbox_id, getattr(args, "os_namespace", None))
     print(f"Destroying {stack.display_name}")
     destroy_stack(rm, stack, keep_stack=args.keep_stack)
 

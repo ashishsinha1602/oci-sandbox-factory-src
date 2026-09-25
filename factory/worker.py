@@ -469,9 +469,28 @@ def expand_templates(req: dict) -> None:
             print(f"app template '{req['app_template']}' expanded ({len(app)} files)", flush=True)
 
 
-def handle(req: dict) -> dict:
+def recorded_namespace(conn, sandbox_id: str) -> str | None:
+    """The Object Storage namespace this sandbox recorded when it was created."""
+    try:
+        cur = conn.cursor()
+        cur.execute("""select outputs from sbx.sandbox_requests
+                        where sandbox_id = :s and status = 'DONE' and outputs is not null
+                        order by id desc fetch first 3 rows only""", s=sandbox_id)
+        for (out,) in cur.fetchall():
+            data = json.loads(out.read() if hasattr(out, "read") else out)
+            for b in (data.get("buckets") or []):
+                if b.get("namespace"):
+                    return b["namespace"]
+    except Exception:  # noqa: BLE001 - cleanup must never block a destroy
+        pass
+    return None
+
+
+def handle(req: dict, conn=None) -> dict:
     expand_templates(req)
     args = factory_args(req)
+    if req["action"] == "DESTROY" and conn is not None:
+        args.os_namespace = recorded_namespace(conn, req["sandbox_id"])
     if req["action"] == "DESTROY":
         sf.cmd_destroy(args)
         return {"destroyed": req["sandbox_id"]}
@@ -530,7 +549,7 @@ def process_one(conn) -> bool:
     log = RowLog(conn, req["id"])
     try:
         with contextlib.redirect_stdout(log):
-            outputs = handle(req)
+            outputs = handle(req, conn)
             if req["action"] != "DESTROY" and isinstance(outputs, dict) and (outputs.get("adb") or {}).get("connect_string"):
                 # Select AI first: it creates the credential that a seed needs in
                 # order to embed anything with DBMS_VECTOR.

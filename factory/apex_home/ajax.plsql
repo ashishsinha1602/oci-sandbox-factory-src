@@ -96,7 +96,9 @@ declare
     l_req.put('servingMode', l_sm);
     l_cr.put('apiFormat', 'GENERIC');
     l_cr.put('messages', p_messages);
-    l_cr.put('maxTokens', 6000);
+    -- Gemini counts its thinking against maxTokens; a planner answer with a
+    -- cost table needs room after it, or the JSON is cut off mid-string.
+    l_cr.put('maxTokens', 16000);
     l_cr.put('temperature', 0.2);
     l_req.put('chatRequest', l_cr);
 
@@ -112,7 +114,7 @@ declare
     end if;
     l_j := json_object_t.parse(l_body);
     return treat(treat(l_j.get_object('chatResponse').get_array('choices').get(0) as json_object_t)
-                   .get_object('message').get_array('content').get(0) as json_object_t).get_string('text');
+                   .get_object('message').get_array('content').get(0) as json_object_t).get_clob('text');
   end;
 
   function templates return varchar2 is

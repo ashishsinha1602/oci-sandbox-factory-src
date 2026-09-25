@@ -572,9 +572,10 @@ function sfInit(){
     if(picked.length)h+='<div class="sf-w-grid">'+picked.map(sbxCard).join('')+'</div>';
     var c=j&&j.cost;
     if(c&&c.items&&c.items.length){
-      var money=function(v){var n=Number(v);return isFinite(n)?'$'+n.toFixed(2):esc(v)};
+      var money=function(v){if(v==null||v==='')return '';var n=Number(v);return isFinite(n)?'$'+n.toFixed(2):esc(v)};
+      // an item with no price is a heading: the model uses them to separate options
       h+='<div class="sf-w-cost"><table><thead><tr><th>Item</th><th>How it is billed</th><th>Per month</th></tr></thead><tbody>'
-        +c.items.map(function(i){return '<tr><td>'+esc(i.name||i.item||'')+'</td><td>'+esc(i.detail||'')+'</td><td class="n">'+money(i.monthly_usd)+'</td></tr>'}).join('')
+        +c.items.map(function(i){var hd=(i.monthly_usd==null&&!i.detail); return hd?'<tr class="hd"><td colspan="3">'+esc(i.name||i.item||'')+'</td></tr>':'<tr><td>'+esc(i.name||i.item||'')+'</td><td>'+esc(i.detail||'')+'</td><td class="n">'+money(i.monthly_usd)+'</td></tr>'}).join('')
         +'</tbody>'+(c.total_usd!=null?'<tfoot><tr><td colspan="2">Total</td><td class="n">'+money(c.total_usd)+'</td></tr></tfoot>':'')+'</table>'
         +(c.note?'<div class="sf-w-meta">'+esc(c.note)+'</div>':'')+'</div>';
     }
@@ -644,6 +645,7 @@ function sfInit(){
       '.sf-w-cost table{width:100%;border-collapse:collapse;font-size:13px}.sf-w-cost th{text-align:left;font-size:11px;color:#6b7280;font-weight:600;padding:6px 6px;border-bottom:1px solid #e5e9f0}',
       '.sf-w-cost td{padding:6px;border-bottom:1px solid #f1f4f8}.sf-w-cost .n{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}',
       '.sf-w-cost tfoot td{font-weight:700;border-bottom:0}',
+      '.sf-w-cost tr.hd td{font-weight:700;color:#0b4a8b;background:#f5f8fc;padding-top:9px}',
       '.sf-w-plan{margin-top:10px;background:#fff;border:1px solid #dde4ec;border-left:3px solid #1a73e8;border-radius:10px;padding:8px 12px}',
       '.sf-msg p:last-child{margin:0}',
       '#sf-sugg.sf-pane{max-height:56vh;overflow:auto;padding:2px 4px 2px 0}',

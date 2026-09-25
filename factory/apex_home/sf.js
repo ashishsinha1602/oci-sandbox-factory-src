@@ -70,10 +70,15 @@ function sfInit(){
   function refresh(){
     call('status',{}).then(function(rows){
       rows=rows||[]; var active=false, h=rows.length?'<h3>Your sandboxes</h3>':'';
+      window.__sfRows = rows;
       rows.forEach(function(r){
         if(r.status==='QUEUED'||r.status==='RUNNING')active=true;
         var o=null; try{o=r.outputs?JSON.parse(r.outputs):null}catch(e){}
         h+='<div class="sf-req"><div class="hd">'+(r.status==='RUNNING'?'<span class="sf-spin"></span>':'')+'<b>'+esc(r.sandbox_id)+'</b><span class="sf-badge '+esc(r.status)+'">'+esc(r.status)+'</span><span>'+esc(r.action)+'</span><span class="meta">'+esc(r.created)+' &middot; '+esc(r.elapsed)+'s</span></div>';
+        if(r.status==='DONE'&&r.action!=='DESTROY'&&r.outputs){
+          h+='<button type="button" class="sf-btn sec" style="padding:4px 12px;font-size:12px;margin-top:6px" '
+            +'data-open="'+esc(r.sandbox_id)+'">Open everything</button>';
+        }
         if(o&&r.status==='DONE'){ h+='<div class="sf-links">';
           var pu=primaryUrl(o);
           if(pu){h+='<a class="sf-open" href="'+esc(pu)+'" target="_blank" rel="noopener">Open '+esc(r.sandbox_id)+' &rarr;</a><br>'}
@@ -232,6 +237,104 @@ function sfInit(){
       containers:cs.length?cs:undefined, seed_sql:p.seed_sql||undefined,
       app_files:p.app_files?JSON.stringify(p.app_files):undefined};
   }
+  // ---- Per-sandbox landing page --------------------------------------
+  // Everything a sandbox produced, in one place, clickable and copyable, with
+  // a command for each so it can be tried rather than just looked at.
+  function copyBtn(v){
+    return '<button type="button" class="sf-btn sec" style="padding:2px 8px;font-size:11px;margin-left:6px" '
+      + 'data-copy="'+esc(v)+'">copy</button>';
+  }
+  function row(label, value, opts){
+    opts = opts || {};
+    var body = opts.link ? '<a href="'+esc(value)+'" target="_blank">'+esc(value)+'</a>'
+                         : '<code>'+esc(value)+'</code>';
+    return '<tr><td style="padding:5px 12px 5px 0;color:#6b7280;white-space:nowrap;vertical-align:top">'
+      + esc(label)+'</td><td style="padding:5px 0;word-break:break-all">'+body
+      + (opts.copy===false?'':copyBtn(value))
+      + (opts.hint?'<div style="font-size:11.5px;color:#6b7280;margin-top:2px">'+opts.hint+'</div>':'')
+      + '</td></tr>';
+  }
+  function landingHtml(sid, o){
+    var h = '<h3 style="margin:0 0 2px">'+esc(sid)+'</h3>'
+      + '<p class="sf-sub" style="color:#6b7280;margin:0 0 12px;font-size:13px">'
+      + 'Everything this sandbox created. Links open directly; the rest is here to copy.</p>';
+    var t = '<table style="width:100%;border-collapse:collapse;font-size:13.5px">';
+    var app = o.app && (o.app.urls||[]).filter(function(u){return u.indexOf('https://')===0})[0];
+    if(app){
+      t += row('App URL', app, {link:true});
+      t += row('Test it', 'curl -s ' + app + ' | head', {});
+    }
+    if(o.adb){
+      if(o.adb.sql_web_url) t += row('SQL Developer Web', o.adb.sql_web_url, {link:true});
+      if(o.adb.apex_url)    t += row('APEX', o.adb.apex_url, {link:true});
+      t += row('Database', o.adb.db_name || '', {});
+      t += row('User', o.adb.admin_user || 'ADMIN', {});
+      if(o.adb.admin_password) t += row('Password', o.adb.admin_password, {});
+      if(o.adb.connect_string) t += row('Connect string', o.adb.connect_string,
+        {hint:'python: oracledb.connect(user="ADMIN", password=..., dsn="'+esc(o.adb.connect_string)+'")'});
+    }
+    (o.databases||[]).slice(1).forEach(function(d){
+      t += row('Database ('+d.name+')', d.db_name, {});
+      if(d.sql_web_url) t += row('  SQL Web', d.sql_web_url, {link:true});
+    });
+    if(o.kafka) t += row('Kafka bootstrap', o.kafka.bootstrap_servers || '',
+      {hint:'topics: '+esc((o.kafka.topics||[]).join(', '))});
+    (o.buckets||[]).forEach(function(b){
+      t += row('Bucket', b.name, {hint:'oci os object put -bn '+esc(b.name)+' --file ./x --namespace '+esc(b.namespace)});
+    });
+    (o.queues||[]).forEach(function(q){
+      t += row('Queue', q.name, {});
+      if(q.messages_endpoint) t += row('  endpoint', q.messages_endpoint, {link:true});
+    });
+    if(o.nosql&&o.nosql.tables) o.nosql.tables.forEach(function(n){
+      t += row('NoSQL table', n, {hint:'oci nosql row get --table-name-or-id '+esc(n)});
+    });
+    (o.functions||[]).forEach(function(f){
+      t += row('Function', f.name, {});
+      if(f.invoke_endpoint) t += row('  invoke', f.invoke_endpoint, {hint:'oci fn function invoke --function-id '+esc(f.id||'')});
+    });
+    (o.dataflow_jobs||[]).forEach(function(j){
+      t += row('Spark job', j.name, {hint:'script: '+esc(j.file_uri||'')});
+    });
+    if(o.catalog) t += row('Data Catalog', o.catalog.display_name || '', {});
+    if(o.low_code&&o.low_code.rest_base) t += row('REST (ORDS)', o.low_code.rest_base,
+      {hint:'authenticated as ADMIN with the password above'});
+    t += '</table>';
+    h += t;
+    if(o.consoles){
+      var links=[];
+      for(var k in o.consoles){ if(o.consoles[k]) links.push(
+        '<a href="'+esc(o.consoles[k])+'" target="_blank">'+esc(k.replace(/_/g,' '))+'</a>'); }
+      if(links.length) h += '<p style="margin:12px 0 0;font-size:13px">Open in the OCI console: '
+        + links.join(' &middot; ') + '</p>';
+    }
+    if(o.warnings&&o.warnings.length) h += '<p class="sf-err" style="margin-top:10px">'
+      + o.warnings.map(esc).join('<br>') + '</p>';
+    return h;
+  }
+  function showLanding(sid){
+    var r=(window.__sfRows||[]).filter(function(x){return x.sandbox_id===sid})[0];
+    if(!r||!r.outputs)return;
+    var o; try{o=typeof r.outputs==='string'?JSON.parse(r.outputs):r.outputs}catch(e){return}
+    var box=$('#sf-landing');
+    if(!box){
+      box=document.createElement('div'); box.id='sf-landing'; box.className='sf-panel';
+      box.style.marginTop='14px';
+      $('#sf-status').parentNode.insertBefore(box, $('#sf-status'));
+    }
+    box.innerHTML=landingHtml(sid,o)
+      +'<div style="margin-top:12px"><button type="button" class="sf-btn sec" id="sf-landing-close">Close</button></div>';
+    box.scrollIntoView({behavior:'smooth',block:'start'});
+    $('#sf-landing-close').onclick=function(){box.remove()};
+  }
+  document.addEventListener('click', function(e){
+    var op = e.target.closest && e.target.closest('[data-open]');
+    if(op){ showLanding(op.getAttribute('data-open')); return; }
+    var b = e.target.closest && e.target.closest('[data-copy]');
+    if(b){ navigator.clipboard.writeText(b.getAttribute('data-copy'));
+           var t=b.textContent; b.textContent='copied'; setTimeout(function(){b.textContent=t},900); }
+  });
+
   function drawRecipes(){
     var el=$('#sf-recs'); if(!el)return;
     var list=RECIPES.filter(function(r){return OCIR||!needsRegistry(r)});

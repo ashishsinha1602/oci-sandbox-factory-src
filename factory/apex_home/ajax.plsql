@@ -335,7 +335,27 @@ begin
                                                          then apex_application.g_clob_01 end));
         end loop;
       end if;
-      l_out.put('raw', ai_chat(l_msgs));
+      declare
+        l_raw  clob := ai_chat(l_msgs);
+        l_j    json_object_t;
+        l_txt  varchar2(4000);
+      begin
+        -- A reply that proposes a build but carries no action object leaves the
+        -- user with nothing to click. Ask once more for the action itself.
+        begin
+          l_j   := json_object_t.parse(substr(l_raw, instr(l_raw, '{'), instr(l_raw, '}', -1) - instr(l_raw, '{') + 1));
+          l_txt := substr(l_j.get_string('reply'), 1, 4000);
+        exception when others then l_j := null;
+        end;
+        if l_j is not null and (not l_j.has('action') or l_j.get('action').is_null)
+           and (l_j.get('questions') is null or l_j.get('questions').is_null or l_j.get_array('questions').get_size = 0)
+           and regexp_like(l_txt, '(go ahead|shall i|would you like me to|should i (create|deploy|build))', 'i') then
+          l_msgs.append(msg('ASSISTANT', l_raw));
+          l_msgs.append(msg('USER', 'Yes. Answer again with the same JSON and the action object filled in, so the page can show the Create button.'));
+          l_raw := ai_chat(l_msgs);
+        end if;
+        l_out.put('raw', l_raw);
+      end;
     end;
 
   elsif l_action = 'submit' then

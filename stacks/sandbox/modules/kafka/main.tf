@@ -103,7 +103,10 @@ resource "oci_managed_kafka_kafka_cluster" "this" {
   kafka_version     = var.kafka_version
 
   cluster_config_id      = oci_managed_kafka_kafka_cluster_config.this[0].id
-  cluster_config_version = oci_managed_kafka_kafka_cluster_config.this[0].latest_config[0].version_number
+  # Version 1 is what a freshly created config has, and the number is known at
+  # plan time; reading it from the config resource is what tripped the
+  # provider's "inconsistent final plan" on every retry.
+  cluster_config_version = 1
 
   access_subnets {
     subnets = [var.subnet_id]

@@ -30,6 +30,20 @@ output "queues" {
   value = length(module.queue) > 0 ? module.queue[0].queues : []
 }
 
+# Oracle ships a console UI for each of these; without the link people never
+# find them. Data Flow has Applications and Runs with the Spark UI attached,
+# and Data Catalog has its own browser for harvested assets.
+output "consoles" {
+  value = {
+    data_flow    = "https://cloud.oracle.com/data-flow/apps?region=${var.region}&compartmentId=${local.compartment_id}"
+    data_catalog = "https://cloud.oracle.com/data-catalog/data-catalogs?region=${var.region}&compartmentId=${local.compartment_id}"
+    object_storage = "https://cloud.oracle.com/object-storage/buckets?region=${var.region}&compartmentId=${local.compartment_id}"
+    functions     = "https://cloud.oracle.com/functions/applications?region=${var.region}&compartmentId=${local.compartment_id}"
+    queues        = "https://cloud.oracle.com/queue/queues?region=${var.region}&compartmentId=${local.compartment_id}"
+    nosql         = "https://cloud.oracle.com/nosql/tables?region=${var.region}&compartmentId=${local.compartment_id}"
+  }
+}
+
 output "catalog" {
   value = length(module.catalog) > 0 ? module.catalog[0].catalog : null
 }

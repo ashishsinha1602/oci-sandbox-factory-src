@@ -376,9 +376,19 @@ def empty_buckets(sandbox_id: str) -> None:
     try:
         fnd = foundation()
         osc = client(oci.object_storage.ObjectStorageClient)
-        # Under an instance principal the namespace lookup needs a compartment;
-        # without one it comes back 404 NamespaceNotFound.
-        ns = osc.get_namespace(compartment_id=fnd["compartments"]["control"]).data
+        # The namespace lookup is granted "in tenancy", so it must be asked for
+        # against the tenancy; a child compartment answers 404 NamespaceNotFound,
+        # and with no compartment at all an instance principal does too.
+        ns = None
+        for scope in (config().get("tenancy"), fnd["compartments"]["control"], None):
+            try:
+                ns = osc.get_namespace(compartment_id=scope).data if scope else osc.get_namespace().data
+                break
+            except Exception:  # noqa: BLE001 - try the next scope
+                continue
+        if not ns:
+            print("  bucket cleanup skipped: object storage namespace could not be resolved")
+            return
         prefix = f"sbx-{sandbox_id}-"
         for comp in {fnd["compartments"]["control"], fnd["compartments"]["sandboxes"]}:
             for b in osc.list_buckets(ns, comp).data:

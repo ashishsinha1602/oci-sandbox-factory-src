@@ -14,6 +14,8 @@ output "adb" {
     connect_string = module.adb[0].connect_string
     sql_web_url    = module.adb[0].sql_web_url
     apex_url       = module.adb[0].apex_url
+    id             = module.adb[0].id
+    console_url    = "https://cloud.oracle.com/db/adb/${module.adb[0].id}?region=${var.region}"
   } : null
 }
 
@@ -74,6 +76,7 @@ output "databases" {
       tier           = var.adb_tier
       connect_string = module.adb[0].connect_string
       sql_web_url    = module.adb[0].sql_web_url
+      console_url    = "https://cloud.oracle.com/db/adb/${module.adb[0].id}?region=${var.region}"
     }] : [],
     [for k, m in module.adb_extra : {
       name           = k
@@ -81,6 +84,7 @@ output "databases" {
       tier           = try([for d in var.adb_databases : d.tier if d.name == k][0], "free")
       connect_string = m.connect_string
       sql_web_url    = m.sql_web_url
+      console_url    = "https://cloud.oracle.com/db/adb/${m.id}?region=${var.region}"
     }]
   )
 }
@@ -99,6 +103,10 @@ output "kafka" {
     bootstrap_servers = module.kafka[0].bootstrap_servers
     topics            = var.kafka_topics
     auth_note         = module.kafka[0].auth_note
+    cluster_id        = module.kafka[0].cluster_id
+    public_bootstrap  = module.kafka[0].public_bootstrap
+    superuser_secret_id = module.kafka[0].superuser_secret_id
+    console_url       = module.kafka[0].pool_id != null ? "https://cloud.oracle.com/storage/streaming/streampools/${module.kafka[0].pool_id}?region=${var.region}" : "https://cloud.oracle.com/kafka/clusters?region=${var.region}&compartmentId=${local.compartment_id}"
   } : null
 }
 

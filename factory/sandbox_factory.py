@@ -113,6 +113,31 @@ def client(cls):
     return cls(**auth())
 
 
+_SECRETS = None
+
+
+def secrets_vault(fnd: dict) -> dict:
+    """The shared Vault + key in sbx-control that per-sandbox secrets live in
+    (the Kafka superuser password, for one). Looked up by name so no tenancy
+    id needs to be configured anywhere; empty when the tenancy has none, in
+    which case a Kafka cluster is built without a public endpoint."""
+    global _SECRETS
+    if _SECRETS is None:
+        _SECRETS = {"vault_id": "", "key_id": ""}
+        try:
+            kv = client(oci.key_management.KmsVaultClient)
+            for v in kv.list_vaults(compartment_id=fnd["compartments"]["control"]).data:
+                if v.display_name == "sbx-secrets" and v.lifecycle_state == "ACTIVE":
+                    km = oci.key_management.KmsManagementClient(**auth(), service_endpoint=v.management_endpoint)
+                    for k in km.list_keys(compartment_id=fnd["compartments"]["control"]).data:
+                        if k.display_name == "sbx-secrets-key" and k.lifecycle_state == "ENABLED":
+                            _SECRETS = {"vault_id": v.id, "key_id": k.id}
+                    break
+        except Exception as e:  # noqa: BLE001
+            print(f"secrets vault lookup failed ({type(e).__name__}: {e}); Kafka gets no public endpoint", flush=True)
+    return _SECRETS
+
+
 def in_oci() -> bool:
     return "signer" in auth()
 
@@ -223,15 +248,23 @@ def job_outputs(rm, job_id: str) -> dict:
     return out
 
 
-def adb_password_from_state(rm, stack_id: str) -> str | None:
+def adb_passwords_from_state(rm, stack_id: str) -> dict:
+    """ADMIN passwords by module path: 'module.adb' for the primary database,
+    'module.adb_extra["name"]' for each extra one. Sensitive outputs are masked
+    in job outputs, so the state is the only place to read them from."""
     try:
         state = json.loads(rm.get_stack_tf_state(stack_id).data.content.decode())
     except Exception:  # noqa: BLE001
-        return None
+        return {}
+    out = {}
     for r in state.get("resources", []):
         if r.get("type") == "random_password" and r.get("name") == "admin":
-            return r["instances"][0]["attributes"].get("result")
-    return None
+            out[r.get("module", "")] = r["instances"][0]["attributes"].get("result")
+    return out
+
+
+def adb_password_from_state(rm, stack_id: str) -> str | None:
+    return adb_passwords_from_state(rm, stack_id).get("module.adb")
 
 
 # ---------------------------------------------------------------------------
@@ -254,6 +287,8 @@ def build_variables(args, fnd: dict, cfg: dict, app_containers: list | None) -> 
         "team": args.team,
         "ttl_days": str(args.ttl),
         "allowed_cidr": args.allowed_cidr,
+        "secrets_vault_id": secrets_vault(fnd)["vault_id"],
+        "secrets_key_id": secrets_vault(fnd)["key_id"],
         "enable_adb": json.dumps(bool(args.adb)),
         "adb_tier": args.adb_tier,
         "adb_workload": args.adb_workload,
@@ -332,13 +367,22 @@ def cmd_create(args, app_containers: list | None = None) -> dict:
 
     job = run_job(rm, stack_id, "APPLY", args.sandbox_id)
     outputs = job_outputs(rm, job.id)
+    pws = adb_passwords_from_state(rm, stack_id)
     if isinstance(outputs.get("adb"), dict):
         # Sensitive outputs are masked in the job outputs; read the password from the state
         # so the requester can log in to SQL Developer Web / connect a client.
-        pw = adb_password_from_state(rm, stack_id)
+        pw = pws.get("module.adb")
         if pw:
             outputs["adb"]["admin_user"] = "ADMIN"
             outputs["adb"]["admin_password"] = pw
+    # Every extra database has its own ADMIN password; a user who cannot see it
+    # cannot log in, so it goes on the card and the landing page like the primary.
+    for d in outputs.get("databases") or []:
+        if isinstance(d, dict):
+            pw = pws.get("module.adb") if d.get("name") == "primary" else pws.get('module.adb_extra["%s"]' % d.get("name"))
+            if pw:
+                d["admin_user"] = "ADMIN"
+                d["admin_password"] = pw
     print(json.dumps({k: v for k, v in outputs.items() if k != "adb_admin_password"}, indent=2))
     return outputs
 
@@ -573,7 +617,7 @@ def add_sandbox_options(p):
     p.add_argument("--adb-workload", choices=["OLTP", "DW", "AJD", "APEX"], default="OLTP")
     p.add_argument("--kafka", action="store_true")
     p.add_argument("--nosql", action="store_true", help="add OCI NoSQL tables to the sandbox")
-    p.add_argument("--kafka-mode", choices=["streaming", "cluster"], default="streaming")
+    p.add_argument("--kafka-mode", choices=["streaming", "cluster"], default="cluster")
     p.add_argument("--topics", default="events", help="comma-separated")
     p.add_argument("--shape", default="CI.Standard.A1.Flex")
     p.add_argument("--port", type=int, default=80)

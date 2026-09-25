@@ -76,6 +76,9 @@ module "kafka" {
   partitions     = var.kafka_partitions
   kafka_version  = var.kafka_version
   subnet_id      = var.private_subnet_id
+  vault_id       = var.secrets_vault_id
+  key_id         = var.secrets_key_id
+  public_cidrs   = [var.allowed_cidr]
   defined_tags   = local.defined_tags
   freeform_tags  = local.freeform_tags
 

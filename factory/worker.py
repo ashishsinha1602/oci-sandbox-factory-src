@@ -58,6 +58,47 @@ class RowLog(io.TextIOBase):
 
 
 
+def kafka_credentials(outputs: dict, wait_seconds: int = 180) -> None:
+    """Put the Kafka superuser's username and password on the outputs.
+
+    The Kafka service writes the generated password into the sandbox's Vault
+    secret when the superuser is enabled; the stack's placeholder is
+    "pending" until it does. Read the latest version, parse it (JSON with a
+    username when the service gives one), and hand the user everything a
+    client needs.
+    """
+    import base64
+    k = outputs["kafka"]
+    sc = sf.client(oci.secrets.SecretsClient)
+    deadline = time.time() + wait_seconds
+    raw = "pending"
+    while time.time() < deadline:
+        b = sc.get_secret_bundle(k["superuser_secret_id"], stage="LATEST").data
+        raw = base64.b64decode(b.secret_bundle_content.content).decode("utf-8", "replace").strip()
+        if raw and raw != "pending":
+            break
+        time.sleep(10)
+    if not raw or raw == "pending":
+        raise RuntimeError("secret still holds the placeholder")
+    username, password = "superuser", raw
+    try:
+        j = json.loads(raw)
+        if isinstance(j, dict):
+            username = j.get("username") or j.get("user") or username
+            password = j.get("password") or password
+    except ValueError:
+        pass
+    k["username"], k["password"] = username, password
+    boot = k.get("public_bootstrap") or k.get("bootstrap_servers") or ""
+    k["client_properties"] = (
+        f"bootstrap.servers={boot}\n"
+        "security.protocol=SASL_SSL\n"
+        "sasl.mechanism=SCRAM-SHA-512\n"
+        "sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required "
+        f'username="{username}" password="{password}";')
+    print("kafka: superuser credentials read from the vault", flush=True)
+
+
 def adb_dsn(connect: str) -> str:
     """Autonomous Database only accepts TLS.
 
@@ -135,7 +176,7 @@ def factory_args(req: dict) -> argparse.Namespace:
         sandbox_id=req["sandbox_id"], owner=req["requester"], team="hackathon",
         ttl=int(req["ttl_days"] or 3), allowed_cidr="0.0.0.0/0",
         adb=req["enable_adb"] == "Y", adb_tier=req["adb_tier"] or "free", adb_workload="OLTP",
-        kafka=req["enable_kafka"] == "Y", nosql=req.get("enable_nosql") == "Y", kafka_mode=req["kafka_mode"] or "streaming", topics="events",
+        kafka=req["enable_kafka"] == "Y", nosql=req.get("enable_nosql") == "Y", kafka_mode=req["kafka_mode"] or "cluster", topics="events",
         app=req["enable_app"] == "Y", image=req["app_image"] or None,
         shape="CI.Standard.A1.Flex", port=int(req["app_port"] or 80),
         name="app", tag=None, env=None, keep_stack=False, dry_run=False, path=None,
@@ -615,6 +656,13 @@ def process_one(conn) -> bool:
                         "The database is up, but its sample data, Select AI and REST endpoints were not set up. "
                         "Ask the factory to \"retry setup\" for this sandbox, or run the SQL yourself in SQL Developer Web. "
                         f"(detail: {note[:160]})")
+        if isinstance(outputs, dict) and (outputs.get("kafka") or {}).get("superuser_secret_id"):
+            try:
+                kafka_credentials(outputs)
+            except Exception as e:  # noqa: BLE001
+                outputs.setdefault("warnings", []).append(
+                    f"Kafka is up, but its superuser password could not be read from the vault ({type(e).__name__}: {e}). "
+                    "Open the secret in the console to copy it.")
         if isinstance(outputs, dict) and req.get("_logins"):
             outputs["logins"] = req["_logins"]
         finish(conn, req["id"], True, outputs)

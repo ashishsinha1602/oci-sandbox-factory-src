@@ -283,6 +283,16 @@ variable "kafka_mode" {
   }
 }
 
+variable "secrets_vault_id" {
+  description = "Shared Vault (in sbx-control) for per-sandbox secrets such as the Kafka superuser password. Empty = no superuser, no public Kafka endpoint."
+  type        = string
+  default     = ""
+}
+variable "secrets_key_id" {
+  description = "Encryption key in secrets_vault_id."
+  type        = string
+  default     = ""
+}
 variable "kafka_topics" {
   type    = list(string)
   default = ["events"]

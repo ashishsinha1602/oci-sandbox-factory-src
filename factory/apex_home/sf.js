@@ -102,14 +102,17 @@ function sfInit(){
               +'<br>connect string <code>'+esc(o.adb.connect_string)+'</code></div>'}
 
           if(o.low_code&&o.low_code.rest_base)h+='<code>REST: '+esc(o.low_code.rest_base)+'</code>';
-          if(o.kafka)h+='<code>kafka: '+esc(o.kafka.bootstrap_servers)+'</code>';
+          if(o.kafka)h+='<div style="margin-top:6px">kafka <code>'+esc(o.kafka.public_bootstrap||o.kafka.bootstrap_servers)+'</code>'
+            +(o.kafka.username?' &middot; user <code>'+esc(o.kafka.username)+'</code> &middot; password <code>'+esc(o.kafka.password)+'</code>':'')+'</div>';
 
 
 
 
           resourceLinks(o).forEach(function(x){h+=x[1]?'<a class="sf-reslink" href="'+esc(x[1])+'" target="_blank" rel="noopener">'+esc(x[0])+' &#8599;</a>':'<code>'+esc(x[0])+'</code>'});
-          if(o.databases&&o.databases.length>1){o.databases.slice(1).forEach(function(d){
-            h+='<code>'+esc(d.name)+': '+esc(d.db_name)+'</code>'})}
+          (o.databases||[]).filter(function(d){return d.name!=='primary'}).forEach(function(d){
+            h+='<div style="margin-top:6px">'+(d.sql_web_url?'<a href="'+esc(d.sql_web_url)+'" target="_blank">'+esc(d.name)+' SQL Developer Web</a>':esc(d.name))
+              +' &middot; user <code>ADMIN</code>'+(d.admin_password?' &middot; password <code>'+esc(d.admin_password)+'</code>':'')+'</div>'});
+          if(o.kafka&&o.kafka.console_url)h+='<a class="sf-reslink" href="'+esc(o.kafka.console_url)+'" target="_blank" rel="noopener">Kafka stream &#8599;</a>';
           if(o.warnings&&o.warnings.length)h+='<div class="sf-err" style="margin-top:6px">'
               +o.warnings.map(esc).join('<br>')
               +' <button type="button" class="sf-btn sec" style="padding:3px 10px;font-size:12px;margin-left:6px" data-retry="'+esc(r.sandbox_id)+'">Retry setup</button></div>';
@@ -324,7 +327,8 @@ function sfInit(){
       t += row('Test it', 'curl -s ' + app + ' | head', {});
     }
     if(o.adb){
-      if(o.adb.sql_web_url) t += row('SQL Developer Web', o.adb.sql_web_url, {link:true});
+      if(o.adb.sql_web_url) t += row('SQL Developer Web', o.adb.sql_web_url, {link:true, hint:'Sign in as ADMIN with the password below.'});
+      if(o.adb.console_url) t += row('Database console', o.adb.console_url, {link:true});
       if(o.adb.apex_url)    t += row('APEX', o.adb.apex_url, {link:true});
       t += row('Database', o.adb.db_name || '', {});
       t += row('User', o.adb.admin_user || 'ADMIN', {});
@@ -332,12 +336,22 @@ function sfInit(){
       if(o.adb.connect_string) t += row('Connect string', o.adb.connect_string,
         {hint:'python: oracledb.connect(user="ADMIN", password=..., dsn="'+esc(o.adb.connect_string)+'")'});
     }
-    (o.databases||[]).slice(1).forEach(function(d){
-      t += row('Database ('+d.name+')', d.db_name, {});
-      if(d.sql_web_url) t += row('  SQL Web', d.sql_web_url, {link:true});
+    (o.databases||[]).filter(function(d){return d.name!=='primary'}).forEach(function(d){
+      t += row('Database '+d.name, d.db_name, {open:d.sql_web_url||d.console_url, hint:'Open = SQL Developer Web. User <b>'+esc(d.admin_user||'ADMIN')+'</b>'+(d.admin_password?', password below.':'')});
+      if(d.admin_password) t += row('  password', d.admin_password, {});
+      if(d.connect_string) t += row('  connect string', d.connect_string, {});
     });
-    if(o.kafka) t += row('Kafka bootstrap', o.kafka.bootstrap_servers || '',
-      {hint:'topics: '+esc((o.kafka.topics||[]).join(', '))});
+    if(o.kafka){
+      if(o.kafka.public_bootstrap){
+        t += row('Kafka bootstrap (public)', o.kafka.public_bootstrap, {open:o.kafka.console_url, hint:'Reachable from your laptop. SASL_SSL, SCRAM-SHA-512. Topics: '+esc((o.kafka.topics||[]).join(', '))});
+        if(o.kafka.username) t += row('  username', o.kafka.username, {});
+        if(o.kafka.password) t += row('  password', o.kafka.password, {});
+        if(o.kafka.client_properties) t += row('  client.properties', o.kafka.client_properties, {hint:'Paste into a file and run: kafka-console-producer --bootstrap-server '+esc(o.kafka.public_bootstrap)+' --producer.config client.properties --topic '+esc((o.kafka.topics||['events'])[0])});
+        if(o.kafka.bootstrap_servers) t += row('  private bootstrap', o.kafka.bootstrap_servers, {hint:'For containers inside the sandbox (KAFKA_BOOTSTRAP_SERVERS).'});
+      } else {
+        t += row('Kafka bootstrap', o.kafka.bootstrap_servers || '', {open:o.kafka.console_url, hint:'topics: '+esc((o.kafka.topics||[]).join(', '))+(o.kafka.auth_note?'<br>'+esc(o.kafka.auth_note):'')});
+      }
+    }
     var ru=resourceUrls(o);
     (o.buckets||[]).forEach(function(b){
       t += row('Bucket', b.name, {open:ru['bucket:'+b.name], hint:'Open it to upload or browse files. From a terminal: oci os object put -bn '+esc(b.name)+' --file ./x --namespace '+esc(b.namespace)});
@@ -531,7 +545,7 @@ function sfInit(){
     var L=[];
     if(a.enable_adb)L.push('<li><b>Autonomous Database</b> &mdash; '+esc(a.adb_tier||'paid, 2 ECPU')+', Oracle 23ai, private subnet. Select AI (plain-English queries) and AI cataloguing are switched on for you. Every table is also published as a REST endpoint through ORDS, and an APEX workspace is waiting if you want to click a low-code app together. You get SQL Developer Web and APEX URLs.</li>');
     if(a.enable_nosql)L.push('<li><b>OCI NoSQL</b> &mdash; serverless JSON tables with on-demand capacity. You get the table names and the compartment; no cluster to size and nothing running when idle.</li>');
-    if(a.enable_kafka)L.push('<li><b>Kafka</b> &mdash; '+esc(a.kafka_mode||'OCI Streaming')+', topic <code>events</code>. You get a bootstrap server address.</li>');
+    if(a.enable_kafka)L.push('<li><b>Kafka</b> &mdash; Streaming with Apache Kafka, 1 broker, 50 GB, topic <code>events</code>, a public bootstrap endpoint with a SASL/SCRAM superuser (username + password on the card), and a private one for containers in the sandbox.</li>');
     var cs=(a.containers&&a.containers.length)?a.containers:((a.enable_app||a.git_url||a.app_image)?[{name:'web',image:a.git_url||a.app_image||'nginx:alpine',port:a.app_port||80}]:[]);
     if(cs.length)L.push('<li><b>'+(cs.length>1?cs.length+' containers in one instance':'1 container')+'</b> on CI.Standard.A1.Flex (Arm)'
       +(cs.length>1?' &mdash; they share a host and reach each other on localhost':'')+', behind a public HTTPS URL: '+cs.map(function(c){return '<code>'+esc(c.name||'web')+'</code> &rarr; '+esc(c.image)+':'+esc(c.port||80)}).join(', ')+'.</li>');

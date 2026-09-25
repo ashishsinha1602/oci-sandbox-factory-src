@@ -11,6 +11,26 @@ variable "topics" { type = list(string) }
 variable "partitions" { type = number }
 variable "kafka_version" { type = string }
 variable "subnet_id" { type = string }
+variable "vault_id" {
+  description = "Shared Vault that holds each cluster's superuser secret. Empty disables the superuser and the public endpoint."
+  type        = string
+  default     = ""
+}
+variable "key_id" {
+  description = "Encryption key in that vault."
+  type        = string
+  default     = ""
+}
+variable "public_cidrs" {
+  description = "Who may reach the public Kafka endpoint."
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}
+variable "storage_gb" {
+  description = "Broker storage. 50 GB is the smallest a cluster accepts."
+  type        = number
+  default     = 50
+}
 variable "defined_tags" { type = map(string) }
 variable "freeform_tags" { type = map(string) }
 
@@ -85,11 +105,72 @@ resource "oci_managed_kafka_kafka_cluster" "this" {
   broker_shape {
     node_count          = 1
     ocpu_count          = 1
-    storage_size_in_gbs = 50
+    storage_size_in_gbs = var.storage_gb
   }
 
   defined_tags  = var.defined_tags
   freeform_tags = var.freeform_tags
+}
+
+# --- superuser + public endpoint (cluster mode) ------------------------------
+# A cluster is private to the VCN and authenticates with mTLS or SASL/SCRAM.
+# Three more pieces make it something a user can reach from a laptop with a
+# username and password:
+#   1. a Vault secret, which the service fills with a generated superuser
+#      password when the superuser is enabled (policy: service rawfka may
+#      UpdateSecret in the sandboxes compartment);
+#   2. the superuser itself;
+#   3. the PUBLICCONNECTIVITY add-on, a public bootstrap URL limited to the
+#      CIDRs given, authenticating with SASL/SCRAM.
+# The worker reads the secret after the apply and puts the credentials on the
+# sandbox card.
+locals {
+  superuser = !local.streaming && var.vault_id != "" && var.key_id != ""
+}
+
+resource "random_id" "secret" {
+  count       = local.superuser ? 1 : 0
+  byte_length = 3
+}
+
+resource "oci_vault_secret" "superuser" {
+  count          = local.superuser ? 1 : 0
+  compartment_id = var.compartment_id
+  vault_id       = var.vault_id
+  key_id         = var.key_id
+  # A deleted secret keeps its name for a while, so a rebuilt sandbox needs a
+  # fresh one.
+  secret_name    = "${var.name}-kafka-superuser-${random_id.secret[0].hex}"
+  description    = "SASL/SCRAM superuser password for ${var.name}-kafka, written by the Kafka service."
+  secret_content {
+    content_type = "BASE64"
+    content      = base64encode("pending")
+  }
+  defined_tags  = var.defined_tags
+  freeform_tags = var.freeform_tags
+  lifecycle {
+    ignore_changes = [secret_content]
+  }
+}
+
+resource "oci_managed_kafka_kafka_cluster_superusers_management" "this" {
+  count            = local.superuser ? 1 : 0
+  kafka_cluster_id = oci_managed_kafka_kafka_cluster.this[0].id
+  compartment_id   = var.compartment_id
+  secret_id        = oci_vault_secret.superuser[0].id
+  enable_superuser = true
+}
+
+resource "oci_managed_kafka_kafka_cluster_addon" "public" {
+  count                    = local.superuser ? 1 : 0
+  kafka_cluster_id         = oci_managed_kafka_kafka_cluster.this[0].id
+  addon_type               = "PUBLICCONNECTIVITY"
+  authentication_mechanism = "SASL_SCRAM"
+  name                     = "${var.name}-public"
+  description              = "Public bootstrap for ${var.name}, SASL/SCRAM."
+  network_cidrs            = var.public_cidrs
+
+  depends_on = [oci_managed_kafka_kafka_cluster_superusers_management.this]
 }
 
 output "bootstrap_servers" {
@@ -98,6 +179,18 @@ output "bootstrap_servers" {
 
 output "pool_id" {
   value = local.streaming ? oci_streaming_stream_pool.this[0].id : null
+}
+
+output "cluster_id" {
+  value = local.streaming ? null : oci_managed_kafka_kafka_cluster.this[0].id
+}
+
+output "public_bootstrap" {
+  value = local.superuser ? try(oci_managed_kafka_kafka_cluster_addon.public[0].bootstrap_url, "") : ""
+}
+
+output "superuser_secret_id" {
+  value = local.superuser ? oci_vault_secret.superuser[0].id : null
 }
 
 output "auth_note" {

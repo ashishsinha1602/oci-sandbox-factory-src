@@ -301,7 +301,10 @@ def cmd_create(args, app_containers: list | None = None) -> dict:
         app_containers = [{"name": "web", "image": args.image, "port": args.port, "env": {}}]
 
     variables = build_variables(args, fnd, cfg, app_containers)
-    expires = (dt.datetime.now(dt.timezone.utc).date() + dt.timedelta(days=args.ttl)).isoformat()
+    # A full timestamp, not a date. Comparing dates made a 3-day sandbox built
+    # just after midnight live until the start of the fourth day after - close to
+    # four days. ISO strings sort correctly, so the reaper compares them as-is.
+    expires = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=args.ttl)).strftime("%Y-%m-%dT%H:%MZ")
     tags = {"sandbox_id": args.sandbox_id, "owner": args.owner, "expires": expires, "managed_by": "sandbox-factory"}
 
     existing = find_stack(rm, control, args.sandbox_id)
@@ -434,7 +437,10 @@ def cmd_reap(args):
     cfg = config()
     fnd = foundation()
     rm = client(oci.resource_manager.ResourceManagerClient)
-    today = dt.datetime.now(dt.timezone.utc).date().isoformat()
+    # Tags written before timestamps were introduced hold a bare date; "2026-09-28"
+    # sorts before "2026-09-28T..." so those are reaped at the start of that day,
+    # which is early rather than late - the safe direction for spend.
+    today = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%MZ")
     victims = []
     for s in rm.list_stacks(compartment_id=fnd["compartments"]["control"], lifecycle_state="ACTIVE").data:
         exp = s.freeform_tags.get("expires")

@@ -142,8 +142,8 @@ def claim(conn):
         conn.rollback()
     if not row:
         return None
-    cur.execute("update sbx.sandbox_requests set status = 'RUNNING', started_at = systimestamp, worker_name = :2 where id = :1",
-                [row[0], WORKER_NAME])
+    cur.execute("update sbx.sandbox_requests set status = 'RUNNING', started_at = systimestamp, worker_name = :w where id = :id",
+                id=row[0], w=WORKER_NAME)
     conn.commit()
     cur.execute("""
         select id, requester, sandbox_id, action, ttl_days, enable_adb, adb_tier, enable_kafka,

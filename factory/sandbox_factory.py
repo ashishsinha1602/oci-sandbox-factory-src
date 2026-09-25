@@ -275,6 +275,35 @@ def adb_password_from_state(rm, stack_id: str) -> str | None:
 # ---------------------------------------------------------------------------
 
 _GATEWAY_OK = None
+# Things the variables builder decided on the tenancy's behalf, for the card.
+NOTES: list[str] = []
+
+
+def catalog_available(cfg: dict, fnd: dict) -> bool:
+    """Is there a Data Catalog left in the region's limit (catalog-count)?
+
+    The limits API reports no availability for this one, so count the
+    catalogs the factory owns against the limit value.
+    """
+    try:
+        lim = client(oci.limits.LimitsClient)
+        vals = lim.list_limit_values(compartment_id=cfg["tenancy"], service_name="data-catalog", name="catalog-count").data
+        limit = min((v.value for v in vals), default=None)
+        if limit is None:
+            return True
+        dc = client(oci.data_catalog.DataCatalogClient)
+        used = 0
+        for comp in (fnd["compartments"]["sandboxes"], fnd["compartments"]["control"]):
+            used += sum(1 for c in dc.list_catalogs(compartment_id=comp).data
+                        if c.lifecycle_state not in ("DELETED", "DELETING", "FAILED"))
+        ok = used < limit
+        if not ok:
+            NOTES.append(f"Built without a Data Catalog: this region's limit ({limit}) is used up. "
+                         "Ask for a catalog-count increase, or destroy a sandbox that has one.")
+        return ok
+    except Exception as e:  # noqa: BLE001
+        print(f"catalog limit check skipped ({type(e).__name__}); assuming one is available", flush=True)
+        return True
 
 
 def gateway_available(cfg: dict) -> bool:
@@ -335,7 +364,7 @@ def build_variables(args, fnd: dict, cfg: dict, app_containers: list | None) -> 
         "functions_gateway": json.dumps(gw),
         "enable_app": json.dumps(app_containers is not None),
     }
-    if getattr(args, "enable_catalog", False):
+    if getattr(args, "enable_catalog", False) and catalog_available(cfg, fnd):
         v["enable_catalog"] = json.dumps(True)
     if getattr(args, "catalog_assets", None):
         v["catalog_assets"] = json.dumps(args.catalog_assets)

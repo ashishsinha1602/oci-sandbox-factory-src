@@ -668,6 +668,9 @@ def process_one(conn) -> bool:
                     "Open the secret in the console to copy it.")
         if isinstance(outputs, dict) and req.get("_logins"):
             outputs["logins"] = req["_logins"]
+        if isinstance(outputs, dict) and sf.NOTES:
+            outputs.setdefault("warnings", []).extend(sf.NOTES)
+            sf.NOTES.clear()
         finish(conn, req["id"], True, outputs)
         print(f"  request {req['id']} DONE")
     except SystemExit as e:

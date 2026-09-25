@@ -14,6 +14,7 @@ Give the Sandbox Factory this folder (or its Git URL) and it builds what the cod
 | a bucket for raw/ and gold/ | Object Storage bucket `sbx-<id>-data` |
 | a Spark job | Data Flow application `sbx-<id>-gold-etl` with `spark/gold_etl.py` |
 | a catalog | Data Catalog `sbx-<id>-catalog` |
+| a database (the DAG loads the gold tables into it) | Autonomous Database 23ai, tables `TELEMETRY_DAILY`, `TELEMETRY_SESSIONS`, Select AI + REST on |
 | Airflow | Airflow in a container instance, this DAG loaded, admin login on the card |
 
 The DAG runs once as soon as Airflow starts. Open Airflow from the sandbox card to watch the three tasks, then open the bucket to see `gold/telemetry_daily/` and `gold/telemetry_sessions/`, and the catalog to browse the harvested tables.

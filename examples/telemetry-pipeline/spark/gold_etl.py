@@ -6,6 +6,7 @@ tables back to the same bucket, in Parquet, partitioned by day:
 
     gold/telemetry_daily/     one row per device per day
     gold/telemetry_sessions/  one row per device session
+    gold_oracle/...           the same, flat, for loading into the database
 
 Nothing in the transformation is Spark-vendor specific; it runs unchanged on
 Glue, EMR or Data Flow. Only the URIs differ (oci:// instead of s3://).
@@ -106,6 +107,10 @@ def main():
 
     daily.write.mode("overwrite").partitionBy("day").parquet(f"{base}/gold/telemetry_daily/")
     sessions.write.mode("overwrite").partitionBy("day").parquet(f"{base}/gold/telemetry_sessions/")
+    # Flat copies (day kept as a column, one folder of files) for the database
+    # load: DBMS_CLOUD.COPY_DATA reads a folder of Parquet files by name.
+    daily.coalesce(1).write.mode("overwrite").parquet(f"{base}/gold_oracle/telemetry_daily/")
+    sessions.coalesce(1).write.mode("overwrite").parquet(f"{base}/gold_oracle/telemetry_sessions/")
 
     n_daily, n_sess = daily.count(), sessions.count()
     print(f"gold written: telemetry_daily={n_daily} rows, telemetry_sessions={n_sess} rows -> {base}/gold/")

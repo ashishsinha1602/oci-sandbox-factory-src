@@ -7,6 +7,8 @@ On OCI, task for task:
 
     Airflow (container instance)  ->  Object Storage (raw/)  ->  Data Flow run of spark/gold_etl.py
                                   ->  Object Storage (gold/)  ->  Data Catalog harvest
+                                  ->  Autonomous Database tables TELEMETRY_DAILY / TELEMETRY_SESSIONS
+                                      (Select AI and REST are already on, so you can ask them questions)
 
 The DAG authenticates as the container it runs in (resource principal): no
 keys anywhere. Everything it needs comes from the environment the sandbox
@@ -16,6 +18,8 @@ injects:
     DATA_BUCKET, OCI_NAMESPACE                the sandbox data bucket
     DATAFLOW_APP_NAME                         the Spark job (default sbx-<id>-gold-etl)
     DATA_CATALOG_NAME                         the catalog (default sbx-<id>-catalog)
+    ADB_CONNECT_STRING, ADB_ADMIN_PASSWORD    the sandbox database, when it has one:
+                                              the gold tables are loaded into it as well
 
 It runs once when the scheduler loads it (schedule "@once", unpaused), and
 can be re-run from the Airflow UI any time.
@@ -193,6 +197,62 @@ def harvest_catalog(**ctx):
     raise TimeoutError("harvest did not finish in 20 minutes")
 
 
+# ---------------------------------------------------------------------------
+# 4. Oracle: the gold tables as real tables in the sandbox Autonomous Database
+# ---------------------------------------------------------------------------
+GOLD_TABLES = {
+    "TELEMETRY_DAILY": ("""day date, site varchar2(50), device_id varchar2(50), readings number,
+        temp_avg_c number, temp_min_c number, temp_max_c number, temp_p95_c number,
+        humidity_avg_pct number, battery_min_pct number, anomalies number, sessions number,
+        faults number, health varchar2(20)""", "gold_oracle/telemetry_daily/"),
+    "TELEMETRY_SESSIONS": ("""day date, device_id varchar2(50), session_id varchar2(80),
+        started_at timestamp, ended_at timestamp, readings number, temp_avg_c number,
+        anomalies number, duration_min number""", "gold_oracle/telemetry_sessions/"),
+}
+
+
+def _adb_dsn(connect: str) -> str:
+    """Autonomous Database only speaks TLS; host:port/service must become a TCPS descriptor."""
+    if connect.lstrip().startswith("("):
+        return connect
+    host_port, service = connect.split("/", 1)
+    host, port = host_port.split(":")
+    return (f"(description=(retry_count=5)(retry_delay=3)(address=(protocol=tcps)(port={port})(host={host}))"
+            f"(connect_data=(service_name={service}))(security=(ssl_server_dn_match=yes)))")
+
+
+def load_gold_to_oracle(**ctx):
+    connect, pw = os.environ.get("ADB_CONNECT_STRING"), os.environ.get("ADB_ADMIN_PASSWORD")
+    if not (connect and pw):
+        print("no database in this sandbox; the gold tables stay in Object Storage only")
+        return "skipped"
+    import oracledb
+    ns = ctx["ti"].xcom_pull(task_ids="land_raw_readings") or NAMESPACE
+    base = f"https://objectstorage.{_region()}.oraclecloud.com/n/{ns}/b/{BUCKET}/o/"
+    with oracledb.connect(user="ADMIN", password=pw, dsn=_adb_dsn(connect)) as db:
+        cur = db.cursor()
+        # The database reads the bucket as itself (resource principal), no keys.
+        try:
+            cur.execute("begin dbms_cloud_admin.enable_resource_principal(); end;")
+        except oracledb.DatabaseError as e:
+            if "ORA-20000" not in str(e) and "already" not in str(e).lower():
+                raise
+        loaded = {}
+        for table, (cols, prefix) in GOLD_TABLES.items():
+            cur.execute("select count(*) from user_tables where table_name = :t", t=table)
+            if not cur.fetchone()[0]:
+                cur.execute(f"create table {table} ({cols})")
+            cur.execute(f"truncate table {table}")
+            cur.execute("""begin dbms_cloud.copy_data(table_name => :t, credential_name => 'OCI$RESOURCE_PRINCIPAL',
+                             file_uri_list => :u, format => json_object('type' value 'parquet', 'schema' value 'first')); end;""",
+                        t=table, u=base + prefix + "*.parquet")
+            cur.execute(f"select count(*) from {table}")
+            loaded[table] = cur.fetchone()[0]
+        db.commit()
+    print(f"loaded into the database: {loaded}")
+    return loaded
+
+
 with DAG(
     dag_id="telemetry_gold",
     description="raw readings -> Spark gold tables -> Data Catalog",
@@ -206,4 +266,5 @@ with DAG(
     land = PythonOperator(task_id="land_raw_readings", python_callable=land_raw_readings)
     etl = PythonOperator(task_id="run_gold_etl", python_callable=run_gold_etl)
     harvest = PythonOperator(task_id="harvest_catalog", python_callable=harvest_catalog)
-    land >> etl >> harvest
+    oracle = PythonOperator(task_id="load_gold_to_oracle", python_callable=load_gold_to_oracle)
+    land >> etl >> [harvest, oracle]

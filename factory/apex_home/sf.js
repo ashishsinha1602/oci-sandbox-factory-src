@@ -637,12 +637,13 @@ function sfInit(){
       var name=p.split('/').pop().replace(/\.py$/,'').replace(/[^a-z0-9]+/gi,'-').toLowerCase();
       return {name:name, script:files[p], language:'PYTHON'}; }));
     if(w.catalog!==false)a.enable_catalog=true;
+    if(w.oracle){a.enable_adb=true; a.adb_tier=a.adb_tier||'paid';}
     if(dags.length){
       var extra=reqs.map(function(p){return files[p]}).join('\n').split('\n').map(function(l){return l.trim()}).filter(function(l){return l&&l[0]!=='#'&&!/^apache-airflow\b/.test(l)});
       // The build context is flat (a config-file volume), so DAG files sit
       // beside the Dockerfile and are copied one by one into dags/.
       var names=dags.map(function(p){return p.split('/').pop()});
-      var app={'Dockerfile':'FROM docker.io/apache/airflow:2.10.3\nUSER airflow\nRUN pip install --no-cache-dir oci'+(extra.length?' '+extra.map(function(x){return JSON.stringify(x)}).join(' '):'')+'\n'+names.map(function(n){return 'COPY '+n+' /opt/airflow/dags/'+n+'\n'}).join('')};
+      var app={'Dockerfile':'FROM docker.io/apache/airflow:2.10.3\nUSER airflow\nRUN pip install --no-cache-dir oci oracledb'+(extra.length?' '+extra.map(function(x){return JSON.stringify(x)}).join(' '):'')+'\n'+names.map(function(n){return 'COPY '+n+' /opt/airflow/dags/'+n+'\n'}).join('')};
       dags.forEach(function(p){ app[p.split('/').pop()]=files[p]; });
       a.app_files=app;
       var jobName=(a.dataflow_jobs[0]||{}).name||'gold-etl';

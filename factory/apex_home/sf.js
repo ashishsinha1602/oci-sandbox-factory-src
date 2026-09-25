@@ -504,6 +504,53 @@ function sfInit(){
     L.push('<li>Everything is tagged with your sandbox id and <b>auto-destroyed after '+esc(a.ttl_days||3)+' day'+((a.ttl_days||3)==1?'':'s')+'</b>.</li>');
     return '<h4 style="margin:10px 0 4px">What this builds in OCI</h4><ul style="margin:0;padding-left:18px">'+L.join('')+'</ul>';
   }
+  function nz(x){return (x&&x.length)?x:undefined}
+
+  // AI answers come back as widgets, not bullet lists: the sandboxes a reply is
+  // about render as live cards from the dashboard's own data, and a cost
+  // estimate renders as a table. The model names them (sandboxes, cost); when
+  // it forgets, any sandbox id that appears in the text still gets its card.
+  function sbxCard(r){
+    var o=null; try{o=r.outputs?JSON.parse(r.outputs):null}catch(e){}
+    var parts=[];
+    if(o){
+      if(o.adb)parts.push('Autonomous DB');
+      var xdb=(o.databases||[]).filter(function(d){return d.name!=='primary'}).length; if(xdb)parts.push(xdb+' extra DB');
+      if(o.nosql)parts.push('NoSQL');
+      if(o.kafka)parts.push('Kafka');
+      if(o.app)parts.push((o.app.containers&&o.app.containers.length>1)?o.app.containers.length+' containers':'App');
+      (o.logins||[]).forEach(function(l){parts.push(l.service)});
+      ((o.buckets||[]).length)&&parts.push(o.buckets.length+' bucket'+(o.buckets.length>1?'s':''));
+      ((o.queues||[]).length)&&parts.push('Queue');
+      ((o.functions||[]).length)&&parts.push('Functions');
+      ((o.dataflow_jobs||[]).length)&&parts.push('Spark');
+      if(o.catalog)parts.push('Data Catalog');
+    }
+    var exp=o&&o.sandbox&&o.sandbox.expires, pu=primaryUrl(o), done=r.status==='DONE'&&r.action!=='DESTROY';
+    return '<div class="sf-w-card"><div class="sf-w-hd"><b>'+esc(r.sandbox_id)+'</b><span class="sf-badge '+esc(r.status)+'">'+esc(r.status)+'</span></div>'
+      +(exp?'<div class="sf-w-meta">expires '+esc(exp)+'</div>':'')
+      +(parts.length?'<div class="sf-w-parts">'+parts.map(function(p){return '<span>'+esc(p)+'</span>'}).join('')+'</div>':'')
+      +'<div class="sf-w-acts">'+(done&&pu?'<a class="sf-btn" href="'+esc(pu)+'" target="_blank" rel="noopener">Open</a>':'')
+      +(done&&o?'<button type="button" class="sf-btn sec" data-open="'+esc(r.sandbox_id)+'">Details &amp; passwords</button>':'')
+      +(r.status==='FAILED'&&r.error?'<span class="sf-err">'+esc(String(r.error).slice(0,140))+'</span>':'')+'</div></div>';
+  }
+  function widgetsHtml(j,reply,asked){
+    var rows=window.__sfRows||[], h='';
+    var all=/(running|what do i have|my sandbox|sandboxes|list|show|resources|active|urls?|links?)/i.test(asked||'');
+    var ids=all?rows.map(function(r){return r.sandbox_id}):(j&&Array.isArray(j.sandboxes))?j.sandboxes:rows.map(function(r){return r.sandbox_id}).filter(function(id){
+      return new RegExp('(^|[^a-z0-9-])'+id.replace(/[-]/g,'\\-')+'([^a-z0-9-]|$)','i').test(reply||'')});
+    var picked=rows.filter(function(r){return ids.indexOf(r.sandbox_id)>=0});
+    if(picked.length)h+='<div class="sf-w-grid">'+picked.map(sbxCard).join('')+'</div>';
+    var c=j&&j.cost;
+    if(c&&c.items&&c.items.length){
+      var money=function(v){var n=Number(v);return isFinite(n)?'$'+n.toFixed(2):esc(v)};
+      h+='<div class="sf-w-cost"><table><thead><tr><th>Item</th><th>How it is billed</th><th>Per month</th></tr></thead><tbody>'
+        +c.items.map(function(i){return '<tr><td>'+esc(i.name||i.item||'')+'</td><td>'+esc(i.detail||'')+'</td><td class="n">'+money(i.monthly_usd)+'</td></tr>'}).join('')
+        +'</tbody>'+(c.total_usd!=null?'<tfoot><tr><td colspan="2">Total</td><td class="n">'+money(c.total_usd)+'</td></tr></tfoot>':'')+'</table>'
+        +(c.note?'<div class="sf-w-meta">'+esc(c.note)+'</div>':'')+'</div>';
+    }
+    return h;
+  }
   function sendChat(){
     var t=$('#sf-chat-in').value.trim(); if(!t)return;
     hideSugg();
@@ -515,6 +562,7 @@ function sfInit(){
       var m=(r.raw||'').match(/\{[\s\S]*\}/), j=null; try{j=m?JSON.parse(m[0]):null}catch(e){}
       var reply=j&&j.reply?j.reply:(r.raw||''); pushHist({role:'assistant',text:reply});
       var d=addMsg('ai',fmt(reply));
+      d.insertAdjacentHTML('beforeend',widgetsHtml(j,reply,t));
       var qs=j&&j.questions; if(qs&&qs.length){
         d.insertAdjacentHTML('beforeend','<h4 style="margin:10px 0 4px">A couple of things first</h4><ol style="margin:0;padding-left:18px">'
           +qs.map(function(q){return '<li>'+esc(q)+'</li>'}).join('')+'</ol>');
@@ -522,14 +570,16 @@ function sfInit(){
       }
       var a=j&&j.action; if(a&&a.type){
         var box=document.createElement('div'); box.className='sf-act';
-        if(a.type!=='destroy')d.insertAdjacentHTML('beforeend',infraHtml(a));
+        if(a.type!=='destroy')d.insertAdjacentHTML('beforeend','<div class="sf-w-plan">'+infraHtml(a)+'</div>');
         var label=a.type==='destroy'?'Destroy '+a.sandbox_id:(a.type==='deploy'?'Deploy it':'Create it');
         box.innerHTML='<button type="button" class="sf-btn">'+esc(label)+'</button><button type="button" class="sf-btn sec">Not now</button>';
         d.appendChild(box);
         box.children[0].onclick=function(){ box.innerHTML='<span class="sf-spin"></span>Queueing...';
           var payload=a.type==='destroy'?{sandbox_id:a.sandbox_id,action:'DESTROY',ttl_days:1,enable_adb:false,enable_kafka:false,enable_app:false}
             :{sandbox_id:a.sandbox_id,action:a.git_url?'DEPLOY':'CREATE',ttl_days:a.ttl_days||3,enable_adb:!!a.enable_adb,enable_kafka:!!a.enable_kafka,enable_nosql:!!a.enable_nosql,enable_app:!!a.enable_app||!!a.git_url||!!a.app_image||!!(a.containers&&a.containers.length),
-              app_image:a.app_image||null,git_url:a.git_url||null,app_port:a.app_port||80,text:t,containers:(a.containers&&a.containers.length)?a.containers:undefined,seed_sql:a.seed_sql||undefined};
+              app_image:a.app_image||null,git_url:a.git_url||null,app_port:a.app_port||80,text:t,containers:(a.containers&&a.containers.length)?a.containers:undefined,seed_sql:a.seed_sql||undefined,
+              enable_catalog:!!a.enable_catalog,databases:nz(a.databases),buckets:nz(a.buckets),queues:nz(a.queues),
+              functions:nz(a.functions),dataflow_jobs:nz(a.dataflow_jobs),app_instances:nz(a.app_instances)};
           call('submit',payload).then(function(s){ if(s.err){box.innerHTML='<span class="sf-err">'+esc(s.err)+'</span>';return}
             box.innerHTML='<span class="sf-chip">Queued as request #'+esc(s.id)+'</span>'; pushHist({role:'user',text:'(confirmed: '+a.type+' '+a.sandbox_id+' queued)'}); refresh(); });
         };
@@ -553,6 +603,17 @@ function sfInit(){
       // was height:min(64vh,720px);min-height:360px - sized for the card grid
       '#sf-msgs{height:auto;min-height:120px;max-height:min(56vh,520px);overflow-y:auto}',
       '.sf-msg p{margin:0 0 8px}',
+      '.sf-w-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px;margin:10px 0 2px}',
+      '.sf-w-card{background:#fff;border:1px solid #dde4ec;border-radius:12px;padding:11px 13px;box-shadow:0 1px 3px rgba(15,23,42,.05)}',
+      '.sf-w-hd{display:flex;align-items:center;justify-content:space-between;gap:8px}.sf-w-hd b{font-size:14px}',
+      '.sf-w-meta{font-size:12px;color:#6b7280;margin-top:3px}',
+      '.sf-w-parts{margin-top:7px}.sf-w-parts span{display:inline-block;background:#eef4fb;color:#0b4a8b;border-radius:6px;padding:2px 7px;font-size:11px;margin:0 4px 4px 0}',
+      '.sf-w-acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.sf-w-acts .sf-btn{padding:5px 12px;font-size:12px;text-decoration:none}',
+      '.sf-w-cost{margin-top:10px;background:#fff;border:1px solid #dde4ec;border-radius:12px;padding:6px 10px;overflow-x:auto}',
+      '.sf-w-cost table{width:100%;border-collapse:collapse;font-size:13px}.sf-w-cost th{text-align:left;font-size:11px;color:#6b7280;font-weight:600;padding:6px 6px;border-bottom:1px solid #e5e9f0}',
+      '.sf-w-cost td{padding:6px;border-bottom:1px solid #f1f4f8}.sf-w-cost .n{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}',
+      '.sf-w-cost tfoot td{font-weight:700;border-bottom:0}',
+      '.sf-w-plan{margin-top:10px;background:#fff;border:1px solid #dde4ec;border-left:3px solid #1a73e8;border-radius:10px;padding:8px 12px}',
       '.sf-msg p:last-child{margin:0}',
       '#sf-sugg.sf-pane{max-height:56vh;overflow:auto;padding:2px 4px 2px 0}',
       '#sf-recs{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px}',

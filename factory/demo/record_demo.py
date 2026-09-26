@@ -97,9 +97,14 @@ MASK_JS = r"""
       if (c !== t) n.nodeValue = c;
     }
     for (const i of root.querySelectorAll ? root.querySelectorAll('input,textarea') : []) {
+      // never rewrite what the user is typing into the environment box (it is
+      // what gets sent); it is hidden on screen by the text-security style below
+      if (i.classList && i.classList.contains('sf-env')) continue;
       if (i.type !== 'password' && list.some(x => (i.value || '').includes(x))) i.value = DOTS;
     }
   }
+  const st = document.createElement('style'); st.textContent = 'textarea.sf-env{-webkit-text-security:disc}';
+  (document.head || document.documentElement).appendChild(st);
   new MutationObserver(() => scrub(document.body)).observe(document, {subtree: true, childList: true, characterData: true});
   document.addEventListener('DOMContentLoaded', () => scrub(document.body));
   setInterval(() => scrub(document.body), 200);
@@ -337,6 +342,8 @@ with sync_playwright() as p:
         # all one video: the app, Airflow (logged in) and its DAG, the tables
         # the pipeline wrote, read back through the database's REST API.
         rows = pg.evaluate("() => window.__sfRows || []")
+        # in the order they were built (the cards list newest first): the story reads forward
+        rows = sorted(rows, key=lambda r: int(r.get("id") or 0))
         for r in rows:
             if r.get("status") != "DONE" or r.get("action") == "DESTROY" or not r.get("outputs"):
                 continue

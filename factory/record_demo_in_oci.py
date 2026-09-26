@@ -20,7 +20,7 @@ import time
 import oci
 import sandbox_factory as sf
 
-PLAYWRIGHT_IMAGE = "mcr.microsoft.com/playwright/python:v1.49.0-noble"
+PLAYWRIGHT_IMAGE = "mcr.microsoft.com/playwright/python:v1.62.0-noble"   # a current Chromium: Grafana 13 does not run on the 2024 one
 BUCKET = os.environ.get("SBX_PREFIX", "sbx") + "-factory-reports"   # bucket names are tenancy-wide: one per install
 GRAFANA_PASSWORD = os.environ.get("SF_GRAFANA_PASSWORD", "Grafana-Demo-2026")
 PROMPTS = [
@@ -78,7 +78,7 @@ def main():
                                    "SF_PROMPTS": json.dumps(PROMPTS), "REPORT_BUCKET": BUCKET, "REPORT_NAMESPACE": ns,
                                    "REPORT_COMPARTMENT": ctrl, "SF_GRAFANA_PASSWORD": GRAFANA_PASSWORD, "SF_MASK": GRAFANA_PASSWORD},
             volume_mounts=[m.CreateVolumeMountDetails(volume_name="script", mount_path="/workspace")],
-            command=["bash", "-c", "pip install --quiet oci requests playwright==1.49.0 && python -u /workspace/record_demo.py"])])).data
+            command=["bash", "-c", "pip install --quiet oci requests playwright==1.62.0 && python -u /workspace/record_demo.py"])])).data
     print(f"started {name}", flush=True)
     seen, uploaded, waits = 0, None, "[]"
     while True:

@@ -260,11 +260,25 @@ def run_job(rm, stack_id: str, operation: str, label: str) -> oci.resource_manag
         "APPLY": rmm.CreateApplyJobOperationDetails(execution_plan_strategy="AUTO_APPROVED"),
         "DESTROY": rmm.CreateDestroyJobOperationDetails(execution_plan_strategy="AUTO_APPROVED"),
     }[operation]
-    job = rm.create_job(rmm.CreateJobDetails(
-        stack_id=stack_id,
-        display_name=f"{label}-{operation.lower()}-{dt.datetime.now(dt.timezone.utc):%Y%m%d%H%M%S}",
-        job_operation_details=details,
-    )).data
+    # Resource Manager allows only a few jobs at once per tenancy; with several
+    # workers busy a new job is refused with 400 LimitExceeded. Wait for a slot.
+    waited = 0
+    while True:
+        try:
+            job = rm.create_job(rmm.CreateJobDetails(
+                stack_id=stack_id,
+                display_name=f"{label}-{operation.lower()}-{dt.datetime.now(dt.timezone.utc):%Y%m%d%H%M%S}",
+                job_operation_details=details,
+            )).data
+            break
+        except oci.exceptions.ServiceError as e:
+            if e.status == 400 and e.code == "LimitExceeded" and waited < 1800:
+                if waited == 0:
+                    print(f"  Resource Manager is at its concurrent job limit; waiting for a slot", flush=True)
+                time.sleep(60)
+                waited += 60
+                continue
+            raise
     print(f"  {operation} job {job.id.split('.')[-1][-8:]} started", flush=True)
     started = time.time()
     while True:

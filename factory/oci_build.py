@@ -98,7 +98,8 @@ def _source_volume(src_dir: str):
 
 def build_in_oci(git_url: str | None, image: str, registry: str, namespace: str, sandbox_id: str,
                  platform: str = "linux/arm64", src_dir: str | None = None,
-                 dockerfile: str | None = None, sub_path: str | None = None) -> None:
+                 dockerfile: str | None = None, sub_path: str | None = None,
+                 repo_compartment: str | None = None, also_tags: list | None = None) -> None:
     """Build an image inside OCI with kaniko.
 
     dockerfile is relative to the context root; kaniko looks for "Dockerfile"
@@ -121,7 +122,7 @@ def build_in_oci(git_url: str | None, image: str, registry: str, namespace: str,
     # repository that does not exist yet auto-creates it in the tenancy root,
     # where neither the workers nor the sandbox services may read it.
     repo = image.split("/", 2)[2].rsplit(":", 1)[0]
-    sf.ensure_public_repo(sf.config(), control, repo)
+    sf.ensure_public_repo(sf.config(), repo_compartment or control, repo)
     docker_config = json.dumps({"auths": {registry: {"auth": base64.b64encode(f"{namespace}/{user}:{token}".encode()).decode()}}})
     shape = "CI.Standard.A1.Flex" if platform.endswith("arm64") else "CI.Standard.E4.Flex"
     name = f"sbx-build-{sandbox_id}-{dt.datetime.now(dt.timezone.utc):%H%M%S}"
@@ -152,6 +153,7 @@ def build_in_oci(git_url: str | None, image: str, registry: str, namespace: str,
             image_url=KANIKO_IMAGE,
             arguments=[f"--context={'dir:///workspace' if src_dir else git_context(git_url)}",
                        f"--destination={image}", "--cache=false", "--snapshot-mode=redo"]
+                      + [f"--destination={image.rsplit(':', 1)[0]}:{t}" for t in (also_tags or [])]
                       + ([f"--dockerfile={dockerfile}"] if dockerfile else [])
                       # a project inside a repository: COPY paths are relative to it
                       + ([f"--context-sub-path={sub_path}"] if sub_path else []),

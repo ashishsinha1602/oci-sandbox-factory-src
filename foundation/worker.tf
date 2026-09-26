@@ -22,7 +22,7 @@ variable "worker_count" {
 
 variable "worker_image" {
   type        = string
-  default     = "phx.ocir.io/ax3sbu0rnjhx/sbx/factory/worker:release"
+  default     = "phx.ocir.io/ax3sbu0rnjhx/sandbox-factory/worker:release"
   description = "The worker image. The default is the published release (a public repository any tenancy and region can pull). Override with your own build of factory/Dockerfile."
 }
 

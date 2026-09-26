@@ -675,6 +675,9 @@ function sfInit(){
     // A workload is built from the files generated below (app_files), never by
     // cloning the repository: a pipeline folder has no Dockerfile to build.
     a.type='create'; a.git_url=null;
+    // ... and it is the whole app: an extra instance the model may also have
+    // listed (a second Airflow, say) would be built and billed twice.
+    a.app_instances=[];
     var files=CODE.files, id=a.sandbox_id;
     var dags=(w.dags||[]).filter(function(p){return files[p]}), spark=(w.spark||[]).filter(function(p){return files[p]});
     var reqs=(w.requirements||[]).filter(function(p){return files[p]});

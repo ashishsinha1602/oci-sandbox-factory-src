@@ -195,17 +195,22 @@ def tour(pg, sid, o):
     logins = {(x.get("service") or "").lower(): x for x in (o.get("logins") or [])}
     for u in urls:
         if u.rstrip("/").endswith("/mcp"):
-            MCP_URLS.append(u)
             continue       # an MCP endpoint answers JSON-RPC, not a page: played as a scene at the end
         if "airflow" in (app.get("containers") or []) or "airflow" in logins:
             airflow(pg, u, logins.get("airflow"))
         else:
             show(pg, u, 8000)
+    # MCP is played at the end, only where a container is actually named mcp,
+    # at <gateway>/mcp (the first container has "/", the rest "/<name>").
+    gw = next((u for u in urls if u.startswith("https://")), None)
+    if gw and "mcp" in [str(c).lower() for c in (app.get("containers") or [])]:
+        MCP_URLS.append(gw.rstrip("/") + "/mcp")
+    seen = {str(c).lower() for c in (app.get("containers") or [])}
     for inst in o.get("app_instances") or []:
+        if str(inst.get("name", "")).lower() in seen:
+            continue       # the same service twice (a duplicate instance): show it once
         for u in (inst.get("urls") or [])[:1]:
             show(pg, u, 8000)
-            if u.startswith("https://"):
-                MCP_URLS.append(u.rstrip("/") + "/mcp")
     # the tables the sandbox holds (the pipeline's gold tables), through ORDS
     lc = o.get("low_code") or {}
     pw = (o.get("adb") or {}).get("admin_password")

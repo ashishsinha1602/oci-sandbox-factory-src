@@ -814,8 +814,17 @@ function sfInit(){
     // listed (a second Airflow, say) would be built and billed twice.
     a.app_instances=[];
     var files=CODE.files, id=a.sandbox_id;
-    var dags=(w.dags||[]).filter(function(p){return files[p]}), spark=(w.spark||[]).filter(function(p){return files[p]});
-    var reqs=(w.requirements||[]).filter(function(p){return files[p]});
+    // The files decide, not the model's spelling of their paths: a path is
+    // matched exactly or by its file name, and a kind the model left out or
+    // misnamed is found in the files themselves (a pipeline once shipped
+    // without its Spark job because the model wrote gold_etl.py for spark/gold_etl.py).
+    var byName={}; Object.keys(files).forEach(function(p){byName[p.split('/').pop()]=p});
+    var resolve=function(list){ var out=[]; (list||[]).forEach(function(p){ var q=files[p]?p:byName[String(p).split('/').pop()]; if(q&&out.indexOf(q)<0)out.push(q); }); return out; };
+    var inf=inferWorkload(files)||{};
+    var dags=resolve(w.dags); if(!dags.length)dags=inf.dags||[];
+    var spark=resolve(w.spark); if(!spark.length)spark=inf.spark||[];
+    var reqs=resolve(w.requirements); if(!reqs.length)reqs=inf.requirements||[];
+    if(inf.oracle&&w.oracle==null)w.oracle=true;
     var bucket=w.bucket||'data';
     a.buckets=(a.buckets||[]); if(!a.buckets.some(function(b){return b.name===bucket}))a.buckets.push({name:bucket});
     a.dataflow_jobs=(a.dataflow_jobs||[]).concat(spark.map(function(p){

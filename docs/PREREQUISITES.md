@@ -173,6 +173,22 @@ It needs OCI Logging enabled on the DevOps project (runs fail at once without it
 and its own dynamic group with DevOps, repository and container-instance grants.
 Installers never need any of this: the stack runs the published release image.
 
+## 5a. Removing or reinstalling
+
+Learned from a full reset of our own install (2026-09-25):
+
+1. **Destroy the sandboxes first** (every user's, from the app or `sandbox_factory.py destroy`), then the stack.
+   Resource Manager runs only a few jobs at once per tenancy; the factory waits for a slot.
+2. **Destroy the stack** in Resource Manager (or `terraform destroy`). Expect:
+   - the **vault** is only *scheduled* for deletion (7 days minimum), so its compartment stays until then;
+   - **tags are deleted slowly** (about 10 minutes each) and the **tag namespace** after them. Its name is
+     unique across the tenancy, so reinstalling with the **same prefix** must wait until it is gone;
+   - rarely, a database's **private endpoint outlives the database** and pins its network security group,
+     subnet and VCN. The endpoint belongs to the service and cannot be deleted by the tenancy; it is
+     released by OCI later.
+3. **To reinstall at once**, use a new prefix, or rename the old top compartment (for example
+   `sbx` → `sbx-retired-<date>`) and wait for the tag namespace to disappear, then install.
+
 ## 6. Known limits (honest list)
 
 - Isolation between users is at the application and network layer; inside OCI all

@@ -961,7 +961,9 @@ function sfInit(){
       if(typing)typing.remove(); $('#sf-chat-send').disabled=false; $('#sf-chat-in').focus();
       if(r.err){addMsg('ai','<span class="sf-err">'+esc(r.err)+'</span>');return}
       var j=modelJson(r.raw);
-      var reply=j&&j.reply?j.reply:(r.raw||'');
+      // an answer that is not JSON after the server's retries was cut off or garbled: say so, never show raw JSON
+      var rawTxt=String(r.raw||''), looksJson=/^\s*(```|\{)/.test(rawTxt);
+      var reply=j&&j.reply?j.reply:(looksJson?'I lost the end of that answer. Please send your message again.':rawTxt);
       if(j&&j.action&&j.action.type)keepFromLast(j.action);
       // the proposal rides along in the history (without its long code) so a
       // follow-up such as "no database" revises this plan instead of starting over

@@ -128,7 +128,7 @@ declare
     l_cr.put('messages', p_messages);
     -- Gemini counts its thinking against maxTokens; a planner answer with a
     -- cost table needs room after it, or the JSON is cut off mid-string.
-    l_cr.put('maxTokens', 16000);
+    l_cr.put('maxTokens', 32000);   -- thinking + a long JSON with code: 16000 was cut off mid-answer
     l_cr.put('temperature', 0.2);
     l_req.put('chatRequest', l_cr);
 
@@ -375,7 +375,7 @@ begin
           end;
           if l_j is null then
             l_msgs.append(msg('ASSISTANT', l_raw));
-            l_msgs.append(msg('USER', 'Answer again with ONLY the JSON object described above: no prose before or after it, no code fences.'));
+            l_msgs.append(msg('USER', 'That answer was not one complete JSON object (it may have been cut off). Answer again with ONLY the JSON object described above, complete and shorter: no prose before or after it, no code fences, no code written into the action when the user attached code (workload lists the file paths), and any code you write under 60 lines.'));
             l_raw := ai_chat(l_msgs);
           elsif (not l_j.has('action') or l_j.get('action').is_null)
              and (l_ask_build

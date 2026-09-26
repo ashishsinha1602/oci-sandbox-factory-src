@@ -186,7 +186,7 @@ declare
     l := replace(l, '{REGISTRY}', nvl(l_registry, '(none configured)'));
     l := replace(l, '{SANDBOXES}', my_sandboxes());
     l := replace(l, '{PRICES}', l_prices);
-    l := replace(l, '{REQUEST}', l_in.get_string('text'));
+    l := replace(l, '{REQUEST}', substr(l_in.get_clob('text'), 1, 32000));
     return l;
   end;
 
@@ -357,7 +357,7 @@ begin
         -- attached code), never from the model's reply, so a deployment request
         -- always ends with an action the page can turn into a button.
         l_last varchar2(4000) := case when l_hist is not null and l_hist.get_size > 0
-                                      then substr(treat(l_hist.get(l_hist.get_size - 1) as json_object_t).get_string('text'), 1, 4000) end;
+                                      then substr(treat(l_hist.get(l_hist.get_size - 1) as json_object_t).get_clob('text'), 1, 4000) end;
         l_ask_build boolean := apex_application.g_clob_01 is not null
                                or regexp_like(l_last, '(^|\W)(create|deploy|build|spin up|set up|launch|provision|destroy|delete|extend|recreate|retry)(\W|$)|github\.com|here is the code|for [0-9]+ days?', 'i');
         l_raw  clob := ai_chat(l_msgs);
@@ -371,7 +371,7 @@ begin
         for l_try in 1 .. 2 loop
           begin
             l_j   := json_object_t.parse(substr(l_raw, instr(l_raw, '{'), instr(l_raw, '}', -1) - instr(l_raw, '{') + 1));
-            l_txt := substr(l_j.get_string('reply'), 1, 4000);
+            l_txt := substr(l_j.get_clob('reply'), 1, 4000);   -- get_string raises ORA-06502 past 32767 characters
           exception when others then l_j := null;
           end;
           if l_j is null then

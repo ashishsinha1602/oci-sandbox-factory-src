@@ -77,6 +77,22 @@ def detect() -> dict:
     }
 
 
+def refresh_prices(conn=None) -> str:
+    """Oracle's public price list -> SBX.FACTORY_CONFIG.oci_prices (+ the date).
+    Run at every worker start and once a day; costs shown to users come only
+    from this, never from the model."""
+    import datetime as dt
+    import pricing
+    own = conn is None
+    conn = conn or controldb.connect("ADMIN")
+    text = pricing.config_string(pricing.build_prices(pricing.fetch()))
+    save(conn.cursor(), {"oci_prices": text, "prices_updated": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d")})
+    conn.commit()
+    if own:
+        conn.close()
+    return text
+
+
 def saved(cur) -> dict:
     cur.execute(f"select key, value from {controldb.SCHEMA}.factory_config")
     return {k: v for k, v in cur.fetchall()}

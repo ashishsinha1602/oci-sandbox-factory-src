@@ -741,16 +741,18 @@ function sfInit(){
   // A1 1 OCPU / 4 GB, Kafka 1 broker / 1 OCPU). Services without a published
   // hourly rate are listed as per use, never given a made-up number.
   function costFor(a){
-    var P=window.__sfPrices||{}, H=730, items=[], total=0, perUse=[];
-    if(!P.adb_ecpu&&!P.a1_ocpu)return null;
+    var P=window.__sfPrices||{}, H=744, items=[], total=0, perUse=[];   // 744 h: Oracle's own estimator month
+    if(!P.adb_ecpu&&!P.e4_ocpu)return null;
+    // Arm A1 is published only as a free-tier row: price it at the E4 rate and say so
+    var armEst=!P.a1_ocpu, cpu=P.a1_ocpu||P.e4_ocpu||0, mem=P.a1_memory||P.e4_memory||0;
     var add=function(name,detail,m){items.push({name:name,detail:detail,monthly_usd:m==null?null:Math.round(m*100)/100}); if(m!=null)total+=m;};
     var w=a.workload||null;
     var dbs=((a.enable_adb||(w&&w.oracle))?1:0)+((a.databases||[]).length);
     if(dbs&&P.adb_ecpu){ var m=2*P.adb_ecpu*H+20*(P.adb_storage||0);
-      add('Autonomous Database'+(dbs>1?' x'+dbs:''),'paid, 2 ECPU + 20 GB, billed per ECPU-hour while it exists',m*dbs); }
+      add('Autonomous Database'+(dbs>1?' x'+dbs:''),'Transaction Processing, 2 ECPU + 20 GB, license included, per ECPU-hour while it exists',m*dbs); }
     var apps=((a.enable_app||a.git_url||a.app_image||a.app_template||(a.containers&&a.containers.length)||w)?1:0)+((a.app_instances||[]).length);
-    if(apps&&P.a1_ocpu){ var c=(P.a1_ocpu+4*(P.a1_memory||0))*H;
-      add('Container instance'+(apps>1?' x'+apps:''),'1 OCPU / 4 GB (Arm), billed per hour while it runs',c*apps); }
+    if(apps&&cpu){ var c=(cpu+4*mem)*H;
+      add('Container instance'+(apps>1?' x'+apps:''),'1 OCPU / 4 GB, per hour while it runs'+(armEst?' (Arm A1 has no public rate; estimated at the E4 rate)':''),c*apps); }
     if(a.enable_kafka&&P.kafka_ocpu) add('Kafka cluster','1 broker, 1 OCPU, 50 GB, billed per OCPU-hour',P.kafka_ocpu*H);
     if(a.enable_nosql) perUse.push('NoSQL (per read/write unit and GB)');
     if(w||(a.dataflow_jobs||[]).length) perUse.push('Data Flow (only while a Spark run lasts)');
@@ -763,7 +765,7 @@ function sfInit(){
     if(!items.length)return null;
     var days=Number(a.ttl_days)||3, life=total*days*24/H;
     return {items:items,total_usd:Math.round(total*100)/100,
-      note:'From Oracle list prices'+(window.__sfRegion?' ('+window.__sfRegion+')':'')+'. For this sandbox’s '+days+'-day lifetime: $'+life.toFixed(2)+' plus per-use services. It is deleted when the lifetime ends.'};
+      note:'From Oracle’s published price list'+(window.__sfPricesDate?', fetched '+window.__sfPricesDate:'')+'. For this sandbox’s '+days+'-day lifetime: $'+life.toFixed(2)+' plus per-use services. It is deleted when the lifetime ends.'};
   }
   function widgetsHtml(j,reply,asked){
     var rows=window.__sfRows||[], h='';
@@ -1009,7 +1011,7 @@ function sfInit(){
     if(c.registry_prefix)OCIR=c.registry_prefix;
     if(c.region)window.__sfRegion=c.region;
     // the live price list ("key=price/unit; ..."), for cost tables computed here, not by the model
-    window.__sfPrices={}; (c.prices||'').split(';').forEach(function(kv){var m=kv.match(/^\s*([a-z0-9_]+)=([0-9.]+)/i); if(m)window.__sfPrices[m[1]]=Number(m[2]);});
+    window.__sfPricesDate=c.prices_updated||''; window.__sfPrices={}; (c.prices||'').split(';').forEach(function(kv){var m=kv.match(/^\s*([a-z0-9_]+)=([0-9.]+)/i); if(m)window.__sfPrices[m[1]]=Number(m[2]);});
     // offer only the models this region serves (the tenancy profile), default first
     var sel=document.querySelector('#sf-model');
     if(sel&&c.models&&c.models.length){

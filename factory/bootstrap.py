@@ -62,6 +62,12 @@ def bootstrap() -> None:
               f"model {prof['genai_model'] or 'NONE ANSWERS - chat and Select AI are off'}", flush=True)
     except Exception as e:  # noqa: BLE001 - never stop a worker over it
         print(f"bootstrap: profile not refreshed ({type(e).__name__}: {e})", flush=True)
+    try:
+        import profile as tenancy_profile
+        tenancy_profile.refresh_prices()
+        print("bootstrap: prices refreshed from Oracle's price list", flush=True)
+    except Exception as e:  # noqa: BLE001
+        print(f"bootstrap: prices not refreshed ({type(e).__name__}: {e})", flush=True)
 
 
 if __name__ == "__main__":

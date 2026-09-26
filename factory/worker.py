@@ -861,6 +861,7 @@ def main():
     print(f"worker {WORKER_NAME} connected to control DB; polling sbx.sandbox_requests")
     recover_own_claims(conn)
     last_reap = 0.0
+    last_prices = time.time()      # bootstrap has just refreshed them
     while True:
         if time.time() - last_reap > REAP_SECONDS:
             last_reap = time.time()
@@ -868,6 +869,10 @@ def main():
                 print(f"[{dt.datetime.now():%H:%M:%S}] reaper: checking for expired sandboxes")
                 sf.cmd_reap(argparse.Namespace(dry_run=False))
                 reconcile(conn)
+                if time.time() - last_prices > 86400:          # Oracle's price list, daily
+                    last_prices = time.time()
+                    import profile as tenancy_profile
+                    tenancy_profile.refresh_prices()
             except Exception as e:  # noqa: BLE001
                 print(f"reaper error: {e}", file=sys.stderr)
         try:

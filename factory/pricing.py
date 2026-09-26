@@ -33,17 +33,15 @@ SKUS = {
     # Names as Oracle publishes them, confirmed against the live list. Several
     # services appear twice - once at 0 for the Always Free allowance and once
     # at the real rate - so build_prices() prefers the priced row.
-    "a1_ocpu":       ["Compute - Standard - A2 OCPU", "Compute - Standard - A1 - OCPU"],
-    "a1_memory":     ["Compute - Standard - A2 Memory", "Compute - Standard - A1 - Memory"],
-    "e4_ocpu":       ["OCI - Compute - Standard - E6 - OCPU", "Compute - Standard - E4 - OCPU"],
-    "e4_memory":     ["OCI - Compute - Standard - E6 - Memory", "Compute - Standard - E4 - Memory"],
-    "adb_ecpu":      ["Oracle Autonomous AI Vector Database - ECPU",
-                      "Oracle Autonomous AI Database - ECPU",
-                      "Autonomous Database - Shared - ECPU"],
-    "adb_storage":   ["Oracle Autonomous AI Database Dedicated Backup Storage",
-                      "Autonomous Database - Shared - Exadata Storage"],
-    "object_gb":     ["Oracle Compute Cloud@Customer - Object Storage - Storage",
-                      "Object Storage - Storage"],
+    "a1_ocpu":       ["Compute - Standard - A1 - OCPU"],          # published as a free-tier row only
+    "a1_memory":     ["Compute - Standard - A1 - Memory"],
+    "e4_ocpu":       ["Compute - Standard - E4 - OCPU"],
+    "e4_memory":     ["Compute - Standard - E4  - Memory", "Compute - Standard - E4 - Memory"],
+    # sandbox databases are Autonomous Transaction Processing, LICENSE_INCLUDED:
+    # not the BYOL or Vector Database rows (a quarter of the price)
+    "adb_ecpu":      ["Oracle Autonomous AI Transaction Processing - ECPU"],
+    "adb_storage":   ["Oracle Autonomous AI Database Storage for Transaction Processing"],
+    "object_gb":     ["Object Storage - Storage"],
     "object_req":    ["Object Storage - Requests"],
     "fn_time":       ["Oracle Functions - Execution Time"],
     "fn_calls":      ["Oracle Functions - Invocations"],
@@ -169,6 +167,11 @@ def payg(item: dict) -> float | None:
     return None
 
 
+def config_string(prices: dict) -> str:
+    """The form SBX.FACTORY_CONFIG.oci_prices holds: 'key=price/metric; ...'."""
+    return "; ".join(f"{k}={v['price']}/{v['metric']}" for k, v in prices.items() if v.get("price") is not None)
+
+
 def build_prices(items: list[dict]) -> dict[str, dict]:
     """Resolve each SKU we care about to a live unit price.
 
@@ -184,7 +187,7 @@ def build_prices(items: list[dict]) -> dict[str, dict]:
         for want in names:
             for i in items:
                 display = i.get("displayName") or ""
-                if display.lower().startswith(want.lower()):
+                if display.strip().lower() == want.lower() or (display.lower().startswith(want.lower()) and "byol" not in display.lower()):
                     candidates.append((display, payg(i), i.get("metricName", "")))
         priced = [c for c in candidates if c[1] not in (None, 0)]
         if priced:

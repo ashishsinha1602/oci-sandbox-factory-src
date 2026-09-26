@@ -566,7 +566,7 @@ def main():
             import profile as tenancy_profile
             prof = tenancy_profile.refresh()                       # region key + namespace of THIS tenancy
             registry = f"{prof['region_key']}.ocir.io"
-            fn_image = f"{registry}/{prof['namespace']}/sbx/hello-fn/app:e2e"
+            fn_image = f"{registry}/{prof['namespace']}/{sf.image_repo(sf.config(), fnd['compartments']['control'], 'hello-fn', 'app')}:e2e"
             oci_build.build_in_oci(git_url=os.environ.get("SBX_REPO_URL", "https://github.com/ashishsinha1602/oci-sandbox-factory.git"), image=fn_image,
                                    registry=registry, namespace=prof["namespace"],
                                    sandbox_id="hello-fn", platform="linux/arm64", dockerfile="Dockerfile", sub_path="examples/hello-fn")

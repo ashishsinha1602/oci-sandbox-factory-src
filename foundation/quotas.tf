@@ -29,6 +29,7 @@ locals {
 }
 
 resource "oci_limits_quota" "sandbox" {
+  provider = oci.home
   for_each = var.enable_quotas ? local.quota_statements : {}
 
   compartment_id = var.tenancy_ocid

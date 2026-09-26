@@ -237,7 +237,9 @@ def setup(argv: list[str]) -> None:
     if cur.fetchone()[0] == 0:
         cur.execute(f"begin apex_instance_admin.add_workspace(p_workspace => '{WORKSPACE}', p_primary_schema => '{SCHEMA}'); end;")
         print(f"APEX workspace {WORKSPACE} created")
-    admin_pw = _password()
+    # A Terraform install generates this password and shows it in the stack
+    # outputs (foundation/app.tf), so the installer can sign in straight away.
+    admin_pw = os.environ.get("SBX_APP_ADMIN_PASSWORD") or _password()
     cur.execute(f"""
         begin
           apex_util.set_workspace(p_workspace => '{WORKSPACE}');

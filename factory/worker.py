@@ -238,7 +238,7 @@ def embed_params() -> str:
     Seeds that build a vector corpus write {{EMBED_PARAMS}} and this fills in the
     region, credential and model, so the SQL itself carries no tenancy.
     """
-    region = sf.config().get("region", "us-phoenix-1")
+    region = sf.config()["region"]
     cred = "GENAI_CRED" if os.environ.get("GENAI_USER_OCID") else "OCI$RESOURCE_PRINCIPAL"
     model = os.environ.get("EMBED_MODEL", "cohere.embed-multilingual-v3.0")
     comp = (sf.foundation().get("compartments") or {}).get("sandboxes", "")
@@ -295,7 +295,20 @@ WORKER_NAME = os.environ.get("WORKER_NAME") or socket.gethostname()
 # A model the region actually serves on demand: llama-3.3-70b is listed but
 # 404s in us-phoenix-1 (as do llama-4, command-a and grok-4); Gemini 2.5 Flash
 # and grok-4.6 answer. Override per tenancy with SELECT_AI_MODEL.
-SELECT_AI_MODEL = os.environ.get("SELECT_AI_MODEL", "google.gemini-2.5-flash")
+SELECT_AI_MODEL = os.environ.get("SELECT_AI_MODEL", "")
+
+
+def select_ai_model() -> str:
+    """SELECT_AI_MODEL, else the model the tenancy profile found answering here."""
+    if SELECT_AI_MODEL:
+        return SELECT_AI_MODEL
+    try:
+        cur = controldb.connect().cursor()
+        cur.execute(f"select value from {controldb.SCHEMA}.factory_config where key = 'genai_model'")
+        row = cur.fetchone()
+        return (row and row[0]) or "google.gemini-2.5-flash"
+    except Exception:  # noqa: BLE001
+        return "google.gemini-2.5-flash"
 
 
 def _dedicated_genai_credential() -> tuple[str, dict] | None:
@@ -393,7 +406,7 @@ def enable_select_ai(outputs: dict, region: str, cfg: dict) -> None:
                 "provider": "oci",
                 "credential_name": cred,
                 "region": region,
-                "model": SELECT_AI_MODEL,
+                "model": select_ai_model(),
                 "comments": "true",
                 # Spell the endpoint out, WITH the scheme: left to itself the
                 # database builds ...oci.my$cloud_domain (ORA-20404), and a bare
@@ -463,7 +476,7 @@ def enable_select_ai(outputs: dict, region: str, cfg: dict) -> None:
             except Exception as e:  # noqa: BLE001
                 print(f"Select AI refresh job not scheduled ({type(e).__name__})", flush=True)
             db.commit()
-        print(f"Select AI enabled on {adb.get('db_name')} over {len(owners)} schema(s) (model {SELECT_AI_MODEL}"
+        print(f"Select AI enabled on {adb.get('db_name')} over {len(owners)} schema(s) (model {select_ai_model()}"
               f"{', AI catalogue generated' if catalogued else ''}) - try: select ai what are my top customers", flush=True)
     except Exception as e:  # noqa: BLE001
         print(f"Select AI setup skipped ({type(e).__name__}: {e})", flush=True)
@@ -726,7 +739,7 @@ def process_one(conn) -> bool:
                 # not mark a working sandbox as failed - record it and move on.
                 try:
                     cfg = sf.config()
-                    enable_select_ai(outputs, cfg.get("region", "us-phoenix-1"), cfg)
+                    enable_select_ai(outputs, cfg["region"], cfg)
                     seed = (req.get("seed_sql") or "").strip()
                     if seed:
                         seed_database(outputs, seed)

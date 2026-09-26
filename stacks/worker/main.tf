@@ -93,6 +93,8 @@ resource "oci_identity_policy" "worker" {
     "allow dynamic-group ${oci_identity_dynamic_group.worker[0].name} to inspect compartments in tenancy",
     "allow dynamic-group ${oci_identity_dynamic_group.worker[0].name} to inspect tenancies in tenancy",
     "allow dynamic-group ${oci_identity_dynamic_group.worker[0].name} to use tag-namespaces in tenancy",
+    # the tenancy profile probes which chat models answer here
+    "allow dynamic-group ${oci_identity_dynamic_group.worker[0].name} to use generative-ai-family in compartment id ${var.control_compartment_ocid}",
   ]
 }
 

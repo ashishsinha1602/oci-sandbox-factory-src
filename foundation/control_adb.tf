@@ -66,6 +66,7 @@ output "control_adb_admin_password" {
 # Let the control database call OCI Generative AI as itself (resource
 # principal), so Select AI in APEX needs no API keys.
 resource "oci_identity_dynamic_group" "control_adb" {
+  provider       = oci.home
   count          = var.enable_control_adb ? 1 : 0
   compartment_id = var.tenancy_ocid
   name           = "${var.prefix}-control-adb-dg"
@@ -75,6 +76,7 @@ resource "oci_identity_dynamic_group" "control_adb" {
 }
 
 resource "oci_identity_policy" "control_adb_genai" {
+  provider       = oci.home
   count          = var.enable_control_adb ? 1 : 0
   compartment_id = var.tenancy_ocid
   name           = "${var.prefix}-control-adb-genai"

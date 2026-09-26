@@ -153,7 +153,7 @@ function sfInit(){
   function consolesFor(o){
     if(!o)return {};
     if(o.consoles)return o.consoles;
-    var c=o.sandbox&&o.sandbox.compartment_id, rg=window.__sfRegion||'us-phoenix-1';
+    var c=o.sandbox&&o.sandbox.compartment_id, rg=window.__sfRegion||'';
     if(!c)return {};
     var q='?region='+rg+'&compartmentId='+c;
     return {data_flow:'https://cloud.oracle.com/data-flow/apps'+q, data_catalog:'https://cloud.oracle.com/data-catalog/data-catalogs'+q,
@@ -977,6 +977,13 @@ function sfInit(){
     if(!c)return;
     if(c.registry_prefix)OCIR=c.registry_prefix;
     if(c.region)window.__sfRegion=c.region;
+    // offer only the models this region serves (the tenancy profile), default first
+    var sel=document.querySelector('#sf-model');
+    if(sel&&c.models&&c.models.length){
+      sel.innerHTML=c.models.map(function(m){return '<option value="'+esc(m.id)+'">'+esc(m.label||m.id)+'</option>'}).join('');
+      if(c.model)sel.value=c.model;
+      var nm=document.querySelector('#sf-model-name'); if(nm)nm.textContent=sel.options[sel.selectedIndex].text;
+    }
     if(c.user){var w=$('#sf-who');
       w.textContent='Signed in as '+c.user+' · '+(c.live||0)+' of '+(c.cap||3)+' sandboxes';
       w.classList.remove('sf-hide');}

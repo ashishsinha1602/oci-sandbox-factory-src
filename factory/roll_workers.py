@@ -18,7 +18,12 @@ import time
 import oci
 import sandbox_factory as sf
 
-IMAGE = sys.argv[1] if len(sys.argv) > 1 else os.environ["WORKER_IMAGE"]
+# An image path, or "--tag <tag>": the repository the workers already run with
+# a new tag. The pipeline uses the tag form, so nothing about the tenancy or its
+# registry is written in roll_spec.yaml.
+ARG = sys.argv[1:] or [os.environ.get("WORKER_IMAGE", "")]
+IMAGE = ARG[0] if ARG[0] != "--tag" else None
+TAG = ARG[1] if ARG[0] == "--tag" and len(ARG) > 1 else None
 N = int(os.environ.get("WORKER_COUNT", "6"))
 SHAPE = os.environ.get("WORKER_SHAPE", "CI.Standard.E4.Flex")
 
@@ -56,6 +61,11 @@ for x in workers().values():
             break
 if not env:
     sys.exit("no running worker to take the environment from; create the workers with stacks/worker first")
+if IMAGE is None:
+    current = next(k for x in workers().values() if x.lifecycle_state == "ACTIVE"
+                   for k in [cc.get_container(cc.get_container_instance(x.id).data.containers[0].container_id).data.image_url])
+    IMAGE = current.rsplit(":", 1)[0] + ":" + TAG
+    print(f"rolling to {IMAGE} (the workers' repository, new tag)", flush=True)
 
 names = ["sbx-worker"] + [f"sbx-worker-{n}" for n in range(2, N + 1)]
 active = 0

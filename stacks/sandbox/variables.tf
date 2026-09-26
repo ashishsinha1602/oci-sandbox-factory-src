@@ -370,3 +370,9 @@ variable "app_memory_gb" {
   type    = number
   default = 4
 }
+
+variable "genai_model" {
+  description = "Chat model that serves on demand in this region (from the factory's tenancy profile); injected as CHAT_MODEL. Empty = let the app choose."
+  type        = string
+  default     = ""
+}

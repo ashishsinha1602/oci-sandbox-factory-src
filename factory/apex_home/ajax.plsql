@@ -288,18 +288,25 @@ declare
 
 begin
   l_in := json_object_t.parse(nvl(apex_application.g_x02, '{}'));
-  if l_in.get_string('model') in ('google.gemini-2.5-flash', 'google.gemini-2.5-pro', 'xai.grok-4', 'xai.grok-3', 'cohere.command-a-03-2025', 'openai.gpt-oss-120b') then
+  -- The models this region actually serves, and where, come from the tenancy
+  -- profile (factory/profile.py, refreshed by every worker at start); a model
+  -- the user picked is used only if it is one of them.
+  c_genai_model := nvl(cfg_value('genai_model', ''), c_genai_model);
+  if l_in.get_string('model') is not null
+     and instr(cfg_value('genai_models', '[]'), '"' || l_in.get_string('model') || '"') > 0 then
     c_genai_model := l_in.get_string('model');
   end if;
 
   l_prices   := cfg_value('oci_prices', '');
-  l_region   := cfg_value('genai_region', 'us-phoenix-1');
+  l_region   := nvl(cfg_value('genai_region', ''), cfg_value('region', ''));
   l_registry := cfg_value('registry_prefix', '');
   c_genai_url := 'https://inference.generativeai.' || l_region || '.oci.oraclecloud.com/20231130/actions/chat';
 
   if l_action = 'config' then
     l_out.put('registry_prefix', l_registry);
     l_out.put('region', l_region);
+    l_out.put('models', json_array_t.parse(cfg_value('genai_models', '[]')));
+    l_out.put('model', c_genai_model);
     l_out.put('user', :APP_USER);
     l_out.put('cap', to_number(cfg_value('max_sandboxes_per_user', '3')));
     select count(*) into l_id from (

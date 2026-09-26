@@ -382,9 +382,12 @@ def main():
     if not only or "data" in only:
         try:
             import oci_build
-            fn_image = f"phx.ocir.io/{sf.client(oci.object_storage.ObjectStorageClient).get_namespace().data}/sbx/hello-fn/app:e2e"
-            oci_build.build_in_oci(git_url="https://github.com/ashishsinha1602/oci-sandbox-factory.git", image=fn_image,
-                                   registry="phx.ocir.io", namespace=fnd.get("namespace") or sf.client(oci.object_storage.ObjectStorageClient).get_namespace().data,
+            import profile as tenancy_profile
+            prof = tenancy_profile.refresh()                       # region key + namespace of THIS tenancy
+            registry = f"{prof['region_key']}.ocir.io"
+            fn_image = f"{registry}/{prof['namespace']}/sbx/hello-fn/app:e2e"
+            oci_build.build_in_oci(git_url=os.environ.get("SBX_REPO_URL", "https://github.com/ashishsinha1602/oci-sandbox-factory.git"), image=fn_image,
+                                   registry=registry, namespace=prof["namespace"],
                                    sandbox_id="hello-fn", platform="linux/arm64", dockerfile="Dockerfile", sub_path="examples/hello-fn")
             record("build: function image built inside OCI from the repo", True, fn_image)
         except BaseException as e:  # noqa: BLE001  (the builder exits via SystemExit on failure)

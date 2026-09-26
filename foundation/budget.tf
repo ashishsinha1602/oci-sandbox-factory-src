@@ -2,6 +2,7 @@
 # plus a forecast alert when spend is on track to exceed the budget.
 
 resource "oci_budget_budget" "sandbox" {
+  provider               = oci.home
   compartment_id         = var.tenancy_ocid
   display_name           = "${var.prefix}-monthly"
   description            = "Monthly cap for the ${var.prefix} sandbox tree."
@@ -14,6 +15,7 @@ resource "oci_budget_budget" "sandbox" {
 }
 
 resource "oci_budget_alert_rule" "actual" {
+  provider = oci.home
   for_each = toset([for t in var.budget_alert_thresholds : tostring(t)])
 
   budget_id      = oci_budget_budget.sandbox.id
@@ -27,6 +29,7 @@ resource "oci_budget_alert_rule" "actual" {
 }
 
 resource "oci_budget_alert_rule" "forecast" {
+  provider       = oci.home
   budget_id      = oci_budget_budget.sandbox.id
   display_name   = "${var.prefix}-forecast-100pct"
   type           = "FORECAST"

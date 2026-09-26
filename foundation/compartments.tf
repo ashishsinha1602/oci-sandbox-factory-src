@@ -5,6 +5,7 @@
 #       └── sbx-sandboxes   one sub-compartment per sandbox (created by the factory)
 
 resource "oci_identity_compartment" "root" {
+  provider       = oci.home
   compartment_id = var.parent_compartment_ocid
   name           = var.prefix
   description    = "Sandbox factory root. Budget and quotas apply here."
@@ -13,6 +14,7 @@ resource "oci_identity_compartment" "root" {
 }
 
 resource "oci_identity_compartment" "control" {
+  provider       = oci.home
   compartment_id = oci_identity_compartment.root.id
   name           = "${var.prefix}-control"
   description    = "Shared infrastructure: VCN, stacks, secrets, logs."
@@ -21,6 +23,7 @@ resource "oci_identity_compartment" "control" {
 }
 
 resource "oci_identity_compartment" "sandboxes" {
+  provider       = oci.home
   compartment_id = oci_identity_compartment.root.id
   name           = "${var.prefix}-sandboxes"
   description    = "Parent of every user sandbox compartment."

@@ -26,6 +26,7 @@ locals {
 # (resources are told apart by name and by the sbx.* tags). Set
 # per_sandbox_compartment = true to give each sandbox its own compartment.
 resource "oci_identity_compartment" "sandbox" {
+  provider       = oci.home
   count          = var.per_sandbox_compartment ? 1 : 0
   compartment_id = var.sandboxes_compartment_ocid
   name           = local.name
@@ -137,8 +138,12 @@ locals {
     # The compartment is needed by anything that calls OCI from inside the
     # sandbox. DBMS_VECTOR's Generative AI provider rejects a request without it
     # ("Compartment ID must be provided"), which is how embedding failed.
-    { SANDBOX_ID = var.sandbox_id, SANDBOX_EXPIRES = local.expires,
-    SANDBOX_COMPARTMENT_OCID = local.compartment_id },
+    { SANDBOX_ID               = var.sandbox_id, SANDBOX_EXPIRES = local.expires,
+      SANDBOX_COMPARTMENT_OCID = local.compartment_id,
+      # where this sandbox runs, for any SDK call or Generative AI endpoint
+    OCI_REGION = var.region },
+    # the chat model the tenancy profile found answering in this region
+    var.genai_model == "" ? {} : { CHAT_MODEL = var.genai_model },
     var.enable_adb ? {
       ADB_DB_NAME        = module.adb[0].db_name
       ADB_CONNECT_STRING = module.adb[0].connect_string

@@ -2,6 +2,7 @@
 # auto-destroy (expires) and chargeback (owner, team, sandbox_id).
 
 resource "oci_identity_tag_namespace" "sandbox" {
+  provider       = oci.home
   compartment_id = oci_identity_compartment.root.id
   name           = var.prefix
   description    = "Sandbox factory tags."
@@ -19,6 +20,7 @@ locals {
 }
 
 resource "oci_identity_tag" "keys" {
+  provider = oci.home
   for_each = local.tag_keys
 
   tag_namespace_id = oci_identity_tag_namespace.sandbox.id
@@ -31,6 +33,7 @@ resource "oci_identity_tag" "keys" {
 # Tag default: anything created under sbx-sandboxes is stamped with the
 # creating principal as owner, even if a stack forgets to tag it.
 resource "oci_identity_tag_default" "owner" {
+  provider          = oci.home
   compartment_id    = oci_identity_compartment.sandboxes.id
   tag_definition_id = oci_identity_tag.keys["owner"].id
   value             = "$${iam.principal.name}"

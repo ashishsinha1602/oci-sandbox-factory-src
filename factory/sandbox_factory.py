@@ -128,15 +128,20 @@ def secrets_vault(fnd: dict) -> dict:
         try:
             kv = client(oci.key_management.KmsVaultClient)
             for v in kv.list_vaults(compartment_id=fnd["compartments"]["control"]).data:
-                if v.display_name == "sbx-secrets" and v.lifecycle_state == "ACTIVE":
+                if v.display_name == f"{PREFIX}-secrets" and v.lifecycle_state == "ACTIVE":
                     km = oci.key_management.KmsManagementClient(**auth(), service_endpoint=v.management_endpoint)
                     for k in km.list_keys(compartment_id=fnd["compartments"]["control"]).data:
-                        if k.display_name == "sbx-secrets-key" and k.lifecycle_state == "ENABLED":
+                        if k.display_name == f"{PREFIX}-secrets-key" and k.lifecycle_state == "ENABLED":
                             _SECRETS = {"vault_id": v.id, "key_id": k.id}
                     break
         except Exception as e:  # noqa: BLE001
             print(f"secrets vault lookup failed ({type(e).__name__}: {e}); Kafka gets no public endpoint", flush=True)
     return _SECRETS
+
+
+# The install prefix (foundation var.prefix): names of the vault, key and
+# compartments the factory looks up. "sbx" unless the install chose another.
+PREFIX = os.environ.get("SBX_PREFIX", "sbx")
 
 
 def in_oci() -> bool:
@@ -153,7 +158,7 @@ def foundation_from_workers() -> dict | None:
     """
     try:
         idc = client(oci.identity.IdentityClient)
-        name = os.environ.get("SBX_CONTROL_COMPARTMENT_NAME", "sbx-control")
+        name = os.environ.get("SBX_CONTROL_COMPARTMENT_NAME", f"{PREFIX}-control")
         comps = oci.pagination.list_call_get_all_results(
             idc.list_compartments, config()["tenancy"], compartment_id_in_subtree=True,
             access_level="ACCESSIBLE", lifecycle_state="ACTIVE").data
@@ -441,12 +446,28 @@ def db_links_through_gateway(outputs: dict) -> None:
         lc["rest_base"] = swap(lc["rest_base"])
 
 
+def profile_model() -> str:
+    """The chat model the tenancy profile found answering here (factory/profile.py),
+    or SBX_GENAI_MODEL; empty when neither is known (a laptop without the DB)."""
+    if os.environ.get("SBX_GENAI_MODEL"):
+        return os.environ["SBX_GENAI_MODEL"]
+    try:
+        import controldb
+        cur = controldb.connect().cursor()
+        cur.execute(f"select value from {controldb.SCHEMA}.factory_config where key = 'genai_model'")
+        row = cur.fetchone()
+        return (row and row[0]) or ""
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def build_variables(args, fnd: dict, cfg: dict, app_containers: list | None) -> dict:
     """Resource Manager variables are strings; lists/objects go as JSON."""
     gw = gateway_available(cfg)
     v = {
         "tenancy_ocid": cfg["tenancy"],
         "region": cfg["region"],
+        "genai_model": profile_model(),
         "compartment_ocid": fnd["compartments"]["control"],
         "sandboxes_compartment_ocid": fnd["compartments"]["sandboxes"],
         "vcn_id": fnd["network"]["vcn_id"],

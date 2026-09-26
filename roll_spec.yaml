@@ -15,4 +15,4 @@ steps:
       cd "${OCI_PRIMARY_SOURCE_DIR}"
       source ci/ensure_oci_sdk.sh
       cd factory
-      "$PY" roll_workers.py "phx.ocir.io/ax3sbu0rnjhx/sbx/factory/worker:${IMAGE_TAG}"
+      "$PY" roll_workers.py --tag "${IMAGE_TAG}"

@@ -7,7 +7,11 @@ function sfInit(){
     var clob=payload.clob; delete payload.clob; var o={x01:action,x02:JSON.stringify(payload)}; if(clob)o.p_clob_01=clob;
     // x02 holds 32767 characters; a bigger request (pipeline files, function source) goes whole in the CLOB
     else if(action!=='chat'&&o.x02.length>30000){ o.p_clob_01=o.x02; o.x02=JSON.stringify({__clob:1, model:payload.model}); }
-    return apex.server.process('SF',o,{dataType:'json'})}
+    // a failed call always comes back as {err: a sentence}: never a bare status text such as "OK"
+    return new Promise(function(res){ apex.server.process('SF',o,{dataType:'json'}).then(res,function(jq,status){
+      var body=(jq&&jq.responseText)||'', ora=(body.match(/ORA-\d{5}[^<"]*/)||[])[0];
+      res({err: ora ? 'The factory could not do that: '+ora : (jq&&jq.status===0 ? 'The factory did not answer. Check the connection and send it again.' : 'The factory answered in an unexpected way ('+((jq&&jq.status)||status)+'). Please send it again.')});
+    }); })}
   function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
 
   $$('.sf-card').forEach(function(c){c.onclick=function(){
@@ -143,6 +147,42 @@ function sfInit(){
   function loadHist(){try{return JSON.parse(localStorage.getItem(HIST_KEY))||[]}catch(e){return[]}}
   function saveHist(){try{localStorage.setItem(HIST_KEY,JSON.stringify(hist.slice(-HIST_MAX)))}catch(e){}}
   var hist=loadHist();
+  // ---- a conversation that revises one plan -------------------------------
+  var LAST_ACT=null;
+  function compactAction(a){
+    var c=JSON.parse(JSON.stringify(a));
+    (c.functions||[]).forEach(function(f){ if(f.files)Object.keys(f.files).forEach(function(k){f.files[k]='(kept)'}); });
+    (c.dataflow_jobs||[]).forEach(function(d){ if(d.script)d.script='(kept)'; });
+    if(c.app_files)c.app_files='(kept)';
+    if(c.seed_sql&&c.seed_sql.length>600)c.seed_sql='(kept)';
+    delete c.workload_files;
+    return JSON.stringify(c);
+  }
+  // A revised plan keeps the code of the one before: "(kept)" or a missing
+  // script/source for a job or function of the same name is copied back.
+  function keepFromLast(a){
+    if(!LAST_ACT)return;
+    var byName=function(list){var m={};(list||[]).forEach(function(x){m[x.name]=x});return m};
+    var lf=byName(LAST_ACT.functions), ld=byName(LAST_ACT.dataflow_jobs);
+    (a.functions||[]).forEach(function(f){ var o=lf[f.name]; if(!o)return;
+      var kept=!f.files||Object.keys(f.files).some(function(k){return f.files[k]==='(kept)'});
+      if(kept&&o.files&&!f.git_url&&!f.image)f.files=o.files; });
+    (a.dataflow_jobs||[]).forEach(function(d){ var o=ld[d.name]; if(o&&(!d.script||d.script==='(kept)')&&o.script)d.script=o.script; });
+    if((!a.app_files||a.app_files==='(kept)')&&LAST_ACT.app_files)a.app_files=LAST_ACT.app_files;
+    if(a.seed_sql==='(kept)')a.seed_sql=LAST_ACT.seed_sql;
+  }
+  // The request field holds 32767 characters: send the newest turns that fit,
+  // long ones shortened, so a long conversation never breaks the chat.
+  function fitHistory(h){
+    var out=[], used=0, budget=26000;
+    for(var i=h.length-1;i>=0;i--){
+      var m={role:h[i].role,text:String(h[i].text||'')};
+      var cap=i===h.length-1?12000:4000; if(m.text.length>cap)m.text=m.text.slice(0,cap)+' ...';
+      if(used+m.text.length>budget&&out.length)break;
+      used+=m.text.length; out.unshift(m);
+    }
+    return out;
+  }
   function pushHist(m){Array.prototype.push.call(hist,m);saveHist();return m}
   // esc() escapes markup but drops newlines, so multi-line answers used to
   // arrive as one run-on line. Keep the escaping, restore the shape.
@@ -866,11 +906,16 @@ function sfInit(){
     addMsg('me',esc(t)+(CODE?'<div style="font-size:11px;opacity:.8;margin-top:4px">&#128206; '+Object.keys(CODE.files).length+' files attached</div>':'')); pushHist({role:'user',text:t});
     var typing=typingBubble(); $('#sf-chat-send').disabled=true;
     var sentCode=!!CODE;   // attached code belongs to this message only; dropped once its reply is built
-    call('chat',{messages:hist.slice(-12), clob:CODE?codeDigest(CODE):undefined}).then(function(r){
+    call('chat',{messages:fitHistory(hist.slice(-12)), clob:CODE?codeDigest(CODE):undefined}).then(function(r){
       if(typing)typing.remove(); $('#sf-chat-send').disabled=false; $('#sf-chat-in').focus();
       if(r.err){addMsg('ai','<span class="sf-err">'+esc(r.err)+'</span>');return}
       var j=modelJson(r.raw);
-      var reply=j&&j.reply?j.reply:(r.raw||''); pushHist({role:'assistant',text:reply});
+      var reply=j&&j.reply?j.reply:(r.raw||'');
+      if(j&&j.action&&j.action.type)keepFromLast(j.action);
+      // the proposal rides along in the history (without its long code) so a
+      // follow-up such as "no database" revises this plan instead of starting over
+      pushHist({role:'assistant',text:reply+(j&&j.action&&j.action.type?' [PROPOSED ACTION] '+compactAction(j.action):'')});
+      if(j&&j.action&&/^(create|deploy)$/.test(j.action.type||''))LAST_ACT=j.action;
       var d=addMsg('ai',fmt(reply));
       // a build is priced here, from the price list, not by the model's arithmetic
       if(j&&j.action&&/^(create|deploy)$/.test(j.action.type||'')){ var cc=costFor(j.action); if(cc)j.cost=cc; }

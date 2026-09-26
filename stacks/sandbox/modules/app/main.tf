@@ -250,3 +250,7 @@ output "urls" {
     [for p in local.ports : "http://${coalesce(data.oci_core_vnic.app.public_ip_address, data.oci_core_vnic.app.private_ip_address)}:${p}"],
   )
 }
+
+output "deployment_id" {
+  value = try(oci_apigateway_deployment.app[0].id, null)
+}

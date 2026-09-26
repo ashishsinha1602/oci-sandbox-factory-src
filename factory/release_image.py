@@ -9,13 +9,16 @@ tenancy root, as <key>.ocir.io/<namespace>/sandbox-factory/worker:release and
 foundation/worker.tf's default worker_image points at it.
 """
 import datetime as dt
+import os
 import sys
 
 import oci
 import oci_build
 import sandbox_factory as sf
 
-REPO_URL = "https://github.com/ashishsinha1602/oci-sandbox-factory.git"
+# The factory's source is private; the build clones it with SBX_GIT_TOKEN.
+# Examples and the Terraform are public at github.com/ashishsinha1602/oci-sandbox-factory.
+REPO_URL = os.environ.get("SBX_SOURCE_REPO", "https://github.com/ashishsinha1602/oci-sandbox-factory-src.git")
 
 
 STARTERS = {   # shipped starter images: sandbox apps run on Arm (A1)

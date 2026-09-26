@@ -123,3 +123,7 @@ output "functions" {
     }
   ]
 }
+
+output "deployment_id" {
+  value = try(oci_apigateway_deployment.fn[0].id, null)
+}

@@ -257,6 +257,8 @@ def verify_iceberg(o, fnd):
 
 
 def verify_fn(o):
+    logs = o.get("logs") or {}
+    record("fn: a log group collects the function calls", "functions-invoke" in (logs.get("logs") or []), str(logs.get("logs")))
     fns = {f.get("name", "").split("-")[-1]: f for f in o.get("functions") or [] if f.get("url")}
     lam = next((f for n, f in fns.items() if "lambda" in n or "lambda" in f.get("name", "")), None)
     st = next((f for n, f in fns.items() if "starter" in n or "starter" in f.get("name", "")), None)

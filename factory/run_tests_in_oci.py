@@ -39,7 +39,7 @@ def main(argv):
         vnics=[m.CreateContainerVnicDetails(subnet_id=fnd["network"]["private_subnet_id"], display_name=name, is_public_ip_assigned=False)],
         containers=[m.CreateContainerDetails(display_name="e2e", image_url=c.image_url,
                                              environment_variables={**(c.environment_variables or {}), "OCIR_USER": (c.environment_variables or {}).get("OCIR_USER", "")},
-                                             working_directory="/app", command=["python", "-u", "tests/e2e.py"] + argv)])).data
+                                             working_directory="/app", command=["sh", "-c", "exec python -u tests/e2e.py* \"$@\"", "e2e"] + argv)])).data
     print(f"started {name} from {c.image_url.split(':')[-1]}", flush=True)
     started_at = time.time() - 60
     seen = 0

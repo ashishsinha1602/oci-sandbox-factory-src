@@ -58,7 +58,10 @@ def dockerfile_missing(repo: str, sub_path: str | None, dockerfile: str | None) 
     folder, _, dockerfile = target.rpartition("/")
     api = f"https://api.github.com/repos/{owner}/{name}/contents/{folder}" + (f"?ref={ref}" if ref else "")
     try:
-        req = urllib.request.Request(api, headers={"Accept": "application/vnd.github+json", "User-Agent": "sandbox-factory"})
+        hdr = {"Accept": "application/vnd.github+json", "User-Agent": "sandbox-factory"}
+        if os.environ.get("SBX_GIT_TOKEN"):
+            hdr["Authorization"] = "Bearer " + os.environ["SBX_GIT_TOKEN"]
+        req = urllib.request.Request(api, headers=hdr)
         with urllib.request.urlopen(req, timeout=15) as r:
             entries = json.loads(r.read().decode())
     except Exception:  # noqa: BLE001  (rate limit, private repo, network: let kaniko decide)
@@ -87,6 +90,8 @@ def fetch_github_folder(repo: str, sub_path: str | None) -> dict:
     folder = (sub_path or "").strip("/")
     api = f"https://api.github.com/repos/{owner}/{name}/contents/{folder}" + (f"?ref={ref}" if ref else "")
     hdr = {"Accept": "application/vnd.github+json", "User-Agent": "sandbox-factory"}
+    if os.environ.get("SBX_GIT_TOKEN"):
+        hdr["Authorization"] = "Bearer " + os.environ["SBX_GIT_TOKEN"]
     with urllib.request.urlopen(urllib.request.Request(api, headers=hdr), timeout=20) as r:
         entries = json.loads(r.read().decode())
     files = {}
@@ -213,6 +218,10 @@ def build_in_oci(git_url: str | None, image: str, registry: str, namespace: str,
         containers=[cim.CreateContainerDetails(
             display_name="kaniko",
             image_url=KANIKO_IMAGE,
+            # a private source repository (the factory's own release build):
+            # kaniko reads Git credentials from these, for this build only
+            environment_variables=({"GIT_USERNAME": "x-access-token", "GIT_PASSWORD": os.environ["SBX_GIT_TOKEN"]}
+                                   if os.environ.get("SBX_GIT_TOKEN") and git_url and "github.com" in git_url else None),
             arguments=[f"--context={'dir:///workspace' if src_dir else git_context(git_url)}",
                        f"--destination={image}", "--cache=false", "--snapshot-mode=redo"]
                       + [f"--destination={image.rsplit(':', 1)[0]}:{t}" for t in (also_tags or [])]

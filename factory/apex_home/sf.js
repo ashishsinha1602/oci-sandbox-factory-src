@@ -226,6 +226,7 @@ function sfInit(){
     if(o.functions&&o.functions.length&&!o.functions.some(function(f){return f.url}))L.push(['Functions: '+o.functions.map(function(f){return f.name}).join(', '),k.functions]);
     (o.dataflow_jobs||[]).forEach(function(d){L.push(['Spark job '+d.name,u['spark:'+d.name]])});
     if(o.catalog)L.push(['Data Catalog '+(o.catalog.display_name||''),u['catalog']]);
+    if(o.logs&&o.logs.console_url)L.push(['Logs ('+(o.logs.logs||[]).length+')',o.logs.console_url]);
     if(o.aidp)L.push(['AI Data Platform '+(o.aidp.display_name||''),o.aidp.console_url]);
     return L;
   }
@@ -815,6 +816,7 @@ function sfInit(){
       ((o.dataflow_jobs||[]).length)&&parts.push('Spark');
       if(o.catalog)parts.push('Data Catalog');
       if(o.aidp)parts.push('AI Data Platform');
+      if(o.logs)parts.push('Logs');
     }
     var exp=o&&o.sandbox&&o.sandbox.expires, pu=primaryUrl(o), done=r.status==='DONE'&&r.action!=='DESTROY';
     return '<div class="sf-w-card"><div class="sf-w-hd"><b>'+esc(r.sandbox_id)+'</b><span class="sf-badge '+esc(r.status)+'">'+esc(r.status)+'</span></div>'

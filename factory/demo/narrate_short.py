@@ -32,7 +32,7 @@ SCENES = [
     (2, 39.7, "Grafana, signed in with the password you gave, ready for your team."),
     (2, 68.3, "Airflow is up, with the telemetry DAG loaded."),
     (2, 72.6, "The run is green, in four steps. It lands raw sensor readings in Object Storage, runs the Spark gold job on Data Flow, registers the bucket in Data Catalog, and loads the gold tables into Oracle.", 69.0),
-    (2, 98.0, "Daily telemetry and device sessions, queryable in the database, and served straight away as REST. That is Sandbox Factory."),
+    (2, 98.0, "Daily telemetry and device sessions, queryable in the database, and served straight away as REST."),
 ]
 FILLERS = [
     "Everything runs in your own tenancy, under your policies and your budget.",

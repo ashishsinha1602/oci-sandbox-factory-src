@@ -694,6 +694,27 @@ def cmd_list(args) -> list:
     return rows
 
 
+def empty_sandbox_buckets(sandbox_id: str) -> None:
+    """Delete every object (and every old version) in the sandbox's buckets, so
+    the destroy can remove them: Object Storage refuses a non-empty bucket
+    (409 BucketNotEmpty), and a pipeline sandbox always has data in its bucket."""
+    osc = client(oci.object_storage.ObjectStorageClient)
+    ns = osc.get_namespace().data
+    comp = foundation()["compartments"]["sandboxes"]
+    for b in osc.list_buckets(ns, comp).data:
+        if not b.name.startswith(f"{PREFIX}-{sandbox_id}-"):
+            continue
+        n = 0
+        for page in oci.pagination.list_call_get_all_results_generator(osc.list_object_versions, "response", ns, b.name):
+            for v in page.data.items:
+                osc.delete_object(ns, b.name, v.name, version_id=v.version_id)
+                n += 1
+        for par in osc.list_preauthenticated_requests(ns, b.name).data:
+            osc.delete_preauthenticated_request(ns, b.name, par.id)
+        if n:
+            print(f"  emptied bucket {b.name} ({n} object versions)", flush=True)
+
+
 def destroy_stack(rm, stack, keep_stack: bool = False):
     label = stack.freeform_tags.get("sandbox_id", stack.display_name)
     # the Kafka public endpoint is installed through the SDK (not in the stack),
@@ -702,6 +723,10 @@ def destroy_stack(rm, stack, keep_stack: bool = False):
         kafka_addon_reset(foundation(), label)
     except Exception as e:  # noqa: BLE001
         print(f"  kafka add-on check skipped ({type(e).__name__})", flush=True)
+    try:
+        empty_sandbox_buckets(label)
+    except Exception as e:  # noqa: BLE001
+        print(f"  bucket clean-up skipped ({type(e).__name__}: {e})", flush=True)
     try:
         run_job(rm, stack.id, "DESTROY", label)
     except SystemExit:

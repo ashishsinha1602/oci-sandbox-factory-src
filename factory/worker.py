@@ -173,11 +173,20 @@ def finish(conn, request_id, ok: bool, outputs=None, error=None):
     conn.commit()
 
 
+def rag_buckets(req: dict) -> list | None:
+    """With RAG, documents live in a docs bucket of the sandbox's own; the
+    database watches it. Added here, before the arguments are built."""
+    buckets = json.loads(req["buckets"]) if req.get("buckets") else []
+    if req.get("enable_rag") == "Y" and not any(b.get("name") == "docs" for b in buckets):
+        buckets = buckets + [{"name": "docs", "public": False}]
+    return buckets or None
+
+
 def factory_args(req: dict) -> argparse.Namespace:
     return argparse.Namespace(
         sandbox_id=req["sandbox_id"], owner=req["requester"], team="hackathon",
         ttl=int(req["ttl_days"] or 3), allowed_cidr="0.0.0.0/0",
-        adb=req["enable_adb"] == "Y", adb_tier=req["adb_tier"] or "paid", adb_workload="OLTP",
+        adb=req["enable_adb"] == "Y" or req.get("enable_rag") == "Y", adb_tier=req["adb_tier"] or "paid", adb_workload="OLTP",
         kafka=req["enable_kafka"] == "Y", nosql=req.get("enable_nosql") == "Y", kafka_mode=req["kafka_mode"] or "cluster", topics="events",
         app=req["enable_app"] == "Y", image=req["app_image"] or None,
         shape="CI.Standard.A1.Flex", port=int(req["app_port"] or 80),
@@ -185,7 +194,7 @@ def factory_args(req: dict) -> argparse.Namespace:
         adb_databases=json.loads(req["adb_databases"]) if req.get("adb_databases") else None,
         functions=json.loads(req["functions"]) if req.get("functions") else None,
         app_instances=json.loads(req["app_instances"]) if req.get("app_instances") else None,
-        buckets=json.loads(req["buckets"]) if req.get("buckets") else None,
+        buckets=rag_buckets(req),
         queues=json.loads(req["queues"]) if req.get("queues") else None,
         dataflow_jobs=json.loads(req["dataflow_jobs"]) if req.get("dataflow_jobs") else None,
         enable_catalog=req.get("enable_catalog") == "Y",
@@ -194,12 +203,6 @@ def factory_args(req: dict) -> argparse.Namespace:
         user_env={str(k): str(v) for k, v in (json.loads(req["user_env"]) or {}).items()} if req.get("user_env") else None,
         enable_rag=req.get("enable_rag") == "Y",
     )
-    if args.enable_rag:
-        # documents live in the sandbox's own bucket; the database reads them from there
-        args.adb = True
-        args.buckets = list(args.buckets or [])
-        if not any(b.get("name") == "docs" for b in args.buckets):
-            args.buckets.append({"name": "docs", "public": False})
 
 
 def containers_for(req: dict) -> list | None:

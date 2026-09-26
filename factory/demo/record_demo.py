@@ -174,15 +174,18 @@ def mcp_scene(pg, url):
     picked = [e["object"] for e in (sel.get("explain") or []) if e.get("object", "").startswith("admin.")][:3]
     add("3. tools/call select_schema", "the server picks the tables a question needs", f'select_schema(question="{q}")',
         html.escape("tables: " + ", ".join(picked or [str(sel)[:200]])))
-    sql = ("select c.name as customer, c.country, p.name as product, o.status "
-           "from customers c join orders o on o.customer_id = c.id join products p on p.id = o.product_id order by c.name")
+    # query the table the server picked first, whatever its columns are
+    first = (picked or ["admin.customers"])[0]
+    sql = f"select * from {first} fetch first 6 rows only"
     res = ((rpc({"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "run_query", "arguments": {"sql": sql}}})
             .get("result") or {}).get("structuredContent") or {}).get("result") or {}
     cols, rows = res.get("columns") or [], res.get("rows") or []
     table = ("<table><tr>" + "".join(f"<th>{html.escape(str(c))}</th>" for c in cols) + "</tr>"
              + "".join("<tr>" + "".join(f"<td>{html.escape(str(v))}</td>" for v in r) + "</tr>" for r in rows) + "</table>")
+    if not cols:
+        raise RuntimeError(f"run_query returned no rows: {str(res)[:200]}")   # never film an error
     add("4. tools/call run_query", "one read-only SELECT, rows back", "run_query(sql=" + sql + ")",
-        f"{len(rows)} rows" + table if cols else html.escape(str(res)[:400]))
+        f"{len(rows)} rows" + table)
     pg.wait_for_timeout(4000)
 
 
@@ -222,7 +225,8 @@ def tour(pg, sid, o):
             try:
                 r = pg.request.get(lc["rest_base"].rstrip("/") + "/metadata-catalog/",
                                    headers={"Authorization": "Basic " + token}, timeout=30000)
-                tables = [i.get("name") for i in (r.json().get("items") or []) if i.get("name")]
+                # ORDS publishes each table under its lower-case alias
+                tables = [i.get("name").lower() for i in (r.json().get("items") or []) if i.get("name")]
             except Exception as e:  # noqa: BLE001
                 print(f"  metadata-catalog: {type(e).__name__}", flush=True)
         pg.context.set_extra_http_headers({"Authorization": "Basic " + token})

@@ -1,147 +1,188 @@
-# Installing the Sandbox Factory in an OCI tenancy
+# Installing Sandbox Factory in an OCI tenancy
 
-The factory is three Terraform stacks and one APEX application. Everything it
-creates lives under one compartment tree, and every grant it needs is scoped
-to that tree. This page lists exactly what an installer needs and what a user
-needs, so it can be reviewed before anything is created.
+One Resource Manager stack (`foundation/`) installs everything. This page lists
+exactly what the **installer** needs, what the **factory itself** is granted, and
+what an **end user** needs, so it can be reviewed before anything is created.
+Every name below starts with the install prefix (`sbx` by default); a second
+install in the same tenancy uses another prefix.
 
 ```
 tenancy
- └─ sbx                      (root of everything the product owns)
-     ├─ sbx-control          VCN, workers, control database + APEX, vault, stacks
-     └─ sbx-sandboxes        every user sandbox, tagged with owner and expiry
+ └─ <parent compartment you choose>
+     └─ sbx                      everything the product owns
+         ├─ sbx-control          network, workers, control database + application, vault, sandbox stacks
+         └─ sbx-sandboxes        every user sandbox, tagged with owner and expiry
 ```
 
-## 1. Who installs, and with what
+## 1. The installer
 
-| Step | Needs | Why |
-|---|---|---|
-| `foundation/` (`terraform apply`) | a user in a group that may **manage compartments, policies, dynamic-groups, quotas, tag-namespaces in tenancy** and **manage all-resources in compartment sbx** (once it exists). In practice: a tenancy administrator, once. | It creates the compartments, the VCN, the tag namespace, the budget and quotas, the vault, the control database, and the policies below. The policies must live in the tenancy root because service principals and dynamic groups are granted there. |
-| `stacks/worker/` | same user | The parallel workers (container instances) and their dynamic group. |
-| APEX app + prompts (`factory/apex_customize.py`, `factory/prompts.py`) | the control database ADMIN password (an output of foundation) | Imports application 112 into workspace SBX and loads the assistant's prompts. |
-| Region | one region; the factory follows the tenancy's home region setting in `tfvars` | |
+**Who:** a tenancy administrator, once. The stack creates IAM policies and dynamic
+groups in the tenancy root, which only an administrator (or a group with the
+grants below) may do.
 
-After installation no human credential is used at run time: workers act as their
-own principal, sandbox code acts as its own principal, and the APEX application
-runs inside the control database.
+If you would rather not use a full administrator, the installing user's group needs:
 
-## 2. Policies the installer creates (all in the tenancy root, all scoped to `sbx-*`)
-
-Reviewed verbatim from a live install. `<sbx-control>` / `<sbx-sandboxes>` are the compartment OCIDs.
-
-**Workers** (dynamic group `sbx-worker-dg`: container instances in `sbx-control`)
 ```
-allow dynamic-group sbx-worker-dg to manage all-resources in compartment <sbx-sandboxes>
-allow dynamic-group sbx-worker-dg to manage orm-stacks in compartment <sbx-control>
-allow dynamic-group sbx-worker-dg to manage orm-jobs in compartment <sbx-control>
-allow dynamic-group sbx-worker-dg to manage repos in compartment <sbx-control>
-allow dynamic-group sbx-worker-dg to manage compute-container-family in compartment <sbx-control>
-allow dynamic-group sbx-worker-dg to manage virtual-network-family in compartment <sbx-control>
-allow dynamic-group sbx-worker-dg to manage object-family in compartment <sbx-control>
-allow dynamic-group sbx-worker-dg to manage object-family in compartment <sbx-sandboxes>
-allow dynamic-group sbx-worker-dg to use vaults in compartment <sbx-control>
-allow dynamic-group sbx-worker-dg to use keys in compartment <sbx-control>
+allow group <installers> to manage compartments in tenancy
+allow group <installers> to manage policies in tenancy
+allow group <installers> to manage dynamic-groups in tenancy
+allow group <installers> to manage tag-namespaces in tenancy
+allow group <installers> to manage tag-defaults in tenancy
+allow group <installers> to manage usage-budgets in tenancy
+allow group <installers> to manage quota in tenancy
+allow group <installers> to read limits in tenancy
+allow group <installers> to manage all-resources in compartment <parent compartment>
+allow group <installers> to manage orm-stacks in compartment <parent compartment>
+allow group <installers> to manage orm-jobs in compartment <parent compartment>
+```
+
+plus, for their own user, the right to create an **auth token** (every user has it
+by default). The stack creates one for the installer so the workers can push the
+app images users build; a user may hold at most two.
+
+**Account:** Pay-As-You-Go or paid. Free-tier trials cannot run paid Autonomous
+Databases or Kafka clusters.
+
+**Region:** any region subscribed by the tenancy that offers the services in
+section 4. The IAM part is written in the home region automatically.
+
+## 2. What the factory is granted (created by the stack)
+
+Nothing is granted to a human user. All grants are to the factory's own
+identities, scoped to the `sbx` tree except where a service needs tenancy scope.
+
+**Workers** — dynamic group `sbx-worker-dg`: container instances in `sbx-control` (`foundation/worker.tf`)
+```
+allow dynamic-group sbx-worker-dg to manage all-resources in compartment id <sbx-sandboxes>
+allow dynamic-group sbx-worker-dg to manage orm-stacks in compartment id <sbx-control>
+allow dynamic-group sbx-worker-dg to manage orm-jobs in compartment id <sbx-control>
+allow dynamic-group sbx-worker-dg to manage repos in compartment id <sbx-control>
+allow dynamic-group sbx-worker-dg to manage compute-container-family in compartment id <sbx-control>
+allow dynamic-group sbx-worker-dg to manage virtual-network-family in compartment id <sbx-control>
+allow dynamic-group sbx-worker-dg to manage object-family in compartment id <sbx-control>
+allow dynamic-group sbx-worker-dg to use vaults in compartment id <sbx-control>
+allow dynamic-group sbx-worker-dg to use keys in compartment id <sbx-control>
+allow dynamic-group sbx-worker-dg to use generative-ai-family in compartment id <sbx-control>
 allow dynamic-group sbx-worker-dg to read objectstorage-namespaces in tenancy
+allow dynamic-group sbx-worker-dg to read limits in tenancy
+allow dynamic-group sbx-worker-dg to read repos in tenancy
 allow dynamic-group sbx-worker-dg to inspect compartments in tenancy
 allow dynamic-group sbx-worker-dg to inspect tenancies in tenancy
 allow dynamic-group sbx-worker-dg to use tag-namespaces in tenancy
 ```
+Why: they create and destroy each sandbox (Resource Manager stacks in control, the
+resources in sandboxes), build app images, read service limits to fall back when a
+limit is used up, and probe which chat models answer in the region.
 
-**Code running inside a sandbox** (dynamic group `sbx-sandbox-adb-dg`: `Any {resource.compartment.id = <sbx-sandboxes>}`)
+**Code running inside a sandbox** — dynamic group `sbx-sandbox-adb-dg`: anything in `sbx-sandboxes` (`foundation/sandbox_workloads.tf`)
 ```
 allow dynamic-group sbx-sandbox-adb-dg to use generative-ai-family in tenancy
-allow dynamic-group sbx-sandbox-adb-dg to manage object-family in compartment <sbx-sandboxes>
-allow dynamic-group sbx-sandbox-adb-dg to manage dataflow-family in compartment <sbx-sandboxes>
-allow dynamic-group sbx-sandbox-adb-dg to manage data-catalog-family in compartment <sbx-sandboxes>
+allow dynamic-group sbx-sandbox-adb-dg to manage object-family in compartment id <sbx-sandboxes>
+allow dynamic-group sbx-sandbox-adb-dg to manage dataflow-family in compartment id <sbx-sandboxes>
+allow dynamic-group sbx-sandbox-adb-dg to manage data-catalog-family in compartment id <sbx-sandboxes>
 allow dynamic-group sbx-sandbox-adb-dg to read compartments in tenancy
 ```
 
-**The control database's assistant** (dynamic group `sbx-control-adb-dg`: the control ADB)
+**The control database** (the application's assistant) — dynamic group `sbx-control-adb-dg` (`foundation/control_adb.tf`)
 ```
 allow dynamic-group sbx-control-adb-dg to manage generative-ai-family in tenancy
 ```
 
-**Service principals**
+**OCI services acting for a sandbox** (`foundation/sandbox_workloads.tf`, `functions_gateway.tf`, `secrets.tf`)
 ```
 allow service apigateway to use virtual-network-family in tenancy
-allow any-user to use functions-family in compartment <sbx-sandboxes> where ALL {request.principal.type = 'ApiGateway', request.resource.compartment.id = '<sbx-sandboxes>'}
-allow service dataflow to read buckets in compartment <sbx-control>
-allow service dataflow to read objects in compartment <sbx-control>
-allow service dataflow to read buckets in compartment <sbx-sandboxes>
-allow service dataflow to manage objects in compartment <sbx-sandboxes>
-allow any-user to manage object-family in compartment <sbx-sandboxes> where ALL {request.principal.type = 'dataflowrun', request.principal.compartment.id = '<sbx-sandboxes>'}
-allow any-user to read object-family in compartment <sbx-sandboxes> where ALL {request.principal.type = 'datacatalog', request.principal.compartment.id = '<sbx-sandboxes>'}
-allow any-user to read buckets in compartment <sbx-sandboxes> where ALL {request.principal.type = 'datacatalog', request.principal.compartment.id = '<sbx-sandboxes>'}
+allow any-user to use functions-family in compartment id <sbx-sandboxes> where ALL {request.principal.type = 'ApiGateway', request.resource.compartment.id = '<sbx-sandboxes>'}
+allow service dataflow to read buckets in compartment id <sbx-control>
+allow service dataflow to read objects in compartment id <sbx-control>
+allow service dataflow to read buckets in compartment id <sbx-sandboxes>
+allow service dataflow to manage objects in compartment id <sbx-sandboxes>
+allow any-user to manage object-family in compartment id <sbx-sandboxes> where ALL {request.principal.type = 'dataflowrun', request.principal.compartment.id = '<sbx-sandboxes>'}
+allow any-user to read object-family in compartment id <sbx-sandboxes> where ALL {request.principal.type = 'datacatalog', request.principal.compartment.id = '<sbx-sandboxes>'}
+allow any-user to read buckets in compartment id <sbx-sandboxes> where ALL {request.principal.type = 'datacatalog', request.principal.compartment.id = '<sbx-sandboxes>'}
 allow service faas to read repos in tenancy
 allow service faas to use apm-domains in tenancy
-allow service rawfka to {SECRET_UPDATE} in compartment <sbx-sandboxes>
-allow service rawfka to use secrets in compartment <sbx-sandboxes> where request.operation = 'UpdateSecret'
-allow service rawfka to read secrets in compartment <sbx-sandboxes>
-allow service rawfka to use virtual-network-family in compartment <sbx-control>
-allow service rawfka to use virtual-network-family in compartment <sbx-sandboxes>
+allow service rawfka to {SECRET_UPDATE} in compartment id <sbx-sandboxes>
+allow service rawfka to use secrets in compartment id <sbx-sandboxes> where request.operation = 'UpdateSecret'
+allow service rawfka to read secrets in compartment id <sbx-sandboxes>
+allow service rawfka to use virtual-network-family in compartment id <sbx-control>
+allow service rawfka to use virtual-network-family in compartment id <sbx-sandboxes>
 ```
 
-Nothing grants anything outside `sbx-*`, and no policy grants a human user anything.
+**Oracle AI Data Platform** (optional, `enable_aidp`, `foundation/aidp.tf`) — the grants from Oracle's AIDP IAM guide, conditioned on `request.principal.type='aidataplatform'` (and `datalake` for Generative AI): inspect identity domains/users/groups, manage log groups and read logs in `sbx-sandboxes`, create/read buckets and manage the objects of buckets the AIDP instance governs, use tag namespaces, read the Object Storage namespace, use Generative AI.
 
-## 3. Service limits that decide how many sandboxes can run at once
-
-These are per-region tenancy limits (Console > Governance > Limits). The defaults of a new tenancy are small; raise them before a team uses the factory:
-
-| Limit | Default | What it caps | Recommended |
-|---|---|---|---|
-| API Gateway `gateway-count` | 5 | one gateway per sandbox with an app, plus one per sandbox with functions. When it is used up the factory falls back to a **public IP** (HTTP, no Oracle hostname) and says so on the card | 50 |
-| Data Catalog `catalog-count` | 2 | one catalog per sandbox that asks for one | 10 |
-| Autonomous Database `atp-ecpu-count` | varies | 2 ECPU per paid database | 64 |
-| Container Instances A1 cores / memory | varies | 1 core, 4 GB per app container by default | 64 / 1 TB |
-| Streaming with Apache Kafka clusters | varies | one per Kafka sandbox | 5 |
-
-## 3a. Quotas and limits the tenancy must have
-
-The foundation sets **quotas** on `sbx` so the playground cannot outgrow its budget
-(defaults: 64 A1 cores / 1 TB memory, 64 ATP ECPUs + 16 ADW ECPUs, 2 OKE
-clusters, 50 streaming partitions, GPUs and dedicated/ExaCC databases zeroed).
-The tenancy's **service limits** must be at least that high in the region, and
-these services must be available there: Container Instances (A1), Autonomous
-Database (23ai, ECPU), Streaming with Apache Kafka, NoSQL, Functions, API
-Gateway, Data Flow, Data Catalog, Vault, Resource Manager, Generative AI
-(on-demand chat models), OCIR. Generative AI is the one most often missing in
-a region: the assistant and the knowledge-base starter need it.
-
-## 4. What a user needs
+## 3. End users
 
 | To | Needs |
 |---|---|
-| Use the factory (chat, starters, build form, cards, landing pages, destroy) | an APEX account in workspace SBX (`python factory/controldb.py users alice@example.com`), nothing in OCI IAM. Users see and control only their own sandboxes. |
-| Use what they built | the URLs and credentials on their card: app URL, SQL Developer Web + ADMIN password, Airflow login, Kafka bootstrap + superuser, function URLs. No OCI login. |
-| Open a resource in the OCI console (Data Flow runs, catalog, NoSQL Table Explorer, buckets) | an OCI user in a group with `read all-resources in compartment sbx-sandboxes` (optional; only for the console links). |
-| Have their code deployed | a public Git URL, or a folder attached in the chat. The factory builds inside OCI; nothing is pulled from the user's machine. |
+| Use the factory (chat, starters, build form, their sandboxes, destroy, change lifetime) | **only an application login** — no OCI account. The installer signs in with the `app_admin_user` / `app_admin_password` outputs and creates the others. Each user sees and controls only their own sandboxes. |
+| Use what they built | the links and credentials on their sandbox card: app URL, SQL Developer Web / APEX / REST (through the sandbox's HTTPS gateway), Airflow login, Kafka bootstrap and superuser, function URLs, MCP endpoint. No OCI login. |
+| Open a resource in the OCI console (Data Flow runs, Data Catalog, NoSQL table explorer, buckets) | optional: an OCI user in a group with `read all-resources in compartment sbx-sandboxes`. Only the console links need it. |
+| Have their code deployed | a public Git URL (a folder link inside a repository works), or files attached in the chat. The factory builds inside OCI. |
 
-## 5. Install order
+## 4. Services and limits in the install region
 
+**Services the region must offer:** Container Instances, Autonomous Database (23ai),
+API Gateway, Resource Manager, Vault, Container Registry, Generative AI (on-demand
+chat models), and for the matching sandbox types: Data Flow, Data Catalog, NoSQL,
+Functions, Queue, Streaming with Apache Kafka, AI Data Platform.
+
+**Generative AI models** differ by region, and a model can be listed and still not
+serve on demand. The factory probes them at start (`factory/profile.py`) and offers
+only the ones that answer; in `us-phoenix-1` that is 3 of 8 (Gemini 2.5 Flash,
+Gemini 2.5 Pro, Grok 4.6). With none, chat and Select AI are switched off and
+everything else still works.
+
+**Service limits** (per region, Console > Governance > Limits). New tenancies start small:
+
+| Limit | New-tenancy default | What it caps | Recommended |
+|---|---|---|---|
+| API Gateway `gateway-count` | 5 | one per sandbox with an app or functions; when used up, apps fall back to a public IP (HTTP) and the card says so | 50 |
+| Data Catalog `catalog-count` | 2 | one per sandbox that asks for a catalog; without room the sandbox is built without one and says so | 10 |
+| Autonomous Database ECPUs | varies | 2 ECPU per paid database (the control database is Always Free) | 64 |
+| Container Instances cores / memory | varies | 1 OCPU per worker (3 by default) and per app container | 64 / 1 TB |
+| Streaming with Apache Kafka clusters | varies | one per Kafka sandbox | 5 |
+
+## 5. Install
+
+**One click:** the **Deploy to Oracle Cloud** button in the README opens the stack
+in Resource Manager. Fill in the parent compartment, prefix, your email and a
+budget; Plan; Apply. Takes about 15 minutes.
+
+**Or from a laptop:**
 ```
-cd foundation && terraform init && terraform apply -var-file=<tenancy>.tfvars      # compartments, VCN, quotas, vault, control DB, policies
-cd ../stacks/worker && terraform apply -var-file=<tenancy>.tfvars                  # workers
-cd ../../factory
-python controldb.py setup            # schema, tables, triggers, APEX workspace
-python apex_customize.py             # the application
-python prompts.py                    # the assistant's prompts
-python controldb.py users you@example.com
-python ../tests/e2e.py               # proves every path in this tenancy, then destroys what it made
+cd foundation
+terraform init
+terraform apply -var tenancy_ocid=... -var region=... -var owner=you@example.com -var budget_alert_email=you@example.com -var current_user_ocid=...
 ```
 
-### 5a. Building the worker inside OCI (DevOps)
+**Then:** open the `app_url` output and sign in with `app_admin_user` /
+`app_admin_password`. On their first start (a few minutes after the apply) the
+workers create the application, load the assistant's prompts and detect the
+region's AI models; until then the URL answers 404.
 
-The worker image is built, rolled and proven by an OCI DevOps build pipeline, triggered by a push to the mirrored code repository: `build_spec.yaml` (docker build on the OCI runner) → deliver to OCIR → `roll_spec.yaml` (replace the workers) → `e2e_spec.yaml` (`run_tests_in_oci.py --kafka`: the whole suite as a container instance, report to bucket `sbx-factory-reports`, pipeline fails when the suite fails). The product demo video is produced the same way: `record_demo_in_oci.py` drives a Playwright container against the live application and drops the `.webm` in the same bucket. Two things the pipeline needs that are easy to miss:
+**Prove it (optional, recommended):** `python factory/run_tests_in_oci.py --kafka`
+runs the full end-to-end suite inside OCI — every sandbox type, built, verified
+and destroyed — and writes the report to a bucket.
 
-- **OCI Logging must be enabled on the DevOps project**, or every run fails at once with *"Logs need to be enabled in order to run the builds"*. Create a log group in `sbx-control` and a service log for the project (service `devops`, category `all`), then re-run.
-- The DevOps project needs a **notification topic** at creation and the build runner needs `sbx-devops-build` (read repos, manage container images in `sbx-control`, manage container instances in `sbx-control` for the roll).
+### Developing the factory itself (not needed to install it)
 
-The DevOps project, its code repository, the pipeline and the log group are created once from the console or the SDK; they are not part of `foundation/` yet.
+We build and release the worker image with an OCI DevOps pipeline: `build_spec.yaml`
+(build) → deliver to OCIR → `roll_spec.yaml` (roll the workers, one at a time, each
+health-checked) → `e2e_spec.yaml` (the full suite; the pipeline fails if it fails).
+It needs OCI Logging enabled on the DevOps project (runs fail at once without it)
+and its own dynamic group with DevOps, repository and container-instance grants.
+Installers never need any of this: the stack runs the published release image.
 
 ## 6. Known limits (honest list)
 
-- Isolation between users is at the application and network layer; inside OCI, all sandboxes share one compartment and one dynamic group. `per_sandbox_compartment = true` gives IAM-level isolation at the cost of slower creates.
-- Generated passwords are stored in the control database and shown on the owner's card. Move them to Vault before a wide rollout.
-- Users are APEX accounts; SSO (OCI IAM / IDCS) is an APEX authentication-scheme change, not yet done.
-- The build context for "attach a folder" is flat (no subdirectories); a Git URL has no such limit.
-- One region per install.
+- Isolation between users is at the application and network layer; inside OCI all
+  sandboxes share one compartment and one dynamic group. `per_sandbox_compartment = true`
+  gives IAM-level isolation at the cost of slower creates.
+- Generated passwords are stored in the control database and shown on the owner's
+  card. Move them to Vault before a wide rollout.
+- Users are application accounts; SSO (OCI IAM identity domains) is an APEX
+  authentication-scheme change, not yet done.
+- One region per install (a second region is a second install with another prefix).
+- Kafka's public endpoint add-on is unreliable through the Terraform provider
+  (being moved to the SDK); the Data Catalog harvest registers the bucket but the
+  harvest itself can fail inside the service.

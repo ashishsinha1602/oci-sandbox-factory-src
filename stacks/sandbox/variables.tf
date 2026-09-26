@@ -209,6 +209,10 @@ variable "dataflow_jobs" {
     memory_gb      = optional(number, 16)
     arguments      = optional(list(string), [])
     warehouse_uri  = optional(string)
+    # extra Spark settings, and Iceberg: the runtime from Maven and a catalog
+    # named "lake" whose tables live in the sandbox bucket under iceberg/
+    spark_conf = optional(map(string), {})
+    iceberg    = optional(bool, false)
   }))
   default = []
 }
@@ -225,6 +229,8 @@ variable "functions" {
     memory_mbs  = optional(number, 256)
     timeout_sec = optional(number, 30)
     env         = optional(map(string), {})
+    # cron, e.g. "*/15 * * * *": OCI Resource Scheduler invokes the function
+    schedule = optional(string, "")
   }))
   default = []
 }

@@ -24,6 +24,10 @@ variable "jobs" {
     memory_gb      = optional(number, 16)
     arguments      = optional(list(string), [])
     warehouse_uri  = optional(string)
+    # extra Spark settings, and Iceberg: the runtime from Maven and a catalog
+    # named "lake" whose tables live in the sandbox bucket under iceberg/
+    spark_conf = optional(map(string), {})
+    iceberg    = optional(bool, false)
     # The job's code, inline. Terraform drops attributes a module's object
     # type does not declare, so without this line an inline script silently
     # became an empty file_uri: "Missing fileUri" from Data Flow.
@@ -84,9 +88,15 @@ resource "oci_dataflow_application" "this" {
   arguments            = each.value.arguments
   logs_bucket_uri      = var.logs_bucket_uri
   warehouse_bucket_uri = each.value.warehouse_uri
-  configuration        = var.injected_env
-  defined_tags         = var.defined_tags
-  freeform_tags        = var.freeform_tags
+  configuration = merge(var.injected_env, each.value.spark_conf, each.value.iceberg ? {
+    "spark.jars.packages"              = "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.5.2"
+    "spark.sql.extensions"             = "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions"
+    "spark.sql.catalog.lake"           = "org.apache.iceberg.spark.SparkCatalog"
+    "spark.sql.catalog.lake.type"      = "hadoop"
+    "spark.sql.catalog.lake.warehouse" = "oci://${var.scripts_bucket}@${var.namespace}/iceberg"
+  } : {})
+  defined_tags  = var.defined_tags
+  freeform_tags = var.freeform_tags
 
   depends_on = [oci_objectstorage_object.script]
 

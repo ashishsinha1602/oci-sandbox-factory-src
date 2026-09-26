@@ -136,6 +136,26 @@ print("e2e spark ok", df.count())
 """
 
 
+TICK_FN = """import datetime, os
+import oci
+
+
+def handler(event, context):
+    signer = oci.auth.signers.get_resource_principals_signer()
+    osc = oci.object_storage.ObjectStorageClient(config={}, signer=signer)
+    name = "ticks/" + datetime.datetime.utcnow().strftime("%Y%m%dT%H%M%S") + ".txt"
+    osc.put_object(os.environ["OBJECT_NAMESPACE"], os.environ["DATA_BUCKET"], name, b"tick")
+    return {"wrote": name}
+"""
+ICEBERG_SPARK = """from pyspark.sql import SparkSession
+spark = SparkSession.builder.appName("e2e-iceberg").getOrCreate()
+spark.sql("CREATE NAMESPACE IF NOT EXISTS lake.e2e")
+df = spark.createDataFrame([(i, i * i) for i in range(50)], ["n", "sq"])
+df.writeTo("lake.e2e.squares").createOrReplace()
+print("e2e iceberg rows", spark.table("lake.e2e.squares").count())
+"""
+
+
 def cases(fn_image: str | None):
     c = {
         "web": base("web", enable_app=True, app_image="docker.io/library/nginx:alpine", app_port=80),
@@ -153,6 +173,14 @@ def cases(fn_image: str | None):
         # both must become working OCI Functions built inside the tenancy
         "fn": base("fn", functions=[{"name": "lambda", "git_url": REPO_TREE + "/examples/hello-lambda"},
                                     {"name": "starter"}]),
+        # a scheduled function written inline (the EventBridge + Lambda shape): every
+        # run drops a file in the bucket, so the schedule is proven by the files
+        "sched": base("sched", buckets=[{"name": "raw"}],
+                      functions=[{"name": "tick", "schedule": "*/5 * * * *", "timeout_sec": 120,
+                                  "files": {"func.py": TICK_FN, "requirements.txt": "oci"}}]),
+        # Iceberg on Object Storage written by Data Flow (the Glue + Iceberg shape)
+        "iceberg": base("iceberg", buckets=[{"name": "lake"}],
+                        dataflow_jobs=[{"name": "ice", "script": ICEBERG_SPARK, "language": "PYTHON", "iceberg": True}]),
         # "just a Data Flow job": no bucket asked for, one is added for its script and logs
         "flow": base("flow", dataflow_jobs=[{"name": "squares", "script": SPARK, "language": "PYTHON"}]),
         # a pipeline folder sent as an app deploy must fail at once, in plain words
@@ -177,6 +205,40 @@ def call_function(f, body):
             pass
         time.sleep(20)
     return r
+
+
+def verify_sched(o, fnd):
+    osc = sf.client(oci.object_storage.ObjectStorageClient)
+    ns = osc.get_namespace().data
+    b = (o.get("buckets") or [{}])[0].get("name")
+    fn = (o.get("functions") or [{}])[0]
+    record("sched: function has a schedule", bool(fn.get("schedule")), str(fn.get("schedule")))
+    ticks = []
+    for _ in range(24):                       # up to 12 minutes: a */5 schedule fires at least twice
+        ticks = [x.name for x in osc.list_objects(ns, b, prefix="ticks/", fields="name").data.objects]
+        if len(ticks) >= 1:
+            break
+        time.sleep(30)
+    record("sched: Resource Scheduler invoked the function (it wrote to the bucket)", len(ticks) >= 1, f"{len(ticks)} tick file(s) in {b}")
+
+
+def verify_iceberg(o, fnd):
+    df = sf.client(oci.data_flow.DataFlowClient)
+    job = (o.get("dataflow_jobs") or [{}])[0]
+    osc = sf.client(oci.object_storage.ObjectStorageClient)
+    ns = osc.get_namespace().data
+    b = (o.get("buckets") or [{}])[0].get("name")
+    run = df.create_run(oci.data_flow.models.CreateRunDetails(compartment_id=fnd["compartments"]["sandboxes"], application_id=job["id"],
+                                                              display_name="e2e iceberg")).data
+    for _ in range(60):
+        r = df.get_run(run.id).data
+        if r.lifecycle_state in ("SUCCEEDED", "FAILED", "CANCELED", "STOPPED"):
+            break
+        time.sleep(30)
+    meta = [x.name for x in osc.list_objects(ns, b, prefix="iceberg/", fields="name").data.objects]
+    record("iceberg: Data Flow writes an Iceberg table to Object Storage",
+           r.lifecycle_state == "SUCCEEDED" and any(n.endswith(".metadata.json") for n in meta),
+           f"run {r.lifecycle_state} {r.lifecycle_details or ''}; iceberg objects {len(meta)}")
 
 
 def verify_fn(o):
@@ -488,7 +550,8 @@ def main():
                        limits, "; ".join(out["warnings"])[:300])
     verifiers = {"web": lambda o: verify_web(o), "data": lambda o: verify_data(o, fnd), "lake": lambda o: verify_lake(o, fnd),
                  "db": verify_db, "rag": verify_rag, "airflow": verify_airflow, "kafka": verify_kafka,
-                 "fn": verify_fn, "flow": lambda o: verify_lake(o, fnd, label="flow")}
+                 "fn": verify_fn, "flow": lambda o: verify_lake(o, fnd, label="flow"),
+                 "sched": lambda o: verify_sched(o, fnd), "iceberg": lambda o: verify_iceberg(o, fnd)}
     for name, o in outs.items():
         try:
             verifiers[name](o)

@@ -159,6 +159,12 @@ locals {
       "ADB_${upper(replace(k, "-", "_"))}_ADMIN_PASSWORD" = m.admin_password
       "ADB_${upper(replace(k, "-", "_"))}_DB_NAME"        = m.db_name
     }]...),
+    # Buckets by name, so code the assistant writes (a function, a Spark job)
+    # finds them: DATA_BUCKET is the first one, BUCKET_<NAME> each of them.
+    length(local.bucket_names) > 0 ? merge(
+      { OBJECT_NAMESPACE = module.storage[0].namespace, DATA_BUCKET = values(local.bucket_names)[0] },
+      { for k, v in local.bucket_names : "BUCKET_${upper(replace(k, "-", "_"))}" => v }
+    ) : {},
     var.enable_nosql ? {
       NOSQL_COMPARTMENT_OCID = local.compartment_id
       NOSQL_TABLES           = join(",", module.nosql[0].tables)
@@ -281,6 +287,49 @@ module "functions" {
   freeform_tags    = local.freeform_tags
 
   depends_on = [time_sleep.iam_propagation]
+}
+
+# Functions on a schedule: the EventBridge-rule counterpart. OCI Resource
+# Scheduler invokes the function on the cron given, and may do so only because
+# a policy in this sandbox's compartment lets exactly these schedules manage
+# its functions. Both go with the sandbox.
+locals {
+  # the same names modules/storage gives the buckets, known before they exist
+  bucket_names = length(var.buckets) > 0 || length(var.dataflow_jobs) > 0 ? {
+    for b in(length(var.buckets) > 0 ? var.buckets : [{ name = "logs" }]) : b.name => "${local.name}-${b.name}"
+  } : {}
+  fn_schedules = { for f in var.functions : f.name => f if try(f.schedule, "") != "" }
+}
+
+resource "oci_resource_scheduler_schedule" "fn" {
+  for_each = length(var.functions) > 0 ? local.fn_schedules : {}
+
+  compartment_id     = local.compartment_id
+  display_name       = "${local.name}-${each.key}"
+  description        = "Invokes function ${each.key} on ${each.value.schedule}"
+  action             = "START_RESOURCE"
+  recurrence_type    = "CRON"
+  recurrence_details = each.value.schedule
+  defined_tags       = local.defined_tags
+  freeform_tags      = local.freeform_tags
+
+  resources {
+    id = one([for f in module.functions[0].functions : f.id if f.name == each.key])
+  }
+}
+
+resource "oci_identity_policy" "fn_schedule" {
+  count    = length(oci_resource_scheduler_schedule.fn) > 0 ? 1 : 0
+  provider = oci.home
+
+  compartment_id = local.compartment_id
+  name           = "${local.name}-fn-schedules"
+  description    = "Lets this sandbox's schedules invoke its functions."
+  statements = [for s in oci_resource_scheduler_schedule.fn :
+    "allow any-user to manage functions-family in compartment id ${local.compartment_id} where all {request.principal.type = 'resourceschedule', request.principal.id = '${s.id}'}"
+  ]
+  defined_tags  = local.defined_tags
+  freeform_tags = local.freeform_tags
 }
 
 module "app" {

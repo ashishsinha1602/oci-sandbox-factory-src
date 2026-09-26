@@ -61,7 +61,9 @@ output "dataflow_jobs" {
 }
 
 output "functions" {
-  value = length(var.functions) > 0 ? module.functions[0].functions : []
+  value = length(var.functions) > 0 ? [for f in module.functions[0].functions : merge(f, {
+    schedule = try(local.fn_schedules[f.name].schedule, null)
+  })] : []
 }
 
 output "app_instances" {

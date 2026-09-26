@@ -601,7 +601,10 @@ function sfInit(){
       +(cs.length>1?' &mdash; they share a host and reach each other on localhost':'')+', behind a public HTTPS URL: '+cs.map(function(c){return '<code>'+esc(c.name||'web')+'</code> &rarr; '+esc(c.image)+':'+esc(c.port||80)}).join(', ')+'.</li>');
     if(a.app_files){var n=Object.keys(typeof a.app_files==='string'?JSON.parse(a.app_files):a.app_files).length;
       L.push('<li><b>Your app, built here</b> &mdash; '+n+' source files are sent with the request, built into an image in OCI and deployed. Nothing to push to a registry.</li>')}
-    (a.functions||[]).forEach(function(f){L.push('<li><b>Function '+esc(f.name)+'</b> &mdash; '+esc(f.image||'')+', serverless, billed per call, free when idle. You get a plain HTTPS URL for it.</li>')});
+    (a.functions||[]).forEach(function(f){
+      var src=f.files?Object.keys(f.files).length+' source file'+(Object.keys(f.files).length>1?'s':'')+', built into an image in OCI':(f.git_url?'built in OCI from '+esc(f.git_url):(f.image?esc(f.image):'the starter function, built in OCI'));
+      L.push('<li><b>Function '+esc(f.name)+'</b> &mdash; '+src+'; serverless, billed per call, free when idle'+(f.schedule?'. Runs on a schedule (<code>'+esc(f.schedule)+'</code>) through OCI Resource Scheduler':'')+'. You get a plain HTTPS URL for it.</li>')});
+    (a.dataflow_jobs||[]).forEach(function(d){ if(d.iceberg)L.push('<li><b>Iceberg tables</b> &mdash; job '+esc(d.name)+' writes Iceberg to Object Storage (catalog <code>lake</code>, under iceberg/ in the bucket).</li>'); });
     (a.buckets||[]).forEach(function(b){L.push('<li><b>Bucket '+esc(b.name)+'</b> &mdash; Object Storage, '+(b.public?'public read':'private')+'.</li>')});
     (a.queues||[]).forEach(function(q){L.push('<li><b>Queue '+esc(q.name)+'</b> &mdash; OCI Queue, serverless point-to-point messaging (the SQS counterpart).</li>')});
     (a.dataflow_jobs||[]).forEach(function(d){L.push('<li><b>Spark job '+esc(d.name)+'</b> &mdash; OCI Data Flow, managed Spark billed per run (the Glue counterpart).</li>')});

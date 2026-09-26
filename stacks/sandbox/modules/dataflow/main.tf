@@ -88,15 +88,9 @@ resource "oci_dataflow_application" "this" {
   arguments            = each.value.arguments
   logs_bucket_uri      = var.logs_bucket_uri
   warehouse_bucket_uri = each.value.warehouse_uri
-  configuration = merge(var.injected_env, each.value.spark_conf, each.value.iceberg ? {
-    "spark.jars.packages"              = "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.5.2"
-    "spark.sql.extensions"             = "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions"
-    "spark.sql.catalog.lake"           = "org.apache.iceberg.spark.SparkCatalog"
-    "spark.sql.catalog.lake.type"      = "hadoop"
-    "spark.sql.catalog.lake.warehouse" = "oci://${var.scripts_bucket}@${var.namespace}/iceberg"
-  } : {})
-  defined_tags  = var.defined_tags
-  freeform_tags = var.freeform_tags
+  configuration        = merge(var.injected_env, each.value.spark_conf, each.value.iceberg ? local.iceberg_conf : {})
+  defined_tags         = var.defined_tags
+  freeform_tags        = var.freeform_tags
 
   depends_on = [oci_objectstorage_object.script]
 
@@ -111,13 +105,74 @@ resource "oci_dataflow_application" "this" {
   }
 }
 
+# With any Iceberg job, one more application to look at the tables: Spark SQL
+# over the "lake" catalog, the sql parameter given at run time (the Athena
+# counterpart, billed per run like the rest).
+locals {
+  iceberg = anytrue([for j in var.jobs : j.iceberg]) && var.scripts_bucket != ""
+  iceberg_conf = {
+    "spark.jars.packages"              = "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.5.2"
+    "spark.sql.extensions"             = "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions"
+    "spark.sql.catalog.lake"           = "org.apache.iceberg.spark.SparkCatalog"
+    "spark.sql.catalog.lake.type"      = "hadoop"
+    "spark.sql.catalog.lake.warehouse" = "oci://${var.scripts_bucket}@${var.namespace}/iceberg"
+  }
+}
+
+resource "oci_objectstorage_object" "iceberg_query" {
+  count     = local.iceberg ? 1 : 0
+  namespace = var.namespace
+  bucket    = var.scripts_bucket
+  object    = "iceberg-query.py"
+  content   = file("${path.module}/iceberg_query.py")
+}
+
+resource "oci_dataflow_application" "iceberg_query" {
+  count = local.iceberg ? 1 : 0
+
+  compartment_id  = var.compartment_id
+  display_name    = "${var.name}-iceberg-query"
+  description     = "Run with the parameter sql to query the Iceberg tables; empty lists every table with its row count."
+  file_uri        = "oci://${var.scripts_bucket}@${var.namespace}/iceberg-query.py"
+  language        = "PYTHON"
+  spark_version   = "3.5.0"
+  num_executors   = 1
+  driver_shape    = "VM.Standard.E4.Flex"
+  executor_shape  = "VM.Standard.E4.Flex"
+  arguments       = ["$${sql}"]
+  logs_bucket_uri = var.logs_bucket_uri
+  configuration   = merge(var.injected_env, local.iceberg_conf)
+  defined_tags    = var.defined_tags
+  freeform_tags   = var.freeform_tags
+
+  parameters {
+    name  = "sql"
+    value = "TABLES"
+  }
+  driver_shape_config {
+    ocpus         = 1
+    memory_in_gbs = 16
+  }
+  executor_shape_config {
+    ocpus         = 1
+    memory_in_gbs = 16
+  }
+  depends_on = [oci_objectstorage_object.iceberg_query]
+}
+
 output "jobs" {
-  value = [
+  value = concat([
     for k, a in oci_dataflow_application.this : {
       name     = a.display_name
       id       = a.id
       file_uri = a.file_uri
       language = a.language
     }
-  ]
+    ], [for a in oci_dataflow_application.iceberg_query : {
+      name     = a.display_name
+      id       = a.id
+      file_uri = a.file_uri
+      language = a.language
+      query    = true
+  }])
 }

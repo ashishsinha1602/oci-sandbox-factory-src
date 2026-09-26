@@ -239,6 +239,21 @@ def verify_iceberg(o, fnd):
     record("iceberg: Data Flow writes an Iceberg table to Object Storage",
            r.lifecycle_state == "SUCCEEDED" and any(n.endswith(".metadata.json") for n in meta),
            f"run {r.lifecycle_state} {r.lifecycle_details or ''}; iceberg objects {len(meta)}")
+    q = next((j for j in o.get("dataflow_jobs") or [] if j.get("query")), None)
+    record("iceberg: a query application comes with the Iceberg job", q is not None, (q or {}).get("name"))
+    if q:
+        run = df.create_run(oci.data_flow.models.CreateRunDetails(
+            compartment_id=fnd["compartments"]["sandboxes"], application_id=q["id"], display_name="e2e iceberg query",
+            parameters=[oci.data_flow.models.ApplicationParameter(name="sql", value="SELECT count(*) AS n FROM lake.e2e.squares")])).data
+        for _ in range(60):
+            r = df.get_run(run.id).data
+            if r.lifecycle_state in ("SUCCEEDED", "FAILED", "CANCELED", "STOPPED"):
+                break
+            time.sleep(30)
+        csv = [x.name for x in osc.list_objects(ns, b, prefix="query-results/", fields="name").data.objects if x.name.endswith(".csv")]
+        body = osc.get_object(ns, b, csv[-1]).data.content.decode() if csv else ""
+        record("iceberg: the query application reads the table back (50 rows)", r.lifecycle_state == "SUCCEEDED" and "50" in body,
+               f"run {r.lifecycle_state} {r.lifecycle_details or ''}; result {body.strip()[:60]!r}")
 
 
 def verify_fn(o):

@@ -76,17 +76,36 @@ def build(name: str, root: pathlib.Path) -> pathlib.Path:
     return out
 
 
+def check_app_export() -> list[str]:
+    """The APEX application that ships in the worker image must be the page in
+    the repository: a fresh install once got an export older than today's
+    page (old model picker, no computed prices, no build-intent guard)."""
+    import re
+    problems = []
+    exp = (HERE / "factory" / "apex_export_customized.sql").read_text(encoding="utf-8")
+    blob = "".join(re.findall(r"g_varchar2_table\(\d+\)\s*:=\s*'([0-9A-F]+)'", exp))
+    js = (HERE / "factory" / "apex_home" / "sf.js").read_bytes().replace(bytes([13, 10]), bytes([10]))
+    crlf = js.replace(bytes([10]), bytes([13, 10]))
+    if js.hex().upper() not in blob and crlf.hex().upper() not in blob:
+        problems.append("factory/apex_export_customized.sql does not contain the current apex_home/sf.js - re-run apex_customize.py and commit the export")
+    ajax = (HERE / "factory" / "apex_home" / "ajax.plsql").read_text(encoding="utf-8")
+    for marker in re.findall(r"^\s*function (\w+)", ajax, re.M)[:50]:
+        if marker not in exp:
+            problems.append(f"export is missing ajax function {marker}")
+    return problems
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--check", action="store_true", help="verify only, build nothing")
     args = ap.parse_args()
 
-    problems = [p for name, root in STACKS.items() for p in check(name, root)]
+    problems = [p for name, root in STACKS.items() for p in check(name, root)] + check_app_export()
     if problems:
         for p in problems:
             print("PROBLEM:", p, file=sys.stderr)
         return 1
-    print("both stacks look shippable")
+    print("both stacks look shippable; the shipped application matches the page source")
     if args.check:
         return 0
     for name, root in STACKS.items():

@@ -45,9 +45,25 @@ def bootstrap() -> None:
             apex_customize.install(export.read_text(encoding="utf-8"), 112)
     else:
         print(f"bootstrap: application {row[0]} present", flush=True)
-    import prompts
-    for line in prompts.load():
-        print("bootstrap: prompt", line, flush=True)
+    # the schema's run-time grants (DBMS_CLOUD, resource principal, network ACE),
+    # healed on every start so an older install gets them too
+    try:
+        import sandbox_factory as sf
+        c = controldb.connect("ADMIN")
+        for line in controldb.runtime_grants(c, sf.config()["region"]):
+            print("bootstrap: grant", line, flush=True)
+        c.close()
+    except Exception as e:  # noqa: BLE001
+        print(f"bootstrap: grants not applied ({type(e).__name__}: {e})", flush=True)
+    # Every step below is independent: one that fails is reported and the rest
+    # still run (a failed prompt load once skipped the profile, templates and
+    # prices of a fresh install, leaving it without chat).
+    try:
+        import prompts
+        for line in prompts.load():
+            print("bootstrap: prompt", line, flush=True)
+    except Exception as e:  # noqa: BLE001
+        print(f"bootstrap: prompts not loaded ({type(e).__name__}: {e})", flush=True)
     # what this install is: region, registry, the chat models that answer here
     try:
         import os

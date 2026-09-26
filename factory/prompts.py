@@ -33,13 +33,14 @@ def load(conn=None) -> list[str]:
     done = []
     for f in sorted((HERE / "prompts").glob("*.txt")):
         text = f.read_text(encoding="utf-8")
-        # Past ~8K chars a plain string bind is sent as a LONG, and two LONG
-        # binds in one MERGE fail with ORA-03146; bind the text as a CLOB.
-        cur.setinputsizes(t1=oracledb.DB_TYPE_CLOB, t2=oracledb.DB_TYPE_CLOB)
-        cur.execute("""merge into factory_prompts t using (select :k as key from dual) s on (t.key = s.key)
-                       when matched then update set text = :t1, updated_at = systimestamp
-                       when not matched then insert (key, text) values (:k2, :t2)""",
-                    k=f.stem, t1=text, k2=f.stem, t2=text)
+        # One CLOB bind per statement: a MERGE that binds the same large text
+        # twice failed with ORA-03146 (LONG binds on this driver/database),
+        # first on a laptop, then again on a fresh install's worker.
+        cur.setinputsizes(t=oracledb.DB_TYPE_CLOB)
+        cur.execute("update factory_prompts set text = :t, updated_at = systimestamp where key = :k", t=text, k=f.stem)
+        if cur.rowcount == 0:
+            cur.setinputsizes(t=oracledb.DB_TYPE_CLOB)
+            cur.execute("insert into factory_prompts (key, text) values (:k, :t)", k=f.stem, t=text)
         done.append(f"{f.stem} ({len(text)} chars)")
     conn.commit()
     if own:

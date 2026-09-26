@@ -174,6 +174,43 @@ where r.status = 'DONE'
 """
 
 
+def runtime_grants(conn, region: str) -> list[str]:
+    """What the application's schema needs at run time, idempotently.
+
+    The page's back end runs as SCHEMA and calls OCI Generative AI with
+    DBMS_CLOUD as the database's resource principal; without these grants the
+    whole ajax block fails to compile and every call returns an empty body
+    ("Unexpected end of JSON input"). On the first install they were granted
+    by hand and never written down, so a fresh install had none.
+    """
+    cur = conn.cursor()
+    done = []
+    for stmt in (f"grant execute on dbms_cloud to {SCHEMA}",
+                 f"grant execute on dbms_cloud_types to {SCHEMA}"):
+        try:
+            cur.execute(stmt)
+            done.append(stmt)
+        except Exception as e:  # noqa: BLE001
+            done.append(f"{stmt}: {e}")
+    for block in ("begin dbms_cloud_admin.enable_resource_principal(); end;",
+                  f"begin dbms_cloud_admin.enable_resource_principal(username => '{SCHEMA}'); end;"):
+        try:
+            cur.execute(block)
+            done.append(block)
+        except Exception as e:  # noqa: BLE001
+            if "already" not in str(e).lower() and "ORA-20" not in str(e):
+                done.append(f"{block}: {e}")
+    host = f"inference.generativeai.{region}.oci.oraclecloud.com"
+    for principal in (SCHEMA, "ADMIN"):
+        cur.execute("""begin dbms_network_acl_admin.append_host_ace(host => :h,
+                          ace => xs$ace_type(privilege_list => xs$name_list('http', 'connect', 'resolve'),
+                                             principal_name => :p, principal_type => xs_acl.ptype_db)); end;""",
+                    h=host, p=principal)
+    done.append(f"network ACE for {host} (SBX, ADMIN)")
+    conn.commit()
+    return done
+
+
 def setup(argv: list[str]) -> None:
     conn = connect("ADMIN")
     cur = conn.cursor()

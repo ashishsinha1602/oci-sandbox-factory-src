@@ -643,7 +643,7 @@ def main():
         try:
             osc = sf.client(oci.object_storage.ObjectStorageClient)
             ns = osc.get_namespace().data
-            bucket = "sbx-factory-reports"
+            bucket = os.environ.get("SBX_PREFIX", "sbx") + "-factory-reports"
             try:
                 osc.get_bucket(ns, bucket)
             except oci.exceptions.ServiceError:

@@ -19,19 +19,20 @@ from narrate import mapper, tts  # noqa: E402
 TEMPO = 1.08
 GAP = 0.25
 
+# Anchors are seconds into the raw recordings (part, time); a fourth value is
+# where in the cut to hold the frame when the line runs long. Set them with
+# anchors.py after each take.
 SCENES = [
     (1, 0.2, "Meet Sandbox Factory. You chat, and it builds, right inside Oracle Cloud."),
-    (1, 16.0, "Ask for a database with MCP and a chat UI. It plans it, prices it from Oracle's price list, and builds it in one click."),
-    (1, 39.0, "Point it at a GitHub folder. It reads the code, and deploys the app with a database."),
-    (1, 62.0, "Now a migration: Airflow writing to S3, and Glue building Iceberg tables. It maps each piece. S3 becomes Object Storage, Glue jobs become Spark on Data Flow, the Glue catalog becomes Data Catalog, and Airflow keeps running your DAGs unchanged.", 17.45),
-    (1, 97.0, "Hand it the repository. It reads the DAG and the Spark job, and builds the pipeline: a bucket for raw and gold data, a Data Flow application for the Spark job, a Data Catalog, Airflow with the DAG loaded, and an Autonomous Database for the gold tables.", 24.5),
-    (2, 1.0, "Minutes later, everything is live, with links, credentials, and an expiry date."),
-    (2, 42.0, "Airflow is up, with the telemetry DAG loaded."),
-    (2, 60.0, "The run is green, in four steps. It lands raw sensor readings in Object Storage, runs the Spark gold job on Data Flow, registers the bucket in Data Catalog, and loads the gold tables into Oracle."),
-    (2, 66.0, "Daily telemetry and device sessions, queryable in the database, and served straight away as REST."),
-    (2, 84.0, "The app from GitHub, live on HTTPS."),
-    (2, 94.0, "Studio, to ask the data in plain English."),
-    (2, 126.0, "And agents connect over MCP. They discover the tools, pick the tables, and run the query. That is Sandbox Factory."),
+    (1, 14.0, "Ask for Grafana from its public image. It plans the container, prices it from Oracle's price list, and asks only for what the code needs: here, the admin password, typed in a box that never reaches the AI."),
+    (1, 40.0, "One click, and it is building."),
+    (1, 52.0, "Now a migration: Airflow writing to S3, and Glue building Iceberg tables. It maps each piece. S3 becomes Object Storage, Glue jobs become Spark on Data Flow, the Glue catalog becomes Data Catalog, and Airflow keeps running your DAGs unchanged."),
+    (1, 80.0, "Hand it the repository. It reads the DAG and the Spark job, and builds the pipeline: a bucket for raw and gold data, a Data Flow application for the Spark job, a Data Catalog, Airflow with the DAG loaded, and an Autonomous Database for the gold tables."),
+    (2, 1.0, "Minutes later, everything is live, with links, credentials, logs, and an expiry date."),
+    (2, 20.0, "Grafana, signed in with the password you gave, ready for your team."),
+    (2, 40.0, "Airflow is up, with the telemetry DAG loaded."),
+    (2, 58.0, "The run is green, in four steps. It lands raw sensor readings in Object Storage, runs the Spark gold job on Data Flow, registers the bucket in Data Catalog, and loads the gold tables into Oracle."),
+    (2, 66.0, "Daily telemetry and device sessions, queryable in the database, and served straight away as REST. That is Sandbox Factory."),
 ]
 FILLERS = [
     "Everything runs in your own tenancy, under your policies and your budget.",

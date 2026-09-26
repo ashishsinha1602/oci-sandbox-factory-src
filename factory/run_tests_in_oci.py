@@ -8,6 +8,7 @@ the machine that launches it: it only starts the job, streams the log, and
 prints where the report landed (bucket sbx-factory-reports). Exit code is the
 suite's.
 """
+import os
 import sys
 import time
 
@@ -65,14 +66,14 @@ def main(argv):
     # report says every check passed.
     osc = oci.object_storage.ObjectStorageClient(**auth)
     ns = osc.get_namespace().data
-    reports = [o for o in osc.list_objects(ns, "sbx-factory-reports", prefix="e2e-", fields="name,timeCreated").data.objects
+    reports = [o for o in osc.list_objects(ns, (os.environ.get("SBX_PREFIX", "sbx") + "-factory-reports"), prefix="e2e-", fields="name,timeCreated").data.objects
                if o.name.endswith(".md")
                if o.time_created and o.time_created.timestamp() >= started_at]
     if not reports:
         print(f"runner finished with exit code {code} but wrote NO report: the suite did not run", flush=True)
         sys.exit(1)
     rep = max(reports, key=lambda o: o.time_created)
-    text = osc.get_object(ns, "sbx-factory-reports", rep.name).data.content.decode("utf-8", "replace")
+    text = osc.get_object(ns, (os.environ.get("SBX_PREFIX", "sbx") + "-factory-reports"), rep.name).data.content.decode("utf-8", "replace")
     fails = [ln for ln in text.splitlines() if "| FAIL |" in ln]
     print(f"runner finished with exit code {code}; report {rep.name}: {len(fails)} failed check(s)", flush=True)
     for ln in fails:

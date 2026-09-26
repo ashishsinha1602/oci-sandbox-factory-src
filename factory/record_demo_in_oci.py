@@ -21,7 +21,7 @@ import oci
 import sandbox_factory as sf
 
 PLAYWRIGHT_IMAGE = "mcr.microsoft.com/playwright/python:v1.49.0-noble"
-BUCKET = "sbx-factory-reports"
+BUCKET = os.environ.get("SBX_PREFIX", "sbx") + "-factory-reports"   # bucket names are tenancy-wide: one per install
 GRAFANA_PASSWORD = os.environ.get("SF_GRAFANA_PASSWORD", "Grafana-Demo-2026")
 PROMPTS = [
     "What do I have running?",

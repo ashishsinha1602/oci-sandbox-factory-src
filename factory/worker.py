@@ -149,7 +149,7 @@ def claim(conn):
         select id, requester, sandbox_id, action, ttl_days, enable_adb, adb_tier, enable_kafka,
                kafka_mode, enable_app, app_image, git_url, app_port, request_text, seed_sql, app_containers, app_files,
                seed_key, app_template, enable_nosql, adb_databases, functions, app_instances,
-               buckets, queues, dataflow_jobs, enable_catalog, catalog_assets, enable_aidp, user_env
+               buckets, queues, dataflow_jobs, enable_catalog, catalog_assets, enable_aidp, user_env, enable_rag
         from sbx.sandbox_requests where id = :1""", [row[0]])
     cols = [d[0].lower() for d in cur.description]
     row = dict(zip(cols, cur.fetchone()))
@@ -192,7 +192,14 @@ def factory_args(req: dict) -> argparse.Namespace:
         enable_aidp=req.get("enable_aidp") == "Y",
         catalog_assets=json.loads(req["catalog_assets"]) if req.get("catalog_assets") else None,
         user_env={str(k): str(v) for k, v in (json.loads(req["user_env"]) or {}).items()} if req.get("user_env") else None,
+        enable_rag=req.get("enable_rag") == "Y",
     )
+    if args.enable_rag:
+        # documents live in the sandbox's own bucket; the database reads them from there
+        args.adb = True
+        args.buckets = list(args.buckets or [])
+        if not any(b.get("name") == "docs" for b in args.buckets):
+            args.buckets.append({"name": "docs", "public": False})
 
 
 def containers_for(req: dict) -> list | None:
@@ -745,6 +752,11 @@ def process_one(conn) -> bool:
                     if seed:
                         seed_database(outputs, seed)
                     enable_low_code(outputs)
+                    if req.get("enable_rag") == "Y":
+                        import oracle_rag
+                        docs = next((b for b in (outputs.get("buckets") or []) if str(b.get("name", "")).endswith("-docs")), None)
+                        if docs:
+                            outputs["rag"] = oracle_rag.enable(outputs, cfg["region"], docs["name"], docs.get("namespace") or "", select_ai_model())
                 except Exception as e:  # noqa: BLE001
                     note = f"{type(e).__name__}: {e}"
                     print(f"sandbox is up; database setup did not finish ({note[:200]})", flush=True)

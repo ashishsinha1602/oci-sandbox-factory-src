@@ -119,6 +119,8 @@ function sfInit(){
               +'<br>connect string <code>'+esc(o.adb.connect_string)+'</code></div>'}
 
           if(o.low_code&&o.low_code.rest_base)h+='<code>REST: '+esc(o.low_code.rest_base)+'</code>';
+          if(o.rag){ h+=o.rag.error?'<div class="sf-err" style="margin-top:6px">RAG was not set up: '+esc(o.rag.error)+'</div>'
+            :'<div style="margin-top:6px"><b>Documents</b>: drop files into <code>'+esc(o.rag.bucket)+'/docs/</code> (PDF, Word, HTML, text, images). Oracle indexes them every '+esc(o.rag.refresh_minutes)+' min; images are described as text first.<br>Ask: <code>POST '+esc(o.rag.ask_url||'')+'</code> with <code>{"question": "..."}</code> as ADMIN, or <code>select ai narrate ...</code> in SQL.</div>'; }
           if(o.kafka)h+='<div style="margin-top:6px">kafka <code>'+esc(o.kafka.public_bootstrap||o.kafka.bootstrap_servers)+'</code>'
             +(o.kafka.username?' &middot; user <code>'+esc(o.kafka.username)+'</code> &middot; password <code>'+esc(o.kafka.password)+'</code>':'')+'</div>';
 
@@ -232,6 +234,7 @@ function sfInit(){
     (o.dataflow_jobs||[]).forEach(function(d){L.push(['Spark job '+d.name,u['spark:'+d.name]])});
     if(o.catalog)L.push(['Data Catalog '+(o.catalog.display_name||''),u['catalog']]);
     if(o.logs&&o.logs.console_url)L.push(['Logs ('+(o.logs.logs||[]).length+')',o.logs.console_url]);
+    if(o.rag&&!o.rag.error){ var db=(o.buckets||[]).filter(function(b){return b.name===o.rag.bucket})[0]; if(db)L.push(['Documents: drop files here',u['bucket:'+db.name]]); if(o.rag.ask_url)L.push(['Ask the documents (REST)',null]); }
     if(o.aidp)L.push(['AI Data Platform '+(o.aidp.display_name||''),o.aidp.console_url]);
     return L;
   }
@@ -656,6 +659,7 @@ function sfInit(){
       +(cs.length>1?' &mdash; they share a host and reach each other on localhost':'')+', behind a public HTTPS URL: '+cs.map(function(c){return '<code>'+esc(c.name||'web')+'</code> &rarr; '+esc(c.image)+':'+esc(c.port||80)}).join(', ')+'.</li>');
     if(a.app_files){var n=Object.keys(typeof a.app_files==='string'?JSON.parse(a.app_files):a.app_files).length;
       L.push('<li><b>Your app, built here</b> &mdash; '+n+' source files are sent with the request, built into an image in OCI and deployed. Nothing to push to a registry.</li>')}
+    if(a.enable_rag)L.push('<li><b>Documents and RAG</b> &mdash; a docs bucket the database watches: every file you drop in is chunked and embedded by Oracle Select AI (vector index, refreshed every 5 minutes); images are first described as text by OCI Generative AI vision. Ask with <code>select ai narrate</code> or <code>POST .../rag/ask</code>.</li>');
     (a.functions||[]).forEach(function(f){
       var src=f.files?Object.keys(f.files).length+' source file'+(Object.keys(f.files).length>1?'s':'')+', built into an image in OCI':(f.git_url?'built in OCI from '+esc(f.git_url):(f.image?esc(f.image):'the starter function, built in OCI'));
       L.push('<li><b>Function '+esc(f.name)+'</b> &mdash; '+src+'; serverless, billed per call, free when idle'+(f.schedule?'. Runs on a schedule (<code>'+esc(f.schedule)+'</code>) through OCI Resource Scheduler':'')+'. You get a plain HTTPS URL for it.</li>')});
@@ -872,6 +876,7 @@ function sfInit(){
       if(o.catalog)parts.push('Data Catalog');
       if(o.aidp)parts.push('AI Data Platform');
       if(o.logs)parts.push('Logs');
+      if(o.rag&&!o.rag.error)parts.push('RAG');
     }
     var exp=o&&o.sandbox&&o.sandbox.expires, pu=primaryUrl(o), done=r.status==='DONE'&&r.action!=='DESTROY';
     return '<div class="sf-w-card"><div class="sf-w-hd"><b>'+esc(r.sandbox_id)+'</b><span class="sf-badge '+esc(r.status)+'">'+esc(r.status)+'</span></div>'
@@ -893,7 +898,7 @@ function sfInit(){
     var armEst=!P.a1_ocpu, cpu=P.a1_ocpu||P.e4_ocpu||0, mem=P.a1_memory||P.e4_memory||0;
     var add=function(name,detail,m){items.push({name:name,detail:detail,monthly_usd:m==null?null:Math.round(m*100)/100}); if(m!=null)total+=m;};
     var w=a.workload||null;
-    var dbs=((a.enable_adb||(w&&w.oracle))?1:0)+((a.databases||[]).length);
+    var dbs=((a.enable_adb||a.enable_rag||(w&&w.oracle))?1:0)+((a.databases||[]).length);
     if(dbs&&P.adb_ecpu){ var m=2*P.adb_ecpu*H+20*(P.adb_storage||0);
       add('Autonomous Database'+(dbs>1?' x'+dbs:''),'Transaction Processing, 2 ECPU + 20 GB, license included, per ECPU-hour while it exists',m*dbs); }
     var apps=((a.enable_app||a.git_url||a.app_image||a.app_template||(a.containers&&a.containers.length)||w)?1:0)+((a.app_instances||[]).length);
@@ -926,6 +931,7 @@ function sfInit(){
       add('API Gateway','HTTPS in front of the app and functions, at 100,000 calls a month; $'+P.gateway_calls+' per 1M',0.1*P.gateway_calls);
     if(a.enable_catalog||(w&&w.catalog)) perUse.push('Data Catalog (not in Oracle’s price list)');
     if(a.enable_aidp) perUse.push('AI Data Platform (per its own compute)');
+    if(a.enable_rag) perUse.push('Generative AI embeddings and vision (per token, when documents are added)');
     perUse.forEach(function(n){add(n.split(' (')[0],(n.match(/\((.*)\)/)||[])[1]||'per use',null);});
     if(!items.length)return null;
     var days=Number(a.ttl_days)||3, life=total*days*24/H;
@@ -1016,7 +1022,7 @@ function sfInit(){
           if(a.type==='retry'){ call('retry',{sandbox_id:a.sandbox_id, ttl_days:a.ttl_days||undefined}).then(function(s){ box.innerHTML = s.err ? '<span class="sf-err">'+esc(s.err)+'</span>' : '<span class="sf-chip">Queued as request #'+esc(s.id)+'</span>'; refresh(); }); return; }
           var payload=a.type==='destroy'?{sandbox_id:a.sandbox_id,action:'DESTROY',ttl_days:1,enable_adb:false,enable_kafka:false,enable_app:false}
             :{sandbox_id:a.sandbox_id,action:a.git_url?'DEPLOY':'CREATE',ttl_days:a.ttl_days||3,enable_adb:!!a.enable_adb,enable_kafka:!!a.enable_kafka,enable_nosql:!!a.enable_nosql,enable_app:!!a.enable_app||!!a.git_url||!!a.app_image||!!(a.containers&&a.containers.length),
-              app_image:a.app_image||null,git_url:a.git_url||null,app_port:a.app_port||80,text:t,containers:(a.containers&&a.containers.length)?a.containers:undefined,seed_sql:a.seed_sql||undefined,env:envFrom(envBox),
+              app_image:a.app_image||null,git_url:a.git_url||null,app_port:a.app_port||80,text:t,containers:(a.containers&&a.containers.length)?a.containers:undefined,seed_sql:a.seed_sql||undefined,env:envFrom(envBox),enable_rag:!!a.enable_rag,
               enable_catalog:!!a.enable_catalog,enable_aidp:!!a.enable_aidp,databases:nz(a.databases),buckets:nz(a.buckets),queues:nz(a.queues),
               functions:nz(a.functions),dataflow_jobs:nz(a.dataflow_jobs),app_instances:nz(a.app_instances),
               app_files:a.app_files?JSON.stringify(a.app_files):undefined};

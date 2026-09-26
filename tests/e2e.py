@@ -181,6 +181,8 @@ def cases(fn_image: str | None):
         # Iceberg on Object Storage written by Data Flow (the Glue + Iceberg shape)
         "iceberg": base("iceberg", buckets=[{"name": "lake"}],
                         dataflow_jobs=[{"name": "ice", "script": ICEBERG_SPARK, "language": "PYTHON", "iceberg": True}]),
+        # Oracle-native RAG: a fact in a text file and one only in a picture; both must be answerable
+        "docs": base("docs", enable_adb=True, adb_tier="paid", enable_rag=True),
         # "just a Data Flow job": no bucket asked for, one is added for its script and logs
         "flow": base("flow", dataflow_jobs=[{"name": "squares", "script": SPARK, "language": "PYTHON"}]),
         # a pipeline folder sent as an app deploy must fail at once, in plain words
@@ -254,6 +256,51 @@ def verify_iceberg(o, fnd):
         body = osc.get_object(ns, b, csv[-1]).data.content.decode() if csv else ""
         record("iceberg: the query application reads the table back (50 rows)", r.lifecycle_state == "SUCCEEDED" and "50" in body,
                f"run {r.lifecycle_state} {r.lifecycle_details or ''}; result {body.strip()[:60]!r}")
+
+
+def verify_docs(o, fnd):
+    rag = o.get("rag") or {}
+    record("docs: RAG configured in the database (Oracle vector index + REST ask)", bool(rag.get("ask_url")) and not rag.get("error"), str(rag)[:200])
+    if not rag.get("ask_url"):
+        return
+    osc = sf.client(oci.object_storage.ObjectStorageClient)
+    ns = osc.get_namespace().data
+    b = rag["bucket"]
+    osc.put_object(ns, b, "docs/handbook.txt", b"Sandbox Factory handbook. The on-call rotation changes every Tuesday at 09:00. The build farm is called Kestrel.")
+    from PIL import Image, ImageDraw
+    img = Image.new("RGB", (900, 260), "white")
+    d = ImageDraw.Draw(img)
+    d.text((30, 40), "WAREHOUSE ACCESS", fill="black")
+    d.text((30, 90), "The warehouse door code is 4471.", fill="black")
+    d.text((30, 140), "Ask the site manager, Priya Raman, for a badge.", fill="black")
+    import io as _io
+    buf = _io.BytesIO(); img.save(buf, format="PNG")
+    osc.put_object(ns, b, "docs/door.png", buf.getvalue())
+    pw = (o.get("adb") or {}).get("admin_password")
+    auth = ("ADMIN", pw)
+    def ask(q):
+        try:
+            r = requests.post(rag["ask_url"], json={"question": q}, auth=auth, timeout=180)
+            return r.status_code, (r.json() if r.headers.get("content-type", "").startswith("application/json") else r.text[:200])
+        except Exception as e:  # noqa: BLE001
+            return 0, str(e)[:200]
+    got_text = got_img = None
+    sidecar = False
+    for _ in range(36):                       # up to 30 min: the image job and the index refresh both run every 5 min
+        names = [x.name for x in osc.list_objects(ns, b, prefix="docs/", fields="name").data.objects]
+        sidecar = "docs/door.png.txt" in names
+        st, a = ask("What is the build farm called?")
+        if st == 200 and isinstance(a, dict) and "kestrel" in str(a.get("answer", "")).lower():
+            got_text = a
+        st2, a2 = ask("What is the warehouse door code?")
+        if st2 == 200 and isinstance(a2, dict) and "4471" in str(a2.get("answer", "")):
+            got_img = a2
+        if got_text and got_img:
+            break
+        time.sleep(50)
+    record("docs: a question answered from a text document", got_text is not None, str(got_text or a)[:200])
+    record("docs: the picture was described as text (sidecar written)", sidecar, str([n for n in names if 'door' in n]))
+    record("docs: a question answered from a fact only in the picture", got_img is not None, str(got_img or a2)[:200])
 
 
 def verify_fn(o):
@@ -517,7 +564,8 @@ def run_wave(f, fnd, todo, keep):
     verifiers = {"web": lambda o: verify_web(o), "data": lambda o: verify_data(o, fnd), "lake": lambda o: verify_lake(o, fnd),
                  "db": verify_db, "rag": verify_rag, "airflow": verify_airflow, "kafka": verify_kafka,
                  "fn": verify_fn, "flow": lambda o: verify_lake(o, fnd, label="flow"),
-                 "sched": lambda o: verify_sched(o, fnd), "iceberg": lambda o: verify_iceberg(o, fnd)}
+                 "sched": lambda o: verify_sched(o, fnd), "iceberg": lambda o: verify_iceberg(o, fnd),
+                 "docs": lambda o: verify_docs(o, fnd)}
     for name, o in outs.items():
         try:
             verifiers[name](o)

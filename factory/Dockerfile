@@ -14,7 +14,7 @@ RUN python -m compileall -b -q factory tests \
 
 FROM python:3.12-slim
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates && rm -rf /var/lib/apt/lists/* \
- && pip install --no-cache-dir oci oracledb requests kafka-python-ng
+ && pip install --no-cache-dir oci oracledb requests kafka-python-ng pillow
 WORKDIR /app
 COPY LICENSE /app/LICENSE
 COPY --from=build /app/factory/ factory/

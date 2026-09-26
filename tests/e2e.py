@@ -482,6 +482,70 @@ def verify_isolation(f: Factory):
 
 
 # --------------------------------------------------------------------------
+def run_wave(f, fnd, todo, keep):
+    """Submit one wave of sandboxes, verify them, destroy them. Returns {name: status}."""
+    ids = {}
+    for name, payload in todo.items():
+        try:
+            ids[name] = f.submit(USER, payload)
+            log(f"submitted {name} as request {ids[name]}")
+        except Exception as e:  # noqa: BLE001
+            record(f"{name}: request accepted by the page's back end", False, str(e))
+    for name in ids:
+        record(f"{name}: request accepted by the page's back end", True)
+
+    results = f.wait(ids, timeout=5400 if "kafka" in todo else 2400)
+    outs = {}
+    for name, (st, err, out) in results.items():
+        if name in EXPECTED_FAIL:
+            record(f"{name}: refused at once with a plain reason", st == "FAILED" and EXPECTED_FAIL[name] in str(err or ""),
+                   f"{st}: {str(err or '')[:200]}")
+            continue
+        record(f"{name}: sandbox built by the worker", st == "DONE", err or st)
+        if st == "DONE":
+            outs[name] = out
+            record(f"{name}: expiry stamped on the sandbox", bool((out.get("sandbox") or {}).get("expires")), (out.get("sandbox") or {}).get("expires"))
+            if out.get("warnings"):
+                # A region limit the factory worked around (public IP instead of a
+                # gateway, no Data Catalog) is the tenancy's ceiling, not a defect:
+                # seven sandboxes at once will always exceed a limit of five.
+                limits = all(("limit" in w and ("Gateway" in w or "Catalog" in w)) for w in out["warnings"])
+                record(f"{name}: built {'within region limits (fallback noted)' if limits else 'without warnings'}",
+                       limits, "; ".join(out["warnings"])[:300])
+    verifiers = {"web": lambda o: verify_web(o), "data": lambda o: verify_data(o, fnd), "lake": lambda o: verify_lake(o, fnd),
+                 "db": verify_db, "rag": verify_rag, "airflow": verify_airflow, "kafka": verify_kafka,
+                 "fn": verify_fn, "flow": lambda o: verify_lake(o, fnd, label="flow"),
+                 "sched": lambda o: verify_sched(o, fnd), "iceberg": lambda o: verify_iceberg(o, fnd)}
+    for name, o in outs.items():
+        try:
+            verifiers[name](o)
+        except Exception as e:  # noqa: BLE001
+            record(f"{name}: verification ran", False, f"{type(e).__name__}: {e}\n{traceback.format_exc()[-400:]}")
+
+    if not keep:
+        dids = {}
+        for name in ids:
+            try:
+                dids[name] = f.submit(USER, base(name, action="DESTROY"))
+            except Exception as e:  # noqa: BLE001
+                record(f"{name}: destroy accepted", False, str(e))
+        dres = f.wait(dids, timeout=2400)
+        for name, (st, err, _) in dres.items():
+            record(f"{name}: destroyed", st == "DONE", err or st)
+        cc = sf.client(oci.container_instances.ContainerInstanceClient)
+        left = [x.display_name for x in cc.list_container_instances(compartment_id=fnd["compartments"]["sandboxes"]).data.items
+                if x.display_name.startswith("sbx-" + PREFIX) and x.lifecycle_state not in ("DELETED", "DELETING")]
+        osc = sf.client(oci.object_storage.ObjectStorageClient)
+        ns = osc.get_namespace().data
+        lb = [b.name for b in osc.list_buckets(ns, fnd["compartments"]["sandboxes"]).data if b.name.startswith("sbx-" + PREFIX)]
+        record("cleanup: no e2e container instances or buckets left", not left and not lb, f"instances {left} buckets {lb}")
+        hist = [h["sandbox_id"] for h in f.ajax(USER, "history", {})]
+        built = [n for n, (st, _, _) in results.items() if st == "DONE"]
+        record("cleanup: destroyed sandboxes appear in History", all((PREFIX + n) in hist for n in built), str([h for h in hist if h.startswith(PREFIX)])[:200])
+
+    return results
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--kafka", action="store_true")
@@ -529,70 +593,38 @@ def main():
     if only:
         todo = {k: v for k, v in todo.items() if k in only}
 
-    ids = {}
-    for name, payload in todo.items():
-        try:
-            ids[name] = f.submit(USER, payload)
-            log(f"submitted {name} as request {ids[name]}")
-        except Exception as e:  # noqa: BLE001
-            record(f"{name}: request accepted by the page's back end", False, str(e))
-    for name in ids:
-        record(f"{name}: request accepted by the page's back end", True)
-
     for name, fn in (("ai", verify_ai), ("users", verify_isolation)):
         try:
             fn(f)
         except Exception as e:  # noqa: BLE001
             record(f"{name}: checks ran", False, f"{type(e).__name__}: {e}")
 
-    results = f.wait(ids, timeout=5400 if a.kafka else 2400)
-    outs = {}
-    for name, (st, err, out) in results.items():
-        if name in EXPECTED_FAIL:
-            record(f"{name}: refused at once with a plain reason", st == "FAILED" and EXPECTED_FAIL[name] in str(err or ""),
-                   f"{st}: {str(err or '')[:200]}")
-            continue
-        record(f"{name}: sandbox built by the worker", st == "DONE", err or st)
-        if st == "DONE":
-            outs[name] = out
-            record(f"{name}: expiry stamped on the sandbox", bool((out.get("sandbox") or {}).get("expires")), (out.get("sandbox") or {}).get("expires"))
-            if out.get("warnings"):
-                # A region limit the factory worked around (public IP instead of a
-                # gateway, no Data Catalog) is the tenancy's ceiling, not a defect:
-                # seven sandboxes at once will always exceed a limit of five.
-                limits = all(("limit" in w and ("Gateway" in w or "Catalog" in w)) for w in out["warnings"])
-                record(f"{name}: built {'within region limits (fallback noted)' if limits else 'without warnings'}",
-                       limits, "; ".join(out["warnings"])[:300])
-    verifiers = {"web": lambda o: verify_web(o), "data": lambda o: verify_data(o, fnd), "lake": lambda o: verify_lake(o, fnd),
-                 "db": verify_db, "rag": verify_rag, "airflow": verify_airflow, "kafka": verify_kafka,
-                 "fn": verify_fn, "flow": lambda o: verify_lake(o, fnd, label="flow"),
-                 "sched": lambda o: verify_sched(o, fnd), "iceberg": lambda o: verify_iceberg(o, fnd)}
-    for name, o in outs.items():
-        try:
-            verifiers[name](o)
-        except Exception as e:  # noqa: BLE001
-            record(f"{name}: verification ran", False, f"{type(e).__name__}: {e}\n{traceback.format_exc()[-400:]}")
-
-    if not a.keep:
-        dids = {}
-        for name in ids:
-            try:
-                dids[name] = f.submit(USER, base(name, action="DESTROY"))
-            except Exception as e:  # noqa: BLE001
-                record(f"{name}: destroy accepted", False, str(e))
-        dres = f.wait(dids, timeout=2400)
-        for name, (st, err, _) in dres.items():
-            record(f"{name}: destroyed", st == "DONE", err or st)
-        cc = sf.client(oci.container_instances.ContainerInstanceClient)
-        left = [x.display_name for x in cc.list_container_instances(compartment_id=fnd["compartments"]["sandboxes"]).data.items
-                if x.display_name.startswith("sbx-" + PREFIX) and x.lifecycle_state not in ("DELETED", "DELETING")]
-        osc = sf.client(oci.object_storage.ObjectStorageClient)
-        ns = osc.get_namespace().data
-        lb = [b.name for b in osc.list_buckets(ns, fnd["compartments"]["sandboxes"]).data if b.name.startswith("sbx-" + PREFIX)]
-        record("cleanup: no e2e container instances or buckets left", not left and not lb, f"instances {left} buckets {lb}")
-        hist = [h["sandbox_id"] for h in f.ajax(USER, "history", {})]
-        built = [n for n, (st, _, _) in results.items() if st == "DONE"]
-        record("cleanup: destroyed sandboxes appear in History", all((PREFIX + n) in hist for n in built), str([h for h in hist if h.startswith(PREFIX)])[:200])
+    # Waves: every case is one user's sandbox, and a region has only so many
+    # gateways and catalogs, so at most WAVE run at once; the test user's
+    # sandbox limit is raised for the run and put back afterwards.
+    wave = int(os.environ.get("SBX_E2E_WAVE", "6"))
+    cur = f.conn.cursor()
+    cur.execute(f"select value from {controldb.SCHEMA}.factory_config where key = 'max_sandboxes_per_user'")
+    row = cur.fetchone()
+    cap_before = row[0] if row else None
+    def set_cap(v):
+        if v is None:
+            cur.execute(f"delete from {controldb.SCHEMA}.factory_config where key = 'max_sandboxes_per_user'")
+        else:
+            cur.execute(f"""merge into {controldb.SCHEMA}.factory_config c using (select 'max_sandboxes_per_user' key, :v value from dual) s
+                            on (c.key = s.key) when matched then update set c.value = s.value
+                            when not matched then insert (key, value) values (s.key, s.value)""", v=str(v))
+        f.conn.commit()
+    names = list(todo)
+    results = {}
+    try:
+        set_cap(max(int(cap_before or 3), wave + 1))
+        for w0 in range(0, len(names), wave):
+            part = {n: todo[n] for n in names[w0:w0 + wave]}
+            log(f"wave {w0 // wave + 1}: {', '.join(part)}")
+            results.update(run_wave(f, fnd, part, a.keep))
+    finally:
+        set_cap(cap_before)
 
     ts = dt.datetime.now().strftime("%Y%m%d-%H%M")
     rep = HERE / "reports"

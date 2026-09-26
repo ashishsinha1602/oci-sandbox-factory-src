@@ -370,6 +370,17 @@ def enable_select_ai(outputs: dict, region: str, cfg: dict) -> None:
             """)
             owners = [r[0] for r in cur.fetchall()] or ["ADMIN"]
             object_list = [{"owner": o} for o in owners]
+            # With an explicit https endpoint the database opens the connection
+            # itself, which a new database refuses (ORA-24247) until the host
+            # has an ACE for the user asking.
+            cur.execute("""
+                begin
+                  dbms_network_acl_admin.append_host_ace(
+                    host => :h,
+                    ace  => xs$ace_type(privilege_list => xs$name_list('http', 'connect', 'resolve'),
+                                        principal_name => 'ADMIN', principal_type => xs_acl.ptype_db));
+                end;
+            """, h=f"inference.generativeai.{region}.oci.oraclecloud.com")
             cur.execute("""
                 begin
                   begin dbms_cloud_ai.drop_profile('SANDBOX_AI'); exception when others then null; end;

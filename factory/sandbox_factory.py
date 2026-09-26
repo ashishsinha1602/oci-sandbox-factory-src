@@ -751,7 +751,7 @@ def prepare_functions(functions: list | None, sandbox_id: str, cfg: dict) -> lis
                 files = oci_build.fetch_github_folder(repo_url, sub)
         tag = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d%H%M%S")
         name = re.sub(r"[^a-z0-9-]+", "-", f["name"].lower()).strip("-") or "fn"
-        f["image"] = f"{registry}/{namespace}/sbx/{sandbox_id}/fn-{name}:{tag}"
+        f["image"] = f"{registry}/{namespace}/{image_repo(cfg, foundation()['compartments']['control'], sandbox_id, 'fn-' + name)}:{tag}"
         if files:
             folder = pathlib.Path(tempfile.mkdtemp(prefix=f"sbx-fn-{name}-"))
             for fname, text in function_source(f["name"], files).items():
@@ -1059,6 +1059,26 @@ def ensure_public_repo(cfg: dict, compartment_id: str, repo: str):
     )).data
 
 
+def image_repo(cfg: dict, compartment_id: str, sandbox_id: str, name: str) -> str:
+    """The repository path for an image this install builds, created public.
+
+    Repository names are tenancy-wide, so the path carries the install prefix,
+    and when a repository of that name exists somewhere this install cannot
+    see (a retired install, another compartment) the control compartment's id
+    is added: a second install must never fail on the first one's names.
+    """
+    first = f"{PREFIX}/{sandbox_id}/{name}"
+    for repo in (first, f"{PREFIX}-{compartment_id[-6:]}/{sandbox_id}/{name}"):
+        try:
+            ensure_public_repo(cfg, compartment_id, repo)
+            return repo
+        except oci.exceptions.ServiceError as e:
+            if e.status != 409:
+                raise
+            print(f"  repository {repo} exists elsewhere in the tenancy; using another name", flush=True)
+    raise SystemExit(f"could not create an image repository for {sandbox_id}/{name}")
+
+
 def cmd_deploy(args, app_containers: list | None = None):
     """Build an image and run it in a sandbox.
 
@@ -1080,8 +1100,7 @@ def cmd_deploy(args, app_containers: list | None = None):
                       if r.name == cfg["region"])  # us-phoenix-1 -> phx
     registry = f"{region_key}.ocir.io"
 
-    repo = f"sbx/{args.sandbox_id}/{args.name}"
-    ensure_public_repo(cfg, fnd["compartments"]["control"], repo)
+    repo = image_repo(cfg, fnd["compartments"]["control"], args.sandbox_id, args.name)
     tag = args.tag or dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d%H%M%S")
     image = f"{registry}/{namespace}/{repo}:{tag}"
     platform = "linux/arm64" if args.shape.startswith("CI.Standard.A1") else "linux/amd64"

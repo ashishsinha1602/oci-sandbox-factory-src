@@ -67,7 +67,7 @@ function sfInit(){
     var planHas=mode==='describe'&&plan&&['buckets','queues','functions','dataflow_jobs','databases','app_instances'].some(function(k){return plan[k]&&plan[k].length})||(plan&&plan.enable_catalog);
     if(!cfg.enable_adb&&!cfg.enable_kafka&&!cfg.enable_nosql&&!cfg.enable_app&&!planHas){err('Pick at least one piece.');return}
     var git=$('#sf-git').value.trim(), payload={sandbox_id:id, ttl_days:+$('#sf-ttl').value, enable_adb:cfg.enable_adb, enable_kafka:cfg.enable_kafka, enable_nosql:cfg.enable_nosql, enable_app:cfg.enable_app,
-      action:(cfg.enable_app&&git)?'DEPLOY':'CREATE', git_url:git||null, app_image:$('#sf-image').value.trim()||null, app_port:+$('#sf-port').value||80, text:mode==='describe'?$('#sf-text').value.trim():null};
+      action:(cfg.enable_app&&git)?'DEPLOY':'CREATE', git_url:git||null, app_image:$('#sf-image').value.trim()||null, app_port:+$('#sf-port').value||80, text:mode==='describe'?$('#sf-text').value.trim():null, env:envFrom(document.querySelector('#sf-form-env'))};
     if(mode==='describe'&&plan){ if(plan.containers&&plan.containers.length)payload.containers=plan.containers; if(plan.seed_sql)payload.seed_sql=plan.seed_sql;
       payload.buckets=nz(plan.buckets); payload.queues=nz(plan.queues); payload.functions=nz(plan.functions); payload.dataflow_jobs=nz(plan.dataflow_jobs);
       payload.databases=nz(plan.databases); payload.app_instances=nz(plan.app_instances); payload.enable_catalog=!!plan.enable_catalog; payload.enable_aidp=!!plan.enable_aidp; }
@@ -751,6 +751,38 @@ function sfInit(){
   // Lambda-style (event, context) or Fn-style (ctx, data) handlers: a function.
   function isFunctionCode(files){ return Object.keys(files).some(function(p){return /\.py$/i.test(p)&&/^def \w+\(\s*event\s*,\s*context\s*\)|^def handler\(\s*ctx\b/m.test(files[p]||'')}); }
   function functionFiles(files){ var o={}; Object.keys(files).forEach(function(p){ if(/\.(py|txt|json|ya?ml|cfg|toml)$|(^|\/)Dockerfile$/i.test(p))o[p]=files[p]; }); return o; }
+  // Environment variables the user's code reads: names found in the attached
+  // code (.env / .env.example, os.environ, os.getenv, process.env, config
+  // files) plus any the model listed. The values are typed on the page and go
+  // straight into the request; they never reach the model or the chat history.
+  var FACTORY_ENV=/^(SANDBOX_|ADB_|KAFKA_|NOSQL_|OCI_REGION$|CHAT_MODEL$|DATA_BUCKET$|BUCKET_|OBJECT_NAMESPACE$|DATAFLOW_APP_NAME$|DATA_CATALOG_NAME$|PIPELINE_SCHEDULE$|AIRFLOW|PATH$|HOME$|PORT$|PYTHON|LANG$)/;
+  function envNamesFrom(files, extra){
+    var names={};
+    Object.keys(files||{}).forEach(function(p){
+      var c=files[p]||'', base=p.split('/').pop();
+      if(/^\.env(\..*)?$/.test(base)||/\.(env|ini|cfg|toml|properties)$/i.test(base)){
+        c.split('\n').forEach(function(l){var m=l.match(/^\s*(?:export\s+)?([A-Z][A-Z0-9_]{1,127})\s*=/); if(m)names[m[1]]=1;});
+      }
+      var re=/(?:os\.environ(?:\.get)?\s*[\[(]\s*|os\.getenv\s*\(\s*|process\.env\.|System\.getenv\s*\(\s*)['"]?([A-Z][A-Z0-9_]{1,127})['"]?/g, m;
+      while((m=re.exec(c)))names[m[1]]=1;
+    });
+    (extra||[]).forEach(function(n){ if(/^[A-Z][A-Z0-9_]{1,127}$/.test(n))names[n]=1; });
+    return Object.keys(names).filter(function(n){return !FACTORY_ENV.test(n)}).sort();
+  }
+  // An editor of KEY=value lines under a proposal; prefilled with the names found.
+  function envEditorHtml(names, open){
+    return '<details class="sf-envbox"'+(open?' open':'')+' style="margin:8px 0"><summary style="cursor:pointer;font-size:13px">Environment variables'+(names.length?' <b>('+names.length+' needed)</b>':' (optional)')+'</summary>'
+      +'<div style="font-size:12px;color:#6b7280;margin:4px 0">'+(names.length?'Your code reads these. Fill in the values, one per line; leave a line empty if it is not needed.':'KEY=value, one per line. Injected into every container, function and Spark job of this sandbox.')
+      +' Values stay in this request and are never sent to the AI.</div>'
+      +'<textarea class="sf-env" rows="'+Math.min(8,Math.max(3,names.length+1))+'" style="width:100%;font-family:monospace;font-size:12px" spellcheck="false" placeholder="API_KEY=...">'+esc(names.map(function(n){return n+'='}).join('\n'))+'</textarea></details>';
+  }
+  function envFrom(container){
+    var ta=container&&container.querySelector('.sf-env'); if(!ta)return undefined;
+    var out={}, any=false;
+    ta.value.split('\n').forEach(function(l){ var m=l.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]{0,127})\s*=\s*(.*?)\s*$/); if(!m)return;
+      var v=m[2]; if(/^(["']).*\1$/.test(v))v=v.slice(1,-1); if(v!==''){out[m[1]]=v; any=true;} });
+    return any?out:undefined;
+  }
   function correctAction(a){
     if(!CODE||a.type==='destroy'||a.type==='retry')return null;
     var files=CODE.files||{};
@@ -964,13 +996,16 @@ function sfInit(){
         var box=document.createElement('div'); box.className='sf-act';
         if(a.type!=='destroy'&&a.type!=='retry')d.insertAdjacentHTML('beforeend','<div class="sf-w-plan">'+infraHtml(a)+'</div>');
         var label=a.type==='destroy'?'Destroy '+a.sandbox_id:(a.type==='retry'?(a.ttl_days?'Set '+a.sandbox_id+' to '+a.ttl_days+' days':'Retry setup of '+a.sandbox_id):(a.type==='deploy'?'Deploy it':'Create it'));
+        var envNames=(a.type==='destroy'||a.type==='retry')?[]:envNamesFrom(CODE?CODE.files:{}, a.env_names);
+        var envBox=(a.type==='destroy'||a.type==='retry')?null:document.createElement('div');
+        if(envBox){ envBox.innerHTML=envEditorHtml(envNames, envNames.length>0); d.appendChild(envBox); }
         box.innerHTML='<button type="button" class="sf-btn">'+esc(label)+'</button><button type="button" class="sf-btn sec">Not now</button>';
         d.appendChild(box);
         box.children[0].onclick=function(){ box.innerHTML='<span class="sf-spin"></span>Queueing...';
           if(a.type==='retry'){ call('retry',{sandbox_id:a.sandbox_id, ttl_days:a.ttl_days||undefined}).then(function(s){ box.innerHTML = s.err ? '<span class="sf-err">'+esc(s.err)+'</span>' : '<span class="sf-chip">Queued as request #'+esc(s.id)+'</span>'; refresh(); }); return; }
           var payload=a.type==='destroy'?{sandbox_id:a.sandbox_id,action:'DESTROY',ttl_days:1,enable_adb:false,enable_kafka:false,enable_app:false}
             :{sandbox_id:a.sandbox_id,action:a.git_url?'DEPLOY':'CREATE',ttl_days:a.ttl_days||3,enable_adb:!!a.enable_adb,enable_kafka:!!a.enable_kafka,enable_nosql:!!a.enable_nosql,enable_app:!!a.enable_app||!!a.git_url||!!a.app_image||!!(a.containers&&a.containers.length),
-              app_image:a.app_image||null,git_url:a.git_url||null,app_port:a.app_port||80,text:t,containers:(a.containers&&a.containers.length)?a.containers:undefined,seed_sql:a.seed_sql||undefined,
+              app_image:a.app_image||null,git_url:a.git_url||null,app_port:a.app_port||80,text:t,containers:(a.containers&&a.containers.length)?a.containers:undefined,seed_sql:a.seed_sql||undefined,env:envFrom(envBox),
               enable_catalog:!!a.enable_catalog,enable_aidp:!!a.enable_aidp,databases:nz(a.databases),buckets:nz(a.buckets),queues:nz(a.queues),
               functions:nz(a.functions),dataflow_jobs:nz(a.dataflow_jobs),app_instances:nz(a.app_instances),
               app_files:a.app_files?JSON.stringify(a.app_files):undefined};

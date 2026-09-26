@@ -158,7 +158,7 @@ print("e2e iceberg rows", spark.table("lake.e2e.squares").count())
 
 def cases(fn_image: str | None):
     c = {
-        "web": base("web", enable_app=True, app_image="docker.io/library/nginx:alpine", app_port=80),
+        "web": base("web", enable_app=True, app_image="docker.io/library/nginx:alpine", app_port=80, env={"GREETING": "hello", "API_KEY": "e2e-secret"}),
         "data": base("data", enable_nosql=True, buckets=[{"name": "files"}], queues=[{"name": "jobs"}],
                      **({"functions": [{"name": "hello", "image": fn_image}]} if fn_image else {})),
         "lake": base("lake", buckets=[{"name": "data"}], enable_catalog=True,

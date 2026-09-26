@@ -566,6 +566,12 @@ def build_variables(args, fnd: dict, cfg: dict, app_containers: list | None) -> 
         v["dataflow_jobs"] = json.dumps(args.dataflow_jobs)
     if getattr(args, "functions", None):
         v["functions"] = json.dumps(args.functions)
+    if getattr(args, "user_env", None):
+        # names as the shell allows; values are never logged or output
+        bad = [k for k in args.user_env if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,127}", k)]
+        if bad:
+            raise SystemExit(f"environment variable names must be letters, digits and underscores: {', '.join(bad)}")
+        v["user_env"] = json.dumps(args.user_env)
     if getattr(args, "app_instances", None):
         v["app_instances"] = json.dumps([{**i, "containers": ui_first(i.get("containers") or [])} for i in args.app_instances])
     if getattr(args, "adb_databases", None):

@@ -248,6 +248,7 @@ def setup(argv: list[str]) -> None:
                           ("enable_catalog", "varchar2(1) default 'N' not null"),
                           ("enable_aidp", "varchar2(1) default 'N' not null"),
                           ("catalog_assets", "clob"),
+                          ("user_env", "clob"),
                           ("worker_name", "varchar2(64)")):
             if not exists("select count(*) from dba_tab_columns where owner = :1 and table_name = 'SANDBOX_REQUESTS' and column_name = :2",
                           SCHEMA, col.upper()):

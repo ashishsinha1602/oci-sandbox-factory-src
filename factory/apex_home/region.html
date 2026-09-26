@@ -122,6 +122,7 @@
         <div class="sf-row">
           <div class="sf-field"><label>Container image</label><input id="sf-image" value="docker.io/library/nginx:alpine"></div>
           <div class="sf-field" style="flex:0 1 140px"><label>Port</label><input id="sf-port" type="number" value="80"></div>
+          <div class="sf-field" id="sf-form-env" style="flex:1 1 100%"><label>Environment variables (optional)</label><textarea class="sf-env" rows="3" style="width:100%;font-family:monospace;font-size:12px" spellcheck="false" placeholder="API_KEY=...&#10;one per line; injected into every container, function and Spark job"></textarea></div>
         </div>
       </div>
       <div class="sf-actions">

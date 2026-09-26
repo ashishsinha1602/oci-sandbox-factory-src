@@ -149,12 +149,12 @@ def claim(conn):
         select id, requester, sandbox_id, action, ttl_days, enable_adb, adb_tier, enable_kafka,
                kafka_mode, enable_app, app_image, git_url, app_port, request_text, seed_sql, app_containers, app_files,
                seed_key, app_template, enable_nosql, adb_databases, functions, app_instances,
-               buckets, queues, dataflow_jobs, enable_catalog, catalog_assets, enable_aidp
+               buckets, queues, dataflow_jobs, enable_catalog, catalog_assets, enable_aidp, user_env
         from sbx.sandbox_requests where id = :1""", [row[0]])
     cols = [d[0].lower() for d in cur.description]
     row = dict(zip(cols, cur.fetchone()))
     for k in ("seed_sql", "app_containers", "app_files", "adb_databases",
-              "functions", "app_instances", "buckets", "queues", "dataflow_jobs", "catalog_assets", "request_text"):
+              "functions", "app_instances", "buckets", "queues", "dataflow_jobs", "catalog_assets", "request_text", "user_env"):
         if hasattr(row.get(k), "read"):
             row[k] = row[k].read()
     return row
@@ -191,6 +191,7 @@ def factory_args(req: dict) -> argparse.Namespace:
         enable_catalog=req.get("enable_catalog") == "Y",
         enable_aidp=req.get("enable_aidp") == "Y",
         catalog_assets=json.loads(req["catalog_assets"]) if req.get("catalog_assets") else None,
+        user_env={str(k): str(v) for k, v in (json.loads(req["user_env"]) or {}).items()} if req.get("user_env") else None,
     )
 
 

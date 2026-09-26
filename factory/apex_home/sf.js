@@ -736,6 +736,35 @@ function sfInit(){
       +(done&&o?'<button type="button" class="sf-btn sec" data-open="'+esc(r.sandbox_id)+'">Details &amp; passwords</button>':'')
       +(r.status==='FAILED'&&r.error?'<span class="sf-err">'+esc(String(r.error).slice(0,140))+'</span>':'')+'</div></div>';
   }
+  // What a proposed build costs, from the live price list and the sizes the
+  // sandbox stack really uses (paid database 2 ECPU + 20 GB, app container
+  // A1 1 OCPU / 4 GB, Kafka 1 broker / 1 OCPU). Services without a published
+  // hourly rate are listed as per use, never given a made-up number.
+  function costFor(a){
+    var P=window.__sfPrices||{}, H=730, items=[], total=0, perUse=[];
+    if(!P.adb_ecpu&&!P.a1_ocpu)return null;
+    var add=function(name,detail,m){items.push({name:name,detail:detail,monthly_usd:m==null?null:Math.round(m*100)/100}); if(m!=null)total+=m;};
+    var w=a.workload||null;
+    var dbs=((a.enable_adb||(w&&w.oracle))?1:0)+((a.databases||[]).length);
+    if(dbs&&P.adb_ecpu){ var m=2*P.adb_ecpu*H+20*(P.adb_storage||0);
+      add('Autonomous Database'+(dbs>1?' x'+dbs:''),'paid, 2 ECPU + 20 GB, billed per ECPU-hour while it exists',m*dbs); }
+    var apps=((a.enable_app||a.git_url||a.app_image||a.app_template||(a.containers&&a.containers.length)||w)?1:0)+((a.app_instances||[]).length);
+    if(apps&&P.a1_ocpu){ var c=(P.a1_ocpu+4*(P.a1_memory||0))*H;
+      add('Container instance'+(apps>1?' x'+apps:''),'1 OCPU / 4 GB (Arm), billed per hour while it runs',c*apps); }
+    if(a.enable_kafka&&P.kafka_ocpu) add('Kafka cluster','1 broker, 1 OCPU, 50 GB, billed per OCPU-hour',P.kafka_ocpu*H);
+    if(a.enable_nosql) perUse.push('NoSQL (per read/write unit and GB)');
+    if(w||(a.dataflow_jobs||[]).length) perUse.push('Data Flow (only while a Spark run lasts)');
+    if(a.enable_catalog||(w&&w.catalog)) perUse.push('Data Catalog');
+    if((a.functions||[]).length) perUse.push('Functions (per invocation)');
+    if((a.queues||[]).length) perUse.push('Queue (per request)');
+    if((a.buckets||[]).length||w) perUse.push('Object Storage (per GB stored)');
+    if(a.enable_aidp) perUse.push('AI Data Platform (per its compute)');
+    perUse.forEach(function(n){add(n.split(' (')[0],(n.match(/\((.*)\)/)||[])[1]||'per use',null);});
+    if(!items.length)return null;
+    var days=Number(a.ttl_days)||3, life=total*days*24/H;
+    return {items:items,total_usd:Math.round(total*100)/100,
+      note:'From Oracle list prices'+(window.__sfRegion?' ('+window.__sfRegion+')':'')+'. For this sandbox’s '+days+'-day lifetime: $'+life.toFixed(2)+' plus per-use services. It is deleted when the lifetime ends.'};
+  }
   function widgetsHtml(j,reply,asked){
     var rows=window.__sfRows||[], h='';
     var all=/(running|what do i have|my sandbox|sandboxes|list|show|resources|active|urls?|links?)/i.test(asked||'');
@@ -776,6 +805,8 @@ function sfInit(){
       var j=modelJson(r.raw);
       var reply=j&&j.reply?j.reply:(r.raw||''); pushHist({role:'assistant',text:reply});
       var d=addMsg('ai',fmt(reply));
+      // a build is priced here, from the price list, not by the model's arithmetic
+      if(j&&j.action&&/^(create|deploy)$/.test(j.action.type||'')){ var cc=costFor(j.action); if(cc)j.cost=cc; }
       d.insertAdjacentHTML('beforeend',widgetsHtml(j,reply,t));
       var qs=j&&j.questions, hasAct=!!(j&&j.action&&j.action.type); if(qs&&qs.length){
         // With a proposal on the table the questions are optional refinements:
@@ -977,6 +1008,8 @@ function sfInit(){
     if(!c)return;
     if(c.registry_prefix)OCIR=c.registry_prefix;
     if(c.region)window.__sfRegion=c.region;
+    // the live price list ("key=price/unit; ..."), for cost tables computed here, not by the model
+    window.__sfPrices={}; (c.prices||'').split(';').forEach(function(kv){var m=kv.match(/^\s*([a-z0-9_]+)=([0-9.]+)/i); if(m)window.__sfPrices[m[1]]=Number(m[2]);});
     // offer only the models this region serves (the tenancy profile), default first
     var sel=document.querySelector('#sf-model');
     if(sel&&c.models&&c.models.length){

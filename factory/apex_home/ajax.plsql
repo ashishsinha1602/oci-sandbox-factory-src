@@ -306,6 +306,7 @@ begin
     l_out.put('registry_prefix', l_registry);
     l_out.put('region', l_region);
     l_out.put('models', json_array_t.parse(cfg_value('genai_models', '[]')));
+    l_out.put('prices', l_prices);
     l_out.put('model', c_genai_model);
     l_out.put('user', :APP_USER);
     l_out.put('cap', to_number(cfg_value('max_sandboxes_per_user', '3')));

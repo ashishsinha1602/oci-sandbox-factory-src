@@ -12,7 +12,10 @@ resource "random_password" "app_admin" {
 }
 
 locals {
-  app_url = var.enable_control_adb ? try(replace(oci_database_autonomous_database.control[0].connection_urls[0].apex_url, "/ords/apex", "/ords/r/sbx/sandbox-factory/"), "") : ""
+  # the installer's own choice from the form, or a generated one
+  app_admin_user     = upper(var.app_admin_user)
+  app_admin_password = var.app_admin_password != "" ? var.app_admin_password : random_password.app_admin.result
+  app_url            = var.enable_control_adb ? try(replace(oci_database_autonomous_database.control[0].connection_urls[0].apex_url, "/ords/apex", "/ords/r/sbx/sandbox-factory/"), "") : ""
 }
 
 output "app_url" {
@@ -21,10 +24,10 @@ output "app_url" {
 }
 
 output "app_admin_user" {
-  value = "SBXADMIN"
+  value = local.app_admin_user
 }
 
 output "app_admin_password" {
-  value     = random_password.app_admin.result
+  value     = local.app_admin_password
   sensitive = true
 }

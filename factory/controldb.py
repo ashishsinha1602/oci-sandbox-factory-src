@@ -13,6 +13,7 @@ outputs at runtime; nothing is written to disk.
 from __future__ import annotations
 
 import json
+import re
 import os
 import pathlib
 import secrets
@@ -26,7 +27,11 @@ import oracledb
 FOUNDATION_DIR = pathlib.Path(__file__).resolve().parent.parent / "foundation"
 SCHEMA = "SBX"
 WORKSPACE = "SBX"
-WORKSPACE_ADMIN = "SBXADMIN"
+# The first login, chosen on the install form (foundation/app.tf). Checked here
+# too because it is written into SQL: letters, digits, underscore only.
+WORKSPACE_ADMIN = os.environ.get("SBX_APP_ADMIN_USER", "SBXADMIN").upper()
+if not re.fullmatch(r"[A-Z][A-Z0-9_]{2,29}", WORKSPACE_ADMIN):
+    raise SystemExit(f"SBX_APP_ADMIN_USER {WORKSPACE_ADMIN!r}: use 3-30 letters, digits or underscores, starting with a letter")
 
 
 def _tf_output(name: str, raw: bool = False) -> str:

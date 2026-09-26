@@ -148,7 +148,8 @@ resource "oci_container_instances_container_instance" "worker" {
       SBX_CONTROL_CONNECT  = oci_database_autonomous_database.control[0].connection_strings[0].all_connection_strings["LOW"]
       SBX_ADMIN_PASSWORD   = random_password.control_adb_admin[0].result
       # the first login (app.tf) and who owns what the install creates
-      SBX_APP_ADMIN_PASSWORD = random_password.app_admin.result
+      SBX_APP_ADMIN_USER     = local.app_admin_user
+      SBX_APP_ADMIN_PASSWORD = local.app_admin_password
       SBX_OWNER              = var.owner
       SBX_APP_URL            = local.app_url
       SBX_FOUNDATION = jsonencode({

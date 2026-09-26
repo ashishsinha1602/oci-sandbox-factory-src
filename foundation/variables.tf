@@ -125,3 +125,26 @@ variable "team" {
   default     = "personal"
   description = "Default team tag value."
 }
+
+variable "app_admin_user" {
+  type        = string
+  default     = "SBXADMIN"
+  description = "The application's first login. It signs in as the factory administrator and creates the other users."
+  validation {
+    condition     = can(regex("^[A-Za-z][A-Za-z0-9_]{2,29}$", var.app_admin_user))
+    error_message = "3 to 30 characters: letters, digits and underscores, starting with a letter."
+  }
+}
+
+variable "app_admin_password" {
+  type        = string
+  default     = ""
+  sensitive   = true
+  description = "Password for the first login. Leave empty to have one generated; it is shown in the stack outputs."
+  validation {
+    condition = var.app_admin_password == "" || (length(var.app_admin_password) >= 12 && length(var.app_admin_password) <= 30
+      && can(regex("[A-Z]", var.app_admin_password)) && can(regex("[a-z]", var.app_admin_password))
+    && can(regex("[0-9]", var.app_admin_password)) && !can(regex("[\"' \t]", var.app_admin_password)))
+    error_message = "12 to 30 characters with an upper-case letter, a lower-case letter and a digit, and no quotes or spaces."
+  }
+}

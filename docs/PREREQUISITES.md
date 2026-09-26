@@ -145,8 +145,9 @@ everything else still works.
 ## 5. Install
 
 **One click:** the **Deploy to Oracle Cloud** button in the README opens the stack
-in Resource Manager. Fill in the parent compartment, prefix, your email and a
-budget; Plan; Apply. Takes about 15 minutes.
+in Resource Manager. Fill in the parent compartment, prefix, your email, a
+budget, and the application's first login (admin username and password; leave
+the password empty to have one generated); Plan; Apply. Takes about 15 minutes.
 
 **Or from a laptop:**
 ```
@@ -155,8 +156,9 @@ terraform init
 terraform apply -var tenancy_ocid=... -var region=... -var owner=you@example.com -var budget_alert_email=you@example.com -var current_user_ocid=...
 ```
 
-**Then:** open the `app_url` output and sign in with `app_admin_user` /
-`app_admin_password`. On their first start (a few minutes after the apply) the
+**Then:** open the `app_url` output and sign in with the admin username and
+password you chose (both are also in the stack outputs `app_admin_user` /
+`app_admin_password`). On their first start (a few minutes after the apply) the
 workers create the application, load the assistant's prompts and detect the
 region's AI models; until then the URL answers 404.
 

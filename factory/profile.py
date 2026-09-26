@@ -19,6 +19,7 @@ model can be listed in a region and still 404 on demand (llama-3.3 and grok-4
 in us-phoenix-1). The probe is repeated only when a saved model stops answering.
 """
 import json
+import os
 import sys
 
 import oci
@@ -70,7 +71,9 @@ def detect() -> dict:
         "region": region,
         "region_key": key,
         "namespace": ns,
-        "registry_prefix": f"{key}.ocir.io/{ns}/sbx/",
+        # where the shipped starter images (Studio, the MCP server) are published;
+        # the images users build go to this tenancy's own registry (cmd_deploy)
+        "registry_prefix": os.environ.get("SBX_RELEASE_REGISTRY", "phx.ocir.io/ax3sbu0rnjhx/sandbox-factory/"),
         "genai_region": region,
         "genai_models": json.dumps([{"id": m, "label": lbl} for m, lbl in models]),
         "genai_model": models[0][0] if models else "",

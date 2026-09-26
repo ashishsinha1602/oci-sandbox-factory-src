@@ -139,12 +139,14 @@ resource "oci_container_instances_container_instance" "worker" {
     display_name = "worker"
     image_url    = var.worker_image
     environment_variables = {
-      WORKER_NAME         = each.key
-      SBX_PREFIX          = var.prefix
-      SBX_WORKER_KIND     = "oci"
-      SBX_BUILD_MODE      = "kaniko"
-      SBX_CONTROL_CONNECT = oci_database_autonomous_database.control[0].connection_strings[0].all_connection_strings["LOW"]
-      SBX_ADMIN_PASSWORD  = random_password.control_adb_admin[0].result
+      WORKER_NAME = each.key
+      SBX_PREFIX  = var.prefix
+      # the shipped starter images live next to the worker image (…/sandbox-factory/)
+      SBX_RELEASE_REGISTRY = regex("^(.*/)[^/]+$", split(":", var.worker_image)[0])[0]
+      SBX_WORKER_KIND      = "oci"
+      SBX_BUILD_MODE       = "kaniko"
+      SBX_CONTROL_CONNECT  = oci_database_autonomous_database.control[0].connection_strings[0].all_connection_strings["LOW"]
+      SBX_ADMIN_PASSWORD   = random_password.control_adb_admin[0].result
       # the first login (app.tf) and who owns what the install creates
       SBX_APP_ADMIN_PASSWORD = random_password.app_admin.result
       SBX_OWNER              = var.owner

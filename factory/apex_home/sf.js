@@ -279,9 +279,9 @@ function sfInit(){
     {k:'rag', t:'Knowledge base (upload, crawl, ask)', d:'Upload PDFs or crawl a URL. Oracle parses, chunks and embeds them, then you ask the documents or the database itself.',
      p:{enable_adb:true,seed_key:'rag',app_template:'rag',app_port:8080}, tags:['23ai','AI Vector Search','RAG']},
     {k:'mcp', t:'MCP server + Studio', d:'An MCP endpoint over seeded sales data, with a chat UI served at /studio.',
-     p:{enable_adb:true,seed_key:'sales',containers:[{name:'studio',image:'{R}studio/app:latest',port:8770},{name:'mcp',image:'{R}schemagate/app:latest',port:8765}]}, tags:['MCP','Studio','Select AI']},
+     p:{enable_adb:true,seed_key:'sales',containers:[{name:'studio',image:'{R}studio:release',port:8770},{name:'mcp',image:'{R}schemagate:release',port:8765}]}, tags:['MCP','Studio','Select AI']},
     {k:'mcponly', t:'MCP endpoint only', d:'Just the MCP server over a seeded database, to point Claude or your own agent at.',
-     p:{enable_adb:true,seed_key:'sales',containers:[{name:'mcp',image:'{R}schemagate/app:latest',port:8765}]}, tags:['MCP','Autonomous DB']},
+     p:{enable_adb:true,seed_key:'sales',containers:[{name:'mcp',image:'{R}schemagate:release',port:8765}]}, tags:['MCP','Autonomous DB']},
     {k:'api', t:'Orders REST API', d:'A small REST service on top of the orders schema, on a public HTTPS URL.',
      p:{enable_adb:true,seed_key:'sales',containers:[{name:'api',image:'{R}orders-demo/app:latest',port:8080}]}, tags:['REST API','Autonomous DB']},
     {k:'empty', t:'Empty 23ai database', d:'A clean Autonomous Database with Select AI and AI cataloguing already switched on.',
@@ -540,8 +540,8 @@ function sfInit(){
         var sql=f.querySelector('#sf-f-sql').value.trim();
         if(!sql){f.querySelector('#sf-f-sql').focus();return}
         var extra=f.querySelector('#sf-f-extra').value, cs=[];
-        if(extra==='mcp'||extra==='both')cs.push({name:'mcp',image:'{R}schemagate/app:latest',port:8765});
-        if(extra==='both')cs.unshift({name:'studio',image:'{R}studio/app:latest',port:8770});
+        if(extra==='mcp'||extra==='both')cs.push({name:'mcp',image:'{R}schemagate:release',port:8765});
+        if(extra==='both')cs.unshift({name:'studio',image:'{R}studio:release',port:8770});
         submitPayload(act,{sandbox_id:newId('sql'),action:'CREATE',ttl_days:+f.querySelector('#sf-f-ttl').value,
           enable_adb:true,enable_kafka:false,enable_app:cs.length>0,app_image:null,git_url:null,app_port:80,
           text:'own SQL loaded from chat',containers:cs.length?cs:undefined,seed_sql:sql},'(created a database with my own SQL)');

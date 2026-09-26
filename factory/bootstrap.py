@@ -62,6 +62,20 @@ def bootstrap() -> None:
               f"model {prof['genai_model'] or 'NONE ANSWERS - chat and Select AI are off'}", flush=True)
     except Exception as e:  # noqa: BLE001 - never stop a worker over it
         print(f"bootstrap: profile not refreshed ({type(e).__name__}: {e})", flush=True)
+    # the assistant's catalogue of ready-made templates, with this install's
+    # release registry filled in (factory/templates.txt)
+    try:
+        import profile as tenancy_profile
+        c = controldb.connect("ADMIN")
+        cur = c.cursor()
+        reg = tenancy_profile.saved(cur).get("registry_prefix", "")
+        text = (HERE / "templates.txt").read_text(encoding="utf-8").strip().replace("{R}", reg)
+        tenancy_profile.save(cur, {"templates": text})
+        c.commit()
+        c.close()
+        print("bootstrap: templates loaded", flush=True)
+    except Exception as e:  # noqa: BLE001
+        print(f"bootstrap: templates not loaded ({type(e).__name__}: {e})", flush=True)
     try:
         import profile as tenancy_profile
         tenancy_profile.refresh_prices()

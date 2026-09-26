@@ -5,4 +5,5 @@ WORKDIR /function
 COPY requirements.txt func.py /function/
 RUN pip install --no-cache-dir -r requirements.txt
 ENV PYTHONPATH=/function
-ENTRYPOINT ["python", "-m", "fdk", "/function/func.py", "handler"]
+# the fdk console script: fdk 0.1.124 dropped "python -m fdk" (no __main__)
+ENTRYPOINT ["fdk", "/function/func.py", "handler"]

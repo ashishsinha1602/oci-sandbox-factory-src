@@ -630,9 +630,9 @@ def handler(ctx, data: io.BytesIO = None):
 FUNCTION_DOCKERFILE = """FROM python:3.11-slim
 WORKDIR /function
 COPY . /function/
-RUN pip install --no-cache-dir fdk{reqs}
+RUN pip install --no-cache-dir fdk==0.1.124{reqs}
 ENV PYTHONPATH=/function
-ENTRYPOINT ["python", "-m", "fdk", "/function/{entry}", "handler"]
+ENTRYPOINT ["fdk", "/function/{entry}", "handler"]
 """
 
 

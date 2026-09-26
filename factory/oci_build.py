@@ -69,7 +69,8 @@ def dockerfile_missing(repo: str, sub_path: str | None, dockerfile: str | None) 
     want = (dockerfile or "Dockerfile").split("/")[-1]
     if want in names:
         return None
-    where = f"{re.sub(r'\.git$', '', repo.split('#')[0])}/{folder}".rstrip("/")
+    base = re.sub(r"\.git$", "", repo.split("#")[0])
+    where = f"{base}/{folder}".rstrip("/")
     py = [n for n in names if n and n.endswith(".py")] or [n for n in names if n in ("dags", "spark", "jobs")]
     hint = (" It looks like a data pipeline (DAGs or Spark jobs): ask the assistant to build it as a pipeline, "
             "not to deploy it as an app.") if py or {"dags", "spark"} & names else " Add a Dockerfile to deploy it as an app."

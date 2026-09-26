@@ -881,6 +881,8 @@ function sfInit(){
       }
       var a=j&&j.action;
       if(a&&a.type){
+        // the name the model picks must fit the rule (2-20: a-z, 0-9, dash) or the build is refused
+        if(a.sandbox_id){ a.sandbox_id=String(a.sandbox_id).toLowerCase().replace(/[^a-z0-9-]+/g,'-').replace(/^[^a-z]+/,'').slice(0,20).replace(/-+$/,'')||'sandbox'; }
         var bad=null; try{ bad=correctAction(a); }catch(e){ console.error('correct', e); }
         if(bad){ d.insertAdjacentHTML('beforeend','<div class="sf-err" style="margin-top:8px">'+esc(bad)+'</div>'); a=null; }
       }

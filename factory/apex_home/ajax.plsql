@@ -205,14 +205,14 @@ declare
 
   -- submit: copy JSON values into locals first (JSON object methods are not allowed inside SQL)
   procedure do_submit is
-    l_sid    varchar2(20)   := lower(l_in.get_string('sandbox_id'));
-    l_act    varchar2(10)   := nvl(l_in.get_string('action'), 'CREATE');
+    l_sid    varchar2(200)  := lower(substr(l_in.get_string('sandbox_id'), 1, 200));   -- checked below; a longer name must get the message, not ORA-06502
+    l_act    varchar2(10)   := case when upper(substr(l_in.get_string('action'), 1, 10)) in ('CREATE','DEPLOY','DESTROY') then upper(substr(l_in.get_string('action'), 1, 10)) else 'CREATE' end;
     l_ttl    number         := least(30, greatest(1, round(nvl(l_in.get_number('ttl_days'), 3))));
     l_adb    varchar2(1)    := case when l_in.get_boolean('enable_adb') then 'Y' else 'N' end;
     l_kafka  varchar2(1)    := case when l_in.get_boolean('enable_kafka') then 'Y' else 'N' end;
     l_app    varchar2(1)    := case when l_in.get_boolean('enable_app') then 'Y' else 'N' end;
-    l_image  varchar2(500)  := l_in.get_string('app_image');
-    l_git    varchar2(500)  := l_in.get_string('git_url');
+    l_image  varchar2(4000) := substr(l_in.get_string('app_image'), 1, 4000);
+    l_git    varchar2(4000) := substr(l_in.get_string('git_url'), 1, 4000);
     l_port   number         := nvl(l_in.get_number('app_port'), 80);
     l_req    varchar2(4000) := substr(l_in.get_string('text'), 1, 4000);
     l_seed   clob           := l_in.get_clob('seed_sql');

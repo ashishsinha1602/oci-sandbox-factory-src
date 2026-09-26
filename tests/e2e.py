@@ -489,10 +489,23 @@ def verify_kafka(o):
                   sasl_plain_username=user, sasl_plain_password=pw)
     topic = (k.get("topics") or ["events"])[0]
     msg = f"e2e {uuid.uuid4().hex[:8]}"
-    p = KafkaProducer(**common, request_timeout_ms=30000)
-    md = p.send(topic, msg.encode()).get(timeout=60)
-    p.flush()
-    p.close()
+    # A new cluster elects partition leaders in its first minutes: the first
+    # produce can meet NotLeaderForPartition, which is what a client's retries
+    # are for. Retry across a few minutes before calling it a failure.
+    md = None
+    for attempt in range(8):
+        try:
+            p = KafkaProducer(**common, request_timeout_ms=30000, retries=10, retry_backoff_ms=2000)
+            md = p.send(topic, msg.encode()).get(timeout=90)
+            p.flush()
+            p.close()
+            break
+        except Exception as e:  # noqa: BLE001
+            print(f"  kafka produce attempt {attempt + 1}: {type(e).__name__}", flush=True)
+            time.sleep(20)
+    if md is None:
+        record("kafka: produce and consume from outside OCI", False, "produce failed after 8 attempts")
+        return
     c = KafkaConsumer(topic, **common, auto_offset_reset="earliest", consumer_timeout_ms=30000, group_id="e2e-" + uuid.uuid4().hex[:6])
     seen = [m.value.decode() for m in c]
     record("kafka: produce and consume from outside OCI", msg in seen, f"offset {md.offset}, {len(seen)} messages read")

@@ -21,15 +21,15 @@ GAP = 0.25
 
 SCENES = [
     (1, 0.2, "Meet Sandbox Factory. You chat, and it builds, right inside Oracle Cloud."),
-    (1, 16.0, "Ask for a database with MCP and a chat UI. It plans it, prices it, and builds it in one click."),
-    (1, 39.0, "Point it at a GitHub folder. It reads the code, and deploys the app."),
-    (1, 62.0, "Migrating Airflow and Glue? It maps every piece to OCI, and compares the options."),
-    (1, 89.0, "Hand it the repository, and it builds the whole pipeline."),
+    (1, 16.0, "Ask for a database with MCP and a chat UI. It plans it, prices it from Oracle's price list, and builds it in one click."),
+    (1, 39.0, "Point it at a GitHub folder. It reads the code, and deploys the app with a database."),
+    (1, 62.0, "Now a migration: Airflow writing to S3, and Glue building Iceberg tables. It maps each piece. S3 becomes Object Storage, Glue jobs become Spark on Data Flow, the Glue catalog becomes Data Catalog, and Airflow keeps running your DAGs unchanged.", 17.45),
+    (1, 97.0, "Hand it the repository. It reads the DAG and the Spark job, and builds the pipeline: a bucket for raw and gold data, a Data Flow application for the Spark job, a Data Catalog, Airflow with the DAG loaded, and an Autonomous Database for the gold tables.", 24.5),
     (2, 1.0, "Minutes later, everything is live, with links, credentials, and an expiry date."),
-    (2, 42.0, "Airflow, with the DAG loaded."),
-    (2, 60.0, "A green run. Spark on Data Flow, gold tables in Oracle."),
-    (2, 66.0, "Served straight away as REST."),
-    (2, 84.0, "The app, live on HTTPS."),
+    (2, 42.0, "Airflow is up, with the telemetry DAG loaded."),
+    (2, 60.0, "The run is green, in four steps. It lands raw sensor readings in Object Storage, runs the Spark gold job on Data Flow, registers the bucket in Data Catalog, and loads the gold tables into Oracle."),
+    (2, 66.0, "Daily telemetry and device sessions, queryable in the database, and served straight away as REST."),
+    (2, 84.0, "The app from GitHub, live on HTTPS."),
     (2, 94.0, "Studio, to ask the data in plain English."),
     (2, 126.0, "And agents connect over MCP. They discover the tools, pick the tables, and run the query. That is Sandbox Factory."),
 ]
@@ -44,6 +44,7 @@ FILLERS = [
     "Paid databases stay private. Their tools open through the sandbox gateway.",
     "No tickets, no waiting on an admin. Just ask.",
     "Built for hackathons, proofs of concept, and customer demos.",
+    "Schedule the DAG every fifteen minutes, and the same pipeline runs in micro batches.",
 ]
 
 
@@ -82,40 +83,69 @@ def main(out, cut, p1, p2, voice="Brian"):
     to_out = {1: mapper(s1, 0.0), 2: mapper(s2, len1)}
     video_len = duration(ff, cut)
     scenes = []
-    for k, (part, raw_t, text) in enumerate(SCENES):
+    for k, (part, raw_t, text, *hold_at) in enumerate(SCENES):
         path = os.path.join(work, f"scene{k:02d}.mp3")
-        scenes.append((to_out[part](raw_t), text, path, say(text, path, voice)))
+        scenes.append((to_out[part](raw_t), text, path, say(text, path, voice), hold_at[0] if hold_at else None))
     fillers = []
     for k, text in enumerate(FILLERS):
         path = os.path.join(work, f"filler{k:02d}.mp3")
         fillers.append((text, path, say(text, path, voice)))
-    placed, free = [], 0.0
-    for at, text, path, d in scenes:
-        # fill the gap before this scene line with whatever filler fits
+    # Place each scene line at its moment in the cut. When the previous line is
+    # still speaking, HOLD the video on that moment (freeze the frame) until the
+    # voice is free, so an explanation is never cut short and never drifts.
+    # Gaps before a scene get filler lines about the factory.
+    # A scene may name its own hold point (seconds in the cut, where its
+    # explanation is on screen); a line that runs long freezes there instead.
+    placed, free, shift, holds, speaking_hold = [], 0.0, 0.0, [], None
+    for at, text, path, d, hold_at in scenes:
+        t = at + shift
         while True:
-            room = at - free - GAP
+            room = t - free - GAP
             fit = [f for f in fillers if f[2] + GAP <= room]
             if not fit:
                 break
-            f = max(fit, key=lambda x: x[2])      # the longest that fits
+            f = max(fit, key=lambda x: x[2])
             fillers.remove(f)
             placed.append((free + GAP, f[0], f[1], f[2]))
             free += GAP + f[2]
-        start = max(at, free + GAP)
-        placed.append((start, text, path, d))
-        free = start + d
+        need = free + GAP - t
+        if need > 0.05:
+            where = speaking_hold if speaking_hold is not None and speaking_hold < at else at
+            holds.append((where, need))     # freeze the source video there for `need` s
+            shift += need
+            t += need
+        placed.append((t, text, path, d))
+        free = t + d
+        speaking_hold = hold_at
     for s, text, _, d in placed:
         print(f"{s:6.1f}s +{d:4.1f}s  {text}", flush=True)
-    hold = max(0.0, free + 0.8 - video_len)
+    total = video_len + shift
+    hold = max(0.0, free + 0.8 - total)
+    # the video: cut at every hold point, freeze the last frame of each piece
+    merged = {}
+    for at, need in holds:
+        merged[round(at, 3)] = merged.get(round(at, 3), 0.0) + need
+    cuts = sorted(merged.items())
+    pieces, prev = [], 0.0
+    for k, (at, need) in enumerate(cuts):
+        pieces.append((prev, at, need))
+        prev = at
+    pieces.append((prev, video_len, hold))
+    vchain = []
+    for k, (a0_, b0_, pad) in enumerate(pieces):
+        tp = f",tpad=stop_mode=clone:stop_duration={pad:.2f}" if pad > 0 else ""
+        vchain.append(f"[0:v]trim=start={a0_:.3f}:end={b0_:.3f},setpts=PTS-STARTPTS,fps=25{tp}[p{k}]")
+    vid = ";".join(vchain) + ";" + "".join(f"[p{k}]" for k in range(len(pieces))) + f"concat=n={len(pieces)}:v=1:a=0[v]"
     inputs = ["-i", cut]
     for _, _, path, _ in placed:
         inputs += ["-i", path]
-    chains = [f"[{i + 1}:a]adelay={int(s * 1000)}|{int(s * 1000)},aresample=48000[a{i}]" for i, (s, _, _, _) in enumerate(placed)]
+    chains = [f"[{i + 1}:a]adelay={int(s_ * 1000)}|{int(s_ * 1000)},aresample=48000[a{i}]" for i, (s_, _, _, _) in enumerate(placed)]
     mix = "".join(f"[a{i}]" for i in range(len(placed))) + f"amix=inputs={len(placed)}:normalize=0,volume=1.6[aud]"
-    vid = f"[0:v]tpad=stop_mode=clone:stop_duration={hold:.2f}[v]" if hold > 0 else "[0:v]null[v]"
     subprocess.run([ff, "-loglevel", "error", "-y", *inputs, "-filter_complex", ";".join(chains + [mix, vid]),
                     "-map", "[v]", "-map", "[aud]", "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
                     "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", out], check=True)
+    for at, need in cuts:
+        print(f"  held the frame at {at:6.1f}s of the cut for {need:4.1f}s so the explanation fits", flush=True)
     speech = sum(d for _, _, _, d in placed)
     print(f"{out}: {duration(ff, out):.0f}s, voice {speech:.0f}s of it (held {hold:.1f}s at the end)", flush=True)
 

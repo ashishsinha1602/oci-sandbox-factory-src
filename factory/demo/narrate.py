@@ -53,7 +53,7 @@ def tts(text, path, voice):
     m = oci.ai_speech.models
     sp = sf.client(oci.ai_speech.AIServiceSpeechClient)
     d = m.SynthesizeSpeechDetails(
-        text=text, is_stream_enabled=False, compartment_id=sf.foundation()["compartments"]["control"],
+        text=text, is_stream_enabled=False, compartment_id=os.environ.get("SBX_TTS_COMPARTMENT") or sf.config()["tenancy"],
         configuration=m.TtsOracleConfiguration(
             model_family="ORACLE",
             model_details=m.TtsOracleTts2NaturalModelDetails(model_name="TTS_2_NATURAL", voice_id=voice),

@@ -100,6 +100,11 @@ function sfInit(){
           h+='<button type="button" class="sf-btn sec" style="padding:4px 12px;font-size:12px;margin-top:6px" '
             +'data-open="'+esc(r.sandbox_id)+'">Open everything</button>';
         }
+        // a built or failed sandbox can be destroyed from its card (a failed one may hold resources)
+        if((r.status==='DONE'||r.status==='FAILED')&&r.action!=='DESTROY'){
+          h+=' <button type="button" class="sf-btn sec" style="padding:4px 12px;font-size:12px;margin-top:6px" '
+            +'data-destroy="'+esc(r.sandbox_id)+'" title="Deletes everything in this sandbox">Destroy</button>';
+        }
         if(o&&r.status==='DONE'){ h+='<div class="sf-links">';
           var pu=primaryUrl(o);
           if(pu){h+='<a class="sf-open" href="'+esc(pu)+'" target="_blank" rel="noopener">Open '+esc(r.sandbox_id)+' &rarr;</a><br>'}
@@ -510,6 +515,15 @@ function sfInit(){
     if(tb){ window.__sfTab = tb.getAttribute('data-tab'); refresh(); return; }
     var op = e.target.closest && e.target.closest('[data-open]');
     if(op){ showLanding(op.getAttribute('data-open')); return; }
+    // Destroy from the card: the first click asks, the second (within 6 s) destroys
+    var ds = e.target.closest && e.target.closest('[data-destroy]');
+    if(ds){ var sid=ds.getAttribute('data-destroy');
+      if(!ds.classList.contains('armed')){ ds.classList.add('armed'); ds.textContent='Confirm destroy '+sid;
+        ds.style.background='#b91c1c'; ds.style.color='#fff';
+        setTimeout(function(){ if(ds.classList.contains('armed')&&!ds.disabled){ ds.classList.remove('armed'); ds.textContent='Destroy'; ds.style.background=''; ds.style.color=''; } },6000); return; }
+      ds.disabled=true; ds.textContent='Destroying...';
+      call('submit',{sandbox_id:sid, action:'DESTROY', ttl_days:1, enable_adb:false, enable_kafka:false, enable_app:false}).then(function(s){
+        ds.textContent = s&&s.err ? s.err : 'Destroy queued (request #'+(s&&s.id)+')'; refresh(); }); return; }
     var rt = e.target.closest && e.target.closest('[data-retry]');
     // (lifetime changes are handled on 'change', below)
     if(rt){ rt.disabled=true; rt.textContent='Queueing...';
@@ -824,6 +838,7 @@ function sfInit(){
       +(parts.length?'<div class="sf-w-parts">'+parts.map(function(p){return '<span>'+esc(p)+'</span>'}).join('')+'</div>':'')
       +'<div class="sf-w-acts">'+(done&&pu?'<a class="sf-btn" href="'+esc(pu)+'" target="_blank" rel="noopener">Open</a>':(done&&o?'<button type="button" class="sf-btn" data-open="'+esc(r.sandbox_id)+'">Open</button>':''))
       +(done&&o?'<button type="button" class="sf-btn sec" data-open="'+esc(r.sandbox_id)+'">Details &amp; passwords</button>':'')
+      +((done||r.status==='FAILED')&&r.action!=='DESTROY'?'<button type="button" class="sf-btn sec" data-destroy="'+esc(r.sandbox_id)+'">Destroy</button>':'')
       +(r.status==='FAILED'&&r.error?'<span class="sf-err">'+esc(String(r.error).slice(0,140))+'</span>':'')+'</div></div>';
   }
   // What a proposed build costs, from the live price list and the sizes the

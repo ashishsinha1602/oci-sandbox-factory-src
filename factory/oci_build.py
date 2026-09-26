@@ -52,7 +52,10 @@ def dockerfile_missing(repo: str, sub_path: str | None, dockerfile: str | None) 
     if not m:
         return None
     owner, name, ref = m.groups()
-    folder = (sub_path or "").strip("/")
+    # kaniko reads --dockerfile relative to the context (the sub path), so a
+    # Dockerfile given as "factory/Dockerfile" lives in <sub_path>/factory/
+    target = "/".join(p.strip("/") for p in (sub_path or "", dockerfile or "Dockerfile") if p and p.strip("/"))
+    folder, _, dockerfile = target.rpartition("/")
     api = f"https://api.github.com/repos/{owner}/{name}/contents/{folder}" + (f"?ref={ref}" if ref else "")
     try:
         req = urllib.request.Request(api, headers={"Accept": "application/vnd.github+json", "User-Agent": "sandbox-factory"})
@@ -66,7 +69,7 @@ def dockerfile_missing(repo: str, sub_path: str | None, dockerfile: str | None) 
     want = (dockerfile or "Dockerfile").split("/")[-1]
     if want in names:
         return None
-    where = f"{repo.split('#')[0]}/{folder}".rstrip("/")
+    where = f"{re.sub(r'\.git$', '', repo.split('#')[0])}/{folder}".rstrip("/")
     py = [n for n in names if n and n.endswith(".py")] or [n for n in names if n in ("dags", "spark", "jobs")]
     hint = (" It looks like a data pipeline (DAGs or Spark jobs): ask the assistant to build it as a pipeline, "
             "not to deploy it as an app.") if py or {"dags", "spark"} & names else " Add a Dockerfile to deploy it as an app."

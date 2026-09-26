@@ -39,19 +39,19 @@ resource "oci_datacatalog_catalog" "this" {
 resource "oci_datacatalog_data_asset" "this" {
   for_each = var.enabled ? { for a in var.data_assets : a.name => a } : {}
 
-  catalog_id     = oci_datacatalog_catalog.this[0].id
-  display_name   = each.value.name
-  type_key       = each.value.type_key
-  description    = each.value.description
-  properties     = each.value.properties
+  catalog_id   = oci_datacatalog_catalog.this[0].id
+  display_name = each.value.name
+  type_key     = each.value.type_key
+  description  = each.value.description
+  properties   = each.value.properties
 }
 
 output "catalog" {
   value = var.enabled ? {
-    id           = oci_datacatalog_catalog.this[0].id
-    display_name = oci_datacatalog_catalog.this[0].display_name
+    id                = oci_datacatalog_catalog.this[0].id
+    display_name      = oci_datacatalog_catalog.this[0].display_name
     number_of_objects = oci_datacatalog_catalog.this[0].number_of_objects
-    service_url  = oci_datacatalog_catalog.this[0].service_api_url
+    service_url       = oci_datacatalog_catalog.this[0].service_api_url
   } : null
 }
 

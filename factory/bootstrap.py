@@ -31,20 +31,48 @@ def bootstrap() -> None:
         controldb.setup([])
         conn = controldb.connect("ADMIN")
         cur = conn.cursor()
+    # One worker at a time: on a fresh install all of them start together, and
+    # two imports of the same application at once collide. The lock belongs to
+    # this session and goes when it closes.
+    try:
+        got = cur.var(int)
+        cur.execute("""declare h varchar2(128); begin dbms_lock.allocate_unique('SBX_APP_INSTALL', h);
+                       :r := dbms_lock.request(h, dbms_lock.x_mode, 900, false); end;""", r=got)
+        if got.getvalue() not in (0, 4):
+            print(f"bootstrap: install lock not taken (status {got.getvalue()}); going on without it", flush=True)
+    except Exception as e:  # noqa: BLE001
+        print(f"bootstrap: install lock unavailable ({e}); going on without it", flush=True)
     cur.execute("select application_id from apex_applications where workspace = :1 and application_name = :2",
                 [controldb.WORKSPACE, "Sandbox Factory"])
     row = cur.fetchone()
-    conn.close()
-    if not row:
-        export = HERE / "apex_export_customized.sql"
-        if not export.exists():
-            print("bootstrap: no apex_export_customized.sql shipped; skipping the APEX import", flush=True)
-        else:
-            import apex_customize
-            print("bootstrap: installing the Sandbox Factory application", flush=True)
-            apex_customize.install(export.read_text(encoding="utf-8"), 112)
+    # The page this image ships, by fingerprint. An upgrade (a new release
+    # image) must reach an existing install too, not only a fresh one, so the
+    # application is replaced whenever the shipped page differs from the one
+    # installed. The export removes and recreates app 112 on import.
+    import hashlib
+    export = HERE / "apex_export_customized.sql"
+    shipped = hashlib.sha256(export.read_bytes()).hexdigest()[:16] if export.exists() else None
+    installed = None
+    try:
+        cur.execute(f"select value from {controldb.SCHEMA}.factory_config where key = 'app_release'")
+        r = cur.fetchone()
+        installed = r[0] if r else None
+    except Exception:  # noqa: BLE001  (no config table yet on a very old install)
+        pass
+    if not shipped:
+        print("bootstrap: no apex_export_customized.sql shipped; skipping the APEX import", flush=True)
+    elif not row or installed != shipped:
+        import apex_customize
+        print(f"bootstrap: {'installing' if not row else 'upgrading'} the Sandbox Factory application "
+              f"({installed or 'none'} -> {shipped})", flush=True)
+        apex_customize.install(export.read_text(encoding="utf-8"), 112)
+        cur.execute(f"""merge into {controldb.SCHEMA}.factory_config c using (select 'app_release' key, :v value from dual) s
+                        on (c.key = s.key) when matched then update set c.value = s.value
+                        when not matched then insert (key, value) values (s.key, s.value)""", v=shipped)
+        conn.commit()
     else:
-        print(f"bootstrap: application {row[0]} present", flush=True)
+        print(f"bootstrap: application {row[0]} present, release {shipped}", flush=True)
+    conn.close()                                            # releases the install lock
     # the schema's run-time grants (DBMS_CLOUD, resource principal, network ACE),
     # healed on every start so an older install gets them too
     try:

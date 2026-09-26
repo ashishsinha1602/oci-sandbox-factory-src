@@ -40,6 +40,61 @@ def _token() -> tuple[str, str]:
     return user, token
 
 
+def dockerfile_missing(repo: str, sub_path: str | None, dockerfile: str | None) -> str | None:
+    """A plain sentence when a GitHub folder has no Dockerfile, else None.
+
+    Without this, kaniko starts, fails to find one and prints its whole usage
+    text, which is all the user saw. Checked through GitHub's public API;
+    other hosts, and any error reaching GitHub, fall through to the build.
+    """
+    import urllib.request
+    m = re.match(r"^https?://github\.com/([^/]+)/([^/#]+?)(?:\.git)?(?:#(.+))?$", repo)
+    if not m:
+        return None
+    owner, name, ref = m.groups()
+    folder = (sub_path or "").strip("/")
+    api = f"https://api.github.com/repos/{owner}/{name}/contents/{folder}" + (f"?ref={ref}" if ref else "")
+    try:
+        req = urllib.request.Request(api, headers={"Accept": "application/vnd.github+json", "User-Agent": "sandbox-factory"})
+        with urllib.request.urlopen(req, timeout=15) as r:
+            entries = json.loads(r.read().decode())
+    except Exception:  # noqa: BLE001  (rate limit, private repo, network: let kaniko decide)
+        return None
+    if not isinstance(entries, list):
+        return None
+    names = {e.get("name") for e in entries}
+    want = (dockerfile or "Dockerfile").split("/")[-1]
+    if want in names:
+        return None
+    where = f"{repo.split('#')[0]}/{folder}".rstrip("/")
+    py = [n for n in names if n and n.endswith(".py")] or [n for n in names if n in ("dags", "spark", "jobs")]
+    hint = (" It looks like a data pipeline (DAGs or Spark jobs): ask the assistant to build it as a pipeline, "
+            "not to deploy it as an app.") if py or {"dags", "spark"} & names else " Add a Dockerfile to deploy it as an app."
+    return f"No {want} in {where}, so there is no app image to build.{hint}"
+
+
+def fetch_github_folder(repo: str, sub_path: str | None) -> dict:
+    """The text files of one GitHub folder (not its subfolders), as {name: text}."""
+    import urllib.request
+    m = re.match(r"^https?://github\.com/([^/]+)/([^/#]+?)(?:\.git)?(?:#(.+))?$", repo)
+    if not m:
+        raise SystemExit(f"cannot read {repo}: only GitHub folders can be read without a Dockerfile")
+    owner, name, ref = m.groups()
+    folder = (sub_path or "").strip("/")
+    api = f"https://api.github.com/repos/{owner}/{name}/contents/{folder}" + (f"?ref={ref}" if ref else "")
+    hdr = {"Accept": "application/vnd.github+json", "User-Agent": "sandbox-factory"}
+    with urllib.request.urlopen(urllib.request.Request(api, headers=hdr), timeout=20) as r:
+        entries = json.loads(r.read().decode())
+    files = {}
+    for e in entries if isinstance(entries, list) else []:
+        if e.get("type") == "file" and e.get("size", 0) < 200000 and re.search(r"\.(py|txt|json|ya?ml|cfg|toml)$|^Dockerfile$", e["name"]):
+            with urllib.request.urlopen(urllib.request.Request(e["download_url"], headers=hdr), timeout=20) as r:
+                files[e["name"]] = r.read().decode("utf-8", errors="replace")
+    if not files:
+        raise SystemExit(f"no code files in {repo}/{folder}")
+    return files
+
+
 def split_tree_url(url: str) -> tuple[str, str | None]:
     """A folder link is what people paste: turn it into repo#branch + sub path.
 
@@ -111,6 +166,9 @@ def build_in_oci(git_url: str | None, image: str, registry: str, namespace: str,
         # repository: clone the repository at that branch, build that folder.
         git_url, tree_path = split_tree_url(git_url)
         sub_path = sub_path or tree_path
+        missing = dockerfile_missing(git_url, sub_path, dockerfile)
+        if missing:
+            raise SystemExit(missing)
     fnd = sf.foundation()
     ci = sf.client(oci.container_instances.ContainerInstanceClient)
     idc = sf.client(oci.identity.IdentityClient)
@@ -190,7 +248,14 @@ def build_in_oci(git_url: str | None, image: str, registry: str, namespace: str,
         if not log:
             print(f"  (no build log: {e})")
     if log:
-        print("\n".join(log.splitlines()[-25:]), flush=True)
+        lines = log.splitlines()
+        # kaniko prints its whole usage after a bad flag or context, which
+        # pushes the one line that says what went wrong off the tail: show
+        # every error line first, then the tail.
+        errors = [l for l in lines if "error" in l.lower() and "--" not in l.split("stderr F", 1)[-1][:12]]
+        if errors:
+            print("\n".join(errors[:10]), flush=True)
+        print("\n".join(l for l in lines[-25:] if l not in errors), flush=True)
     try:
         ci.delete_container_instance(inst.id)
     except Exception:  # noqa: BLE001

@@ -56,8 +56,8 @@ variable "expiry_days" {
     sandbox before Terraform runs, because Object Storage refuses to delete a
     bucket that still holds objects.
   EOT
-  type    = number
-  default = 0
+  type        = number
+  default     = 0
 }
 
 resource "oci_objectstorage_object_lifecycle_policy" "expire" {

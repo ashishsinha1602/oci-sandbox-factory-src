@@ -149,8 +149,46 @@ def cases(fn_image: str | None):
                         containers=[{"name": "airflow", "image": "docker.io/apache/airflow:2.10.3", "port": 8080,
                                      "command": ["bash", "-c"], "args": [AIRFLOW_ARGS], "env": AIRFLOW_ENV}]),
         "kafka": base("kafka", enable_kafka=True, kafka_mode="cluster", ttl_days=1),
+        # plain AWS Lambda code (no Dockerfile) and a function with no code at all:
+        # both must become working OCI Functions built inside the tenancy
+        "fn": base("fn", functions=[{"name": "lambda", "git_url": REPO_TREE + "/examples/hello-lambda"},
+                                    {"name": "starter"}]),
+        # "just a Data Flow job": no bucket asked for, one is added for its script and logs
+        "flow": base("flow", dataflow_jobs=[{"name": "squares", "script": SPARK, "language": "PYTHON"}]),
+        # a pipeline folder sent as an app deploy must fail at once, in plain words
+        "guard": base("guard", action="DEPLOY", enable_app=True, app_port=8080,
+                      git_url=REPO_TREE + "/examples/telemetry-pipeline"),
     }
     return c
+
+
+REPO_TREE = os.environ.get("SBX_REPO_TREE", "https://github.com/ashishsinha1602/oci-sandbox-factory/tree/main")
+EXPECTED_FAIL = {"guard": "No Dockerfile"}
+
+
+def call_function(f, body):
+    r = None
+    for _ in range(9):
+        try:
+            r = requests.post(f["url"], json=body, timeout=90)
+            if r.status_code == 200:
+                break
+        except Exception:  # noqa: BLE001
+            pass
+        time.sleep(20)
+    return r
+
+
+def verify_fn(o):
+    fns = {f.get("name", "").split("-")[-1]: f for f in o.get("functions") or [] if f.get("url")}
+    lam = next((f for n, f in fns.items() if "lambda" in n or "lambda" in f.get("name", "")), None)
+    st = next((f for n, f in fns.items() if "starter" in n or "starter" in f.get("name", "")), None)
+    r = call_function(lam, {"name": "factory"}) if lam else None
+    record("fn: AWS Lambda code runs as an OCI Function", r is not None and r.status_code == 200 and "hello factory" in r.text
+           and "aws-lambda" in r.text, f"{(lam or {}).get('url')} -> {getattr(r, 'status_code', None)} {getattr(r, 'text', '')[:100]}")
+    r = call_function(st, {"name": "factory"}) if st else None
+    record("fn: a function with no code gets the starter", r is not None and r.status_code == 200 and "hello factory" in r.text,
+           f"{(st or {}).get('url')} -> {getattr(r, 'status_code', None)} {getattr(r, 'text', '')[:100]}")
 
 
 # --------------------------------------------------------------------------
@@ -225,7 +263,7 @@ def verify_data(o, fnd):
         record("data: function public URL", r is not None and r.status_code == 200 and "hello factory" in r.text, detail)
 
 
-def verify_lake(o, fnd):
+def verify_lake(o, fnd, label="lake"):
     df = sf.client(oci.data_flow.DataFlowClient)
     job = (o.get("dataflow_jobs") or [{}])[0]
     osc = sf.client(oci.object_storage.ObjectStorageClient)
@@ -240,13 +278,13 @@ def verify_lake(o, fnd):
             break
         time.sleep(30)
     objs = [x.name for x in osc.list_objects(ns, b, prefix="e2e-out/", fields="name").data.objects]
-    record("lake: Data Flow run writes Parquet to the bucket", r.lifecycle_state == "SUCCEEDED" and any(n.endswith(".parquet") for n in objs),
+    record(f"{label}: Data Flow run writes Parquet to the bucket", r.lifecycle_state == "SUCCEEDED" and any(n.endswith(".parquet") for n in objs),
            f"run {r.lifecycle_state} {r.lifecycle_details or ''}; objects {len(objs)}")
     cat = o.get("catalog") or {}
     if cat.get("id"):
         dc = sf.client(oci.data_catalog.DataCatalogClient)
         st = dc.get_catalog(cat["id"]).data.lifecycle_state
-        record("lake: Data Catalog is ACTIVE", st == "ACTIVE", cat.get("display_name"))
+        record(f"{label}: Data Catalog is ACTIVE", st == "ACTIVE", cat.get("display_name"))
 
 
 def verify_db(o):
@@ -433,6 +471,10 @@ def main():
     results = f.wait(ids, timeout=5400 if a.kafka else 2400)
     outs = {}
     for name, (st, err, out) in results.items():
+        if name in EXPECTED_FAIL:
+            record(f"{name}: refused at once with a plain reason", st == "FAILED" and EXPECTED_FAIL[name] in str(err or ""),
+                   f"{st}: {str(err or '')[:200]}")
+            continue
         record(f"{name}: sandbox built by the worker", st == "DONE", err or st)
         if st == "DONE":
             outs[name] = out
@@ -445,7 +487,8 @@ def main():
                 record(f"{name}: built {'within region limits (fallback noted)' if limits else 'without warnings'}",
                        limits, "; ".join(out["warnings"])[:300])
     verifiers = {"web": lambda o: verify_web(o), "data": lambda o: verify_data(o, fnd), "lake": lambda o: verify_lake(o, fnd),
-                 "db": verify_db, "rag": verify_rag, "airflow": verify_airflow, "kafka": verify_kafka}
+                 "db": verify_db, "rag": verify_rag, "airflow": verify_airflow, "kafka": verify_kafka,
+                 "fn": verify_fn, "flow": lambda o: verify_lake(o, fnd, label="flow")}
     for name, o in outs.items():
         try:
             verifiers[name](o)

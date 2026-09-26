@@ -159,17 +159,43 @@ def fetch(currency: str = "USD") -> list[dict]:
         return json.loads(r.read())["items"]
 
 
-def payg(item: dict) -> float | None:
+def tiers(item: dict) -> list[tuple]:
+    """Pay-as-you-go tiers as (price, range_min, range_max)."""
+    out = []
     for loc in item.get("currencyCodeLocalizations") or []:
         for p in loc.get("prices") or []:
             if p.get("model") == "PAY_AS_YOU_GO":
-                return p.get("value")
+                out.append((p.get("value"), p.get("rangeMin"), p.get("rangeMax")))
+    return out
+
+
+def payg(item: dict) -> float | None:
+    """The paid rate. A tiered SKU (Functions, Queue) lists its free allowance
+    first at 0; taking that first tier priced them as free forever."""
+    vals = [t[0] for t in tiers(item) if t[0] is not None]
+    return max(vals) if vals else None
+
+
+def free_allowance(item: dict) -> float | None:
+    """Units a month that cost nothing before the paid tier starts (in the
+    SKU's own metric: 2 = 2 million invocations, 40 = 400,000 GB-seconds)."""
+    for price, lo, hi in tiers(item):
+        if price == 0 and hi and (lo or 0) == 0:
+            return hi
     return None
 
 
 def config_string(prices: dict) -> str:
-    """The form SBX.FACTORY_CONFIG.oci_prices holds: 'key=price/metric; ...'."""
-    return "; ".join(f"{k}={v['price']}/{v['metric']}" for k, v in prices.items() if v.get("price") is not None)
+    """The form SBX.FACTORY_CONFIG.oci_prices holds: 'key=price/metric; ...',
+    plus 'key_free=N' for a monthly free allowance in the same metric."""
+    parts = []
+    for k, v in prices.items():
+        if v.get("price") is None:
+            continue
+        parts.append(f"{k}={v['price']}/{v['metric']}")
+        if v.get("free"):
+            parts.append(f"{k}_free={v['free']}")
+    return "; ".join(parts)
 
 
 def build_prices(items: list[dict]) -> dict[str, dict]:
@@ -188,13 +214,18 @@ def build_prices(items: list[dict]) -> dict[str, dict]:
             for i in items:
                 display = i.get("displayName") or ""
                 if display.strip().lower() == want.lower() or (display.lower().startswith(want.lower()) and "byol" not in display.lower()):
-                    candidates.append((display, payg(i), i.get("metricName", "")))
+                    candidates.append((display, payg(i), i.get("metricName", ""), free_allowance(i)))
+        # An exact name beats a prefix: "NoSQL ... - Read" is the provisioned
+        # rate the sandbox tables use; "- Read - Auto" (on-demand) is 25x that.
+        exact = [c for c in candidates if c[0].strip().lower() in [n.lower() for n in names]]
+        if [c for c in exact if c[1] not in (None, 0)]:
+            candidates = exact
         priced = [c for c in candidates if c[1] not in (None, 0)]
         if priced:
-            name, price, metric = max(priced, key=lambda c: c[1])
-            out[key] = {"name": name, "price": price, "metric": metric, "free_tier": False}
+            name, price, metric, free = max(priced, key=lambda c: c[1])
+            out[key] = {"name": name, "price": price, "metric": metric, "free_tier": False, "free": free}
         elif candidates:
-            name, _, metric = candidates[0]
+            name, _, metric, _ = candidates[0]
             out[key] = {"name": name, "price": 0.0, "metric": metric, "free_tier": True}
         else:
             out[key] = {"name": names[0], "price": None, "metric": "not in the price list",

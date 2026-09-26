@@ -36,11 +36,11 @@ resource "oci_ai_data_platform_ai_data_platform" "this" {
 
 output "aidp" {
   value = {
-    id                 = oci_ai_data_platform_ai_data_platform.this.id
-    display_name       = oci_ai_data_platform_ai_data_platform.this.display_name
-    state              = oci_ai_data_platform_ai_data_platform.this.state
-    workspace          = oci_ai_data_platform_ai_data_platform.this.default_workspace_name
+    id                  = oci_ai_data_platform_ai_data_platform.this.id
+    display_name        = oci_ai_data_platform_ai_data_platform.this.display_name
+    state               = oci_ai_data_platform_ai_data_platform.this.state
+    workspace           = oci_ai_data_platform_ai_data_platform.this.default_workspace_name
     web_socket_endpoint = oci_ai_data_platform_ai_data_platform.this.web_socket_endpoint
-    alias_key          = oci_ai_data_platform_ai_data_platform.this.alias_key
+    alias_key           = oci_ai_data_platform_ai_data_platform.this.alias_key
   }
 }

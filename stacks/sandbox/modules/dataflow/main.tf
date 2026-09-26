@@ -13,21 +13,21 @@ variable "jobs" {
     the job in Object Storage, e.g. oci://bucket@namespace/etl.py
   EOT
   type = list(object({
-    name            = string
-    file_uri        = string
-    language        = optional(string, "PYTHON")
-    spark_version   = optional(string, "3.5.0")
-    driver_shape    = optional(string, "VM.Standard.E4.Flex")
-    executor_shape  = optional(string, "VM.Standard.E4.Flex")
-    num_executors   = optional(number, 1)
-    ocpus           = optional(number, 1)
-    memory_gb       = optional(number, 16)
-    arguments       = optional(list(string), [])
-    warehouse_uri   = optional(string)
+    name           = string
+    file_uri       = string
+    language       = optional(string, "PYTHON")
+    spark_version  = optional(string, "3.5.0")
+    driver_shape   = optional(string, "VM.Standard.E4.Flex")
+    executor_shape = optional(string, "VM.Standard.E4.Flex")
+    num_executors  = optional(number, 1)
+    ocpus          = optional(number, 1)
+    memory_gb      = optional(number, 16)
+    arguments      = optional(list(string), [])
+    warehouse_uri  = optional(string)
     # The job's code, inline. Terraform drops attributes a module's object
     # type does not declare, so without this line an inline script silently
     # became an empty file_uri: "Missing fileUri" from Data Flow.
-    script          = optional(string, "")
+    script = optional(string, "")
   }))
 }
 variable "scripts_bucket" {
@@ -75,18 +75,18 @@ resource "oci_dataflow_application" "this" {
   compartment_id = var.compartment_id
   display_name   = "${var.name}-${each.value.name}"
   # Prefer the script uploaded with the request over a URI the caller supplied.
-  file_uri = try(each.value.script, "") != "" && var.scripts_bucket != "" ? "oci://${var.scripts_bucket}@${var.namespace}/${each.value.name}.py" : each.value.file_uri
-  language       = each.value.language
-  spark_version  = each.value.spark_version
-  num_executors  = each.value.num_executors
-  driver_shape   = each.value.driver_shape
-  executor_shape = each.value.executor_shape
-  arguments      = each.value.arguments
-  logs_bucket_uri = var.logs_bucket_uri
+  file_uri             = try(each.value.script, "") != "" && var.scripts_bucket != "" ? "oci://${var.scripts_bucket}@${var.namespace}/${each.value.name}.py" : each.value.file_uri
+  language             = each.value.language
+  spark_version        = each.value.spark_version
+  num_executors        = each.value.num_executors
+  driver_shape         = each.value.driver_shape
+  executor_shape       = each.value.executor_shape
+  arguments            = each.value.arguments
+  logs_bucket_uri      = var.logs_bucket_uri
   warehouse_bucket_uri = each.value.warehouse_uri
-  configuration  = var.injected_env
-  defined_tags   = var.defined_tags
-  freeform_tags  = var.freeform_tags
+  configuration        = var.injected_env
+  defined_tags         = var.defined_tags
+  freeform_tags        = var.freeform_tags
 
   depends_on = [oci_objectstorage_object.script]
 

@@ -5,6 +5,8 @@ function sfInit(){
   // x02 is a VARCHAR2(32767): anything big (attached code) rides in p_clob_01.
   function call(action,payload){payload=payload||{}; var m=document.querySelector('#sf-model'); if(m&&!payload.model)payload.model=m.value;
     var clob=payload.clob; delete payload.clob; var o={x01:action,x02:JSON.stringify(payload)}; if(clob)o.p_clob_01=clob;
+    // x02 holds 32767 characters; a bigger request (pipeline files, function source) goes whole in the CLOB
+    else if(action!=='chat'&&o.x02.length>30000){ o.p_clob_01=o.x02; o.x02=JSON.stringify({__clob:1, model:payload.model}); }
     return apex.server.process('SF',o,{dataType:'json'})}
   function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
 
@@ -197,6 +199,8 @@ function sfInit(){
     }
     if(o.adb)return o.adb.apex_url||o.adb.sql_web_url;
     var fu=(o.functions||[]).filter(function(f){return f.url})[0]; if(fu)return fu.url;
+    // a Spark-only sandbox: Open goes to its Data Flow application
+    var df=(o.dataflow_jobs||[])[0]; if(df)return resourceUrls(o)['spark:'+df.name];
     return null;
   }
   // The model is asked for one JSON object but sometimes wraps it in prose or
@@ -669,6 +673,47 @@ function sfInit(){
     inp.onchange=function(){ readFolder(inp.files).then(function(c){CODE=c;showCodeChip(); if(!Object.keys(c.files).length)addMsg('ai','<span class="sf-err">No readable code files in that folder.</span>');}); };
     inp.click();
   }
+  // The files decide what gets built, not the model's wording. A folder with
+  // a Dockerfile is an app to deploy; a folder of DAGs and Spark jobs is a
+  // pipeline. A model once answered "deploy" for the telemetry pipeline (no
+  // Dockerfile), and the build died in kaniko: read the files and correct it.
+  function hasDockerfile(files){ return Object.keys(files).some(function(p){return /^(Dockerfile|[^\/]*\.dockerfile)$/i.test(p)}); }
+  function inferWorkload(files){
+    var dags=[], spark=[], reqs=[], oracle=false;
+    Object.keys(files).forEach(function(p){
+      var c=files[p]||'';
+      if(/(^|\/)requirements[^\/]*\.txt$/i.test(p))reqs.push(p);
+      if(!/\.py$/i.test(p))return;
+      if(/^\s*(from|import)\s+airflow\b/m.test(c))dags.push(p);
+      else if(/^\s*(from|import)\s+pyspark\b/m.test(c))spark.push(p);
+      if(/\boracledb\b|ADB_CONNECT_STRING|DBMS_CLOUD/.test(c))oracle=true;
+    });
+    return (dags.length||spark.length)?{dags:dags,spark:spark,requirements:reqs,bucket:'data',catalog:true,oracle:oracle,schedule:'@once'}:null;
+  }
+  // Lambda-style (event, context) or Fn-style (ctx, data) handlers: a function.
+  function isFunctionCode(files){ return Object.keys(files).some(function(p){return /\.py$/i.test(p)&&/^def \w+\(\s*event\s*,\s*context\s*\)|^def handler\(\s*ctx\b/m.test(files[p]||'')}); }
+  function functionFiles(files){ var o={}; Object.keys(files).forEach(function(p){ if(/\.(py|txt|json|ya?ml|cfg|toml)$|(^|\/)Dockerfile$/i.test(p))o[p]=files[p]; }); return o; }
+  function correctAction(a){
+    if(!CODE||a.type==='destroy'||a.type==='retry')return null;
+    var files=CODE.files||{};
+    // functions the model proposed without code of their own get the attached code
+    if(a.functions&&a.functions.length&&isFunctionCode(files)){
+      var fn=a.functions.filter(function(f){return !f.files&&!f.git_url})[0];
+      if(fn){ fn.files=functionFiles(files); delete fn.image; }
+    }
+    if(a.workload||hasDockerfile(files))return null;
+    if(a.type==='deploy'||a.git_url){
+      var w=inferWorkload(files);
+      if(w){ a.workload=w; a.type='create'; a.git_url=null; return null; }
+      if(isFunctionCode(files)){
+        a.type='create'; a.git_url=null; a.enable_app=false; a.app_image=null;
+        a.functions=[{name:(a.sandbox_id||'fn').replace(/[^a-z0-9-]/g,'-').slice(0,20), files:functionFiles(files)}];
+        return null;
+      }
+      return 'This code has no Dockerfile, no Airflow DAG or Spark job, and no function handler, so there is nothing to build from it. Add a Dockerfile to deploy it as an app.';
+    }
+    return null;
+  }
   // Expand the model's `workload` into the pieces of a request.
   function expandWorkload(a){
     var w=a.workload; if(!w||!CODE)return;
@@ -752,20 +797,37 @@ function sfInit(){
       add('Autonomous Database'+(dbs>1?' x'+dbs:''),'Transaction Processing, 2 ECPU + 20 GB, license included, per ECPU-hour while it exists',m*dbs); }
     var apps=((a.enable_app||a.git_url||a.app_image||a.app_template||(a.containers&&a.containers.length)||w)?1:0)+((a.app_instances||[]).length);
     if(apps&&cpu){ var c=(cpu+4*mem)*H;
-      add('Container instance'+(apps>1?' x'+apps:''),'1 OCPU / 4 GB, per hour while it runs'+(armEst?' (Arm A1 has no public rate; estimated at the E4 rate)':''),c*apps); }
+      add('Container instance'+(apps>1?' x'+apps:''),'1 OCPU / 4 GB, per hour while it runs'+(armEst?' (Arm A1 has no public rate; estimated at the E4 rate)':' (Arm A1 rate; the Always Free allowance is not assumed)'),c*apps); }
     if(a.enable_kafka&&P.kafka_ocpu) add('Kafka cluster','1 broker, 1 OCPU, 50 GB, billed per OCPU-hour',P.kafka_ocpu*H);
-    if(a.enable_nosql) perUse.push('NoSQL (per read/write unit and GB)');
-    if(w||(a.dataflow_jobs||[]).length) perUse.push('Data Flow (only while a Spark run lasts)');
-    if(a.enable_catalog||(w&&w.catalog)) perUse.push('Data Catalog');
-    if((a.functions||[]).length) perUse.push('Functions (per invocation)');
-    if((a.queues||[]).length) perUse.push('Queue (per request)');
-    if((a.buckets||[]).length||w) perUse.push('Object Storage (per GB stored)');
-    if(a.enable_aidp) perUse.push('AI Data Platform (per its compute)');
+    // Per-use services, priced from the same list at a stated volume. Tiered
+    // SKUs carry a monthly free allowance (key_free, in the SKU's own unit),
+    // which is per tenancy, so the note says it is shared with anything else.
+    var over=function(key,units){var f=P[key+'_free']||0; return Math.max(0,units-f)*(P[key]||0)};
+    var usd=function(v){return v<0.01&&v>0?'$'+v.toFixed(4):'$'+v.toFixed(2)};
+    if(a.enable_nosql&&P.nosql_read){ var nt=Math.max(1,(a.nosql_tables||[]).length);
+      add('NoSQL'+(nt>1?' x'+nt:''),'provisioned 5 read + 5 write units + 1 GB per table',nt*(5*P.nosql_read+5*(P.nosql_write||0)+(P.nosql_storage||0))); }
+    var jobs=(a.dataflow_jobs||[]).length||(w&&(w.spark||[]).length)||0;
+    if(jobs&&P.e4_ocpu){
+      var sch=String((w&&w.schedule)||'@once'), runs=1, mm=sch.match(/^\*\/(\d+)\s/);
+      if(mm)runs=Math.round(H*60/Number(mm[1])); else if(sch==='@hourly')runs=H; else if(sch==='@daily'||/^\d+\s+\d+\s+\*\s+\*\s+\*$/.test(sch))runs=31;
+      var perRun=2*(1*P.e4_ocpu+16*(P.e4_memory||0))*(10/60);
+      add('Data Flow'+(jobs>1?' x'+jobs:''),'Spark driver + 1 executor, E4 1 OCPU / 16 GB each, about 10 min a run ('+usd(perRun)+'), '+(runs===1?'one run':runs+' runs a month')+'; nothing between runs',jobs*runs*perRun); }
+    var fns=(a.functions||[]).length;
+    if(fns&&P.fn_calls){ var calls=1, gbs=1e6*0.25*1/1e4;   // 1M calls, 256 MB, 1 s each
+      add('Functions'+(fns>1?' x'+fns:''),'at 1M calls a month, 256 MB, 1 s each; the first '+(P.fn_calls_free||0)+'M calls and '+((P.fn_time_free||0)*1e4).toLocaleString()+' GB-s a month are free, then $'+P.fn_calls+' per 1M calls + $'+P.fn_time+' per 10,000 GB-s',fns*(over('fn_calls',calls)+over('fn_time',gbs))); }
+    if((a.queues||[]).length&&P.queue_req)
+      add('Queue','at 1M requests a month; the first '+(P.queue_req_free||0)+'M are free, then $'+P.queue_req+' per 1M',over('queue_req',1));
+    if(((a.buckets||[]).length||w||jobs)&&P.object_gb)
+      add('Object Storage','at 10 GB stored; the first '+(P.object_gb_free||0)+' GB are free, then $'+P.object_gb+' per GB-month',over('object_gb',10));
+    if((apps||fns)&&P.gateway_calls)
+      add('API Gateway','HTTPS in front of the app and functions, at 100,000 calls a month; $'+P.gateway_calls+' per 1M',0.1*P.gateway_calls);
+    if(a.enable_catalog||(w&&w.catalog)) perUse.push('Data Catalog (not in Oracle’s price list)');
+    if(a.enable_aidp) perUse.push('AI Data Platform (per its own compute)');
     perUse.forEach(function(n){add(n.split(' (')[0],(n.match(/\((.*)\)/)||[])[1]||'per use',null);});
     if(!items.length)return null;
     var days=Number(a.ttl_days)||3, life=total*days*24/H;
     return {items:items,total_usd:Math.round(total*100)/100,
-      note:'From Oracle’s published price list'+(window.__sfPricesDate?', fetched '+window.__sfPricesDate:'')+'. For this sandbox’s '+days+'-day lifetime: $'+life.toFixed(2)+' plus per-use services. It is deleted when the lifetime ends.'};
+      note:'From Oracle’s published price list'+(window.__sfPricesDate?', fetched '+window.__sfPricesDate:'')+'. For this sandbox’s '+days+'-day lifetime: $'+life.toFixed(2)+'. Per-use rows are at the volume stated; free allowances are per tenancy, shared with anything else it runs. Deleted when the lifetime ends.'};
   }
   function widgetsHtml(j,reply,asked){
     var rows=window.__sfRows||[], h='';
@@ -817,7 +879,12 @@ function sfInit(){
           +qs.map(function(q){return '<li>'+esc(q)+'</li>'}).join('')+'</ol>');
         if(!hasAct){ if(sentCode){CODE=null;showCodeChip();} return; }   // nothing proposed yet: wait for the answer
       }
-      var a=j&&j.action; if(a&&a.type){
+      var a=j&&j.action;
+      if(a&&a.type){
+        var bad=null; try{ bad=correctAction(a); }catch(e){ console.error('correct', e); }
+        if(bad){ d.insertAdjacentHTML('beforeend','<div class="sf-err" style="margin-top:8px">'+esc(bad)+'</div>'); a=null; }
+      }
+      if(a&&a.type){
         try{ expandWorkload(a); }catch(e){ console.error('workload', e); }
         // The first container is served at the sandbox URL and the rest under
         // /<name>; a UI must be first and MCP answers at /mcp. The worker puts

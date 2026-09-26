@@ -288,6 +288,10 @@ declare
 
 begin
   l_in := json_object_t.parse(nvl(apex_application.g_x02, '{}'));
+  -- a request too big for x02 (a pipeline's files, a function's source) rides whole in the CLOB
+  if l_in.has('__clob') and apex_application.g_clob_01 is not null then
+    l_in := json_object_t.parse(apex_application.g_clob_01);
+  end if;
   -- The models this region actually serves, and where, come from the tenancy
   -- profile (factory/profile.py, refreshed by every worker at start); a model
   -- the user picked is used only if it is one of them.

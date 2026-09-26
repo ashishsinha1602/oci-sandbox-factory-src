@@ -26,7 +26,7 @@ FILES = {                                  # source path -> public path
     "LICENSE": "LICENSE",
     "docs/PREREQUISITES.md": "docs/PREREQUISITES.md",
 }
-TREES = ["foundation", "stacks/sandbox", "examples"]
+TREES = ["foundation", "stacks/sandbox", "examples"]   # public: the Terraform users install, and the examples
 SKIP = {".terraform", "terraform.tfstate", "terraform.tfstate.backup", "__pycache__", "dist"}
 SKIP_SUFFIX = {".tfvars", ".tfstate", ".tfplan", ".log", ".zip"}
 

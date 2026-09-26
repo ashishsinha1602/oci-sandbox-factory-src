@@ -985,7 +985,11 @@ def cmd_destroy(args):
     rm = client(oci.resource_manager.ResourceManagerClient)
     stack = find_stack(rm, fnd["compartments"]["control"], args.sandbox_id)
     if not stack:
-        raise SystemExit(f"No sandbox named {args.sandbox_id}")
+        # A build that failed before its stack existed (an image that would not
+        # build, a refused name) has nothing in OCI, yet its card stayed FAILED
+        # and every Destroy failed too. Nothing to destroy is a finished destroy.
+        print(f"No stack for {args.sandbox_id}: nothing in OCI to destroy; the sandbox is gone", flush=True)
+        return
     assert_owner(stack, getattr(args, "owner", None), "destroy")
     empty_buckets(args.sandbox_id, getattr(args, "os_namespace", None))
     print(f"Destroying {stack.display_name}")

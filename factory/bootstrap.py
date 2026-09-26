@@ -24,16 +24,11 @@ import controldb  # noqa: E402
 def bootstrap() -> None:
     conn = controldb.connect("ADMIN")
     cur = conn.cursor()
-    cur.execute("select count(*) from dba_users where username = :1", [controldb.SCHEMA])
-    if not cur.fetchone()[0]:
-        print("bootstrap: control schema missing; running controldb.setup()", flush=True)
-        conn.close()
-        controldb.setup([])
-        conn = controldb.connect("ADMIN")
-        cur = conn.cursor()
-    # One worker at a time: on a fresh install all of them start together, and
-    # two imports of the same application at once collide. The lock belongs to
-    # this session and goes when it closes.
+    # One worker at a time, from the very first step: on a fresh install all
+    # of them start together, and a worker that saw the schema already there
+    # tried to install the application before the first one had created the
+    # APEX workspace (ORA-20987). The lock belongs to this session and goes
+    # when it closes, so the session stays open through setup.
     try:
         got = cur.var(int)
         cur.execute("""declare h varchar2(128); begin dbms_lock.allocate_unique('SBX_APP_INSTALL', h);
@@ -42,6 +37,15 @@ def bootstrap() -> None:
             print(f"bootstrap: install lock not taken (status {got.getvalue()}); going on without it", flush=True)
     except Exception as e:  # noqa: BLE001
         print(f"bootstrap: install lock unavailable ({e}); going on without it", flush=True)
+    cur.execute("select count(*) from dba_users where username = :1", [controldb.SCHEMA])
+    if not cur.fetchone()[0]:
+        print("bootstrap: control schema missing; running controldb.setup()", flush=True)
+        controldb.setup([])                       # its own connection; ours keeps the lock
+    else:
+        # columns the newer code needs, on an install made by an older release
+        for col in controldb.migrate(cur):
+            print(f"bootstrap: column {col} added", flush=True)
+        conn.commit()
     cur.execute("select application_id from apex_applications where workspace = :1 and application_name = :2",
                 [controldb.WORKSPACE, "Sandbox Factory"])
     row = cur.fetchone()

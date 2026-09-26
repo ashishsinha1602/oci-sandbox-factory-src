@@ -70,6 +70,36 @@ def connect(user: str = "ADMIN") -> oracledb.Connection:
     return oracledb.connect(user=user, password=password, dsn=_dsn(info["connect_string"]))
 
 
+# Every column the page and the worker use. Applied on EVERY start, to a
+# brand-new table as much as an old one: a column that was only added to
+# existing tables (user_env, 2026-09-26) was missing from a fresh install, the
+# page's server code no longer compiled, and every call answered nothing.
+COLUMNS = (("seed_sql", "clob"), ("app_containers", "clob"), ("app_files", "clob"),
+           ("seed_key", "varchar2(40)"), ("app_template", "varchar2(40)"),
+           ("enable_nosql", "varchar2(1) default 'N' not null"),
+           ("adb_databases", "clob"), ("functions", "clob"),
+           ("app_instances", "clob"), ("buckets", "clob"),
+           ("queues", "clob"), ("dataflow_jobs", "clob"),
+           ("enable_catalog", "varchar2(1) default 'N' not null"),
+           ("enable_aidp", "varchar2(1) default 'N' not null"),
+           ("catalog_assets", "clob"),
+           ("user_env", "clob"),
+           ("worker_name", "varchar2(64)"))
+
+
+def migrate(cur) -> list[str]:
+    """Add every missing column of sandbox_requests. Idempotent."""
+    added = []
+    for col, kind in COLUMNS:
+        cur.execute("select count(*) from dba_tab_columns where owner = :1 and table_name = 'SANDBOX_REQUESTS' and column_name = :2",
+                    [SCHEMA, col.upper()])
+        if not cur.fetchone()[0]:
+            cur.execute(f"alter table {SCHEMA}.sandbox_requests add ({col} {kind})")
+            added.append(col)
+            print(f"column {col} added to sandbox_requests")
+    return added
+
+
 def _password(n: int = 20) -> str:
     alphabet = string.ascii_letters + string.digits
     return "S" + "".join(secrets.choice(alphabet) for _ in range(n - 2)) + "9#"
@@ -236,24 +266,7 @@ def setup(argv: list[str]) -> None:
     if not exists("select count(*) from dba_tables where owner = :1 and table_name = 'SANDBOX_REQUESTS'", SCHEMA):
         cur.execute(DDL)
         print("table sandbox_requests created")
-    else:
-        # Columns added after the first deployment of a control database: setup only
-        # runs the DDL for a brand new table, so bring an existing one up to date.
-        for col, kind in (("seed_sql", "clob"), ("app_containers", "clob"), ("app_files", "clob"),
-                          ("seed_key", "varchar2(40)"), ("app_template", "varchar2(40)"),
-                          ("enable_nosql", "varchar2(1) default 'N' not null"),
-                          ("adb_databases", "clob"), ("functions", "clob"),
-                          ("app_instances", "clob"), ("buckets", "clob"),
-                          ("queues", "clob"), ("dataflow_jobs", "clob"),
-                          ("enable_catalog", "varchar2(1) default 'N' not null"),
-                          ("enable_aidp", "varchar2(1) default 'N' not null"),
-                          ("catalog_assets", "clob"),
-                          ("user_env", "clob"),
-                          ("worker_name", "varchar2(64)")):
-            if not exists("select count(*) from dba_tab_columns where owner = :1 and table_name = 'SANDBOX_REQUESTS' and column_name = :2",
-                          SCHEMA, col.upper()):
-                cur.execute(f"alter table {SCHEMA}.sandbox_requests add ({col} {kind})")
-                print(f"column {col} added to sandbox_requests")
+    migrate(cur)
     cur.execute(VIEW)
     print("view sandboxes_v created")
     cur.execute(OWNER_TRIGGER)

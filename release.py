@@ -95,12 +95,28 @@ def check_app_export() -> list[str]:
     return problems
 
 
+def check_columns() -> list[str]:
+    """Every column the page's server code writes must be one the control
+    database creates on a fresh install (controldb.DDL + COLUMNS). A column
+    known only to an upgrade path broke every fresh install on 2026-09-26."""
+    import re
+    sys.path.insert(0, str(HERE / "factory"))
+    import controldb
+    known = set(re.findall(r"^\s*(\w+)\s+(?:number|varchar2|clob|timestamp|date)", controldb.DDL, re.M | re.I))
+    known |= {c for c, _ in controldb.COLUMNS}
+    ajax = (HERE / "factory" / "apex_home" / "ajax.plsql").read_text(encoding="utf-8")
+    used = set()
+    for m in re.finditer(r"insert into sandbox_requests\s*\(([^)]*)\)", ajax, re.I):
+        used |= {c.strip().lower() for c in m.group(1).split(",")}
+    return [f"ajax.plsql writes column {c} that a fresh control database does not have" for c in sorted(used - {k.lower() for k in known})]
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--check", action="store_true", help="verify only, build nothing")
     args = ap.parse_args()
 
-    problems = [p for name, root in STACKS.items() for p in check(name, root)] + check_app_export()
+    problems = [p for name, root in STACKS.items() for p in check(name, root)] + check_app_export() + check_columns()
     if problems:
         for p in problems:
             print("PROBLEM:", p, file=sys.stderr)

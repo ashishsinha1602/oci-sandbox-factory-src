@@ -38,7 +38,9 @@ def wait_reply(pg, before, timeout=300000):
     pg.wait_for_timeout(1500)
 
 
-def ask(pg, text, create=False):
+def ask(pg, text, create=False, env=None):
+    """env: "KEY=value;KEY2=value" typed into the Environment variables box
+    under the proposal before Create, as a user would."""
     n = pg.locator("#sf-msgs .sf-msg.ai").count()
     pg.click("textarea#sf-chat-in")
     pg.type("textarea#sf-chat-in", text, delay=28)
@@ -50,6 +52,20 @@ def ask(pg, text, create=False):
     pg.wait_for_timeout(4000)
     last = pg.locator("#sf-msgs .sf-msg.ai").last
     print("reply:", last.inner_text()[:160].replace("\n", " "), flush=True)
+    if env:
+        box = last.locator(".sf-envbox")
+        if box.count():
+            box.first.scroll_into_view_if_needed()
+            if not box.first.evaluate("d => d.open"):
+                box.first.locator("summary").click()
+                pg.wait_for_timeout(900)
+            ta = box.first.locator("textarea.sf-env")
+            ta.click()
+            ta.fill("")
+            pg.type(".sf-envbox textarea.sf-env", "\n".join(env.split(";")), delay=24)
+            pg.wait_for_timeout(1800)
+        else:
+            print("  (no Environment variables box shown)", flush=True)
     if create:
         btn = last.locator(".sf-act button.sf-btn:not(.sec)")
         if btn.count():
@@ -65,7 +81,7 @@ MASK_JS = r"""
 (() => {
   const DOTS = '••••••••';
   function secrets() {
-    const out = new Set();
+    const out = new Set(__MASK__);
     const walk = (o, k) => {
       if (o && typeof o === 'object') { for (const [kk, v] of Object.entries(o)) walk(v, kk); return; }
       if (typeof o === 'string' && o.length >= 6 && /pass|secret|token|pwd/i.test(k || '')) out.add(o);
@@ -101,6 +117,26 @@ def show(pg, url, wait=6000, scroll=True):
     if scroll:
         pg.mouse.wheel(0, 600)
         pg.wait_for_timeout(2500)
+
+
+def grafana(pg, base, password):
+    """Grafana behind the sandbox gateway: sign in as admin with the password
+    the user gave as GF_SECURITY_ADMIN_PASSWORD, then the home page and the
+    data-source gallery."""
+    base = base.rstrip("/")
+    show(pg, base + "/login", 4000, scroll=False)
+    if pg.locator("input[name=user]").count():
+        pg.fill("input[name=user]", "admin")
+        pg.fill("input[name=password]", password or "admin")
+        pg.wait_for_timeout(800)
+        pg.keyboard.press("Enter")
+        pg.wait_for_timeout(6000)
+        skip = pg.get_by_role("button", name="Skip")
+        if skip.count():
+            skip.first.click()
+            pg.wait_for_timeout(2500)
+    show(pg, base + "/", 7000, scroll=False)
+    show(pg, base + "/connections/datasources/new", 7000)
 
 
 def airflow(pg, base, login):
@@ -199,8 +235,11 @@ def tour(pg, sid, o):
     for u in urls:
         if u.rstrip("/").endswith("/mcp"):
             continue       # an MCP endpoint answers JSON-RPC, not a page: played as a scene at the end
-        if "airflow" in (app.get("containers") or []) or "airflow" in logins:
+        names = " ".join(str(c) for c in (app.get("containers") or [])).lower()
+        if "airflow" in names or "airflow" in logins:
             airflow(pg, u, logins.get("airflow"))
+        elif "grafana" in names or "grafana" in sid.lower():
+            grafana(pg, u, os.environ.get("SF_GRAFANA_PASSWORD"))
         else:
             show(pg, u, 8000)
     # MCP is played at the end, only where a container is actually named mcp,
@@ -256,7 +295,7 @@ def open_chat(pg):
 with sync_playwright() as p:
     b = p.chromium.launch()
     ctx = b.new_context(viewport={"width": 1366, "height": 860}, record_video_dir=OUT, record_video_size={"width": 1366, "height": 860})
-    ctx.add_init_script(MASK_JS)
+    ctx.add_init_script(MASK_JS.replace("__MASK__", json.dumps([x for x in os.environ.get("SF_MASK", "").split(";") if len(x) >= 6])))
     pg = ctx.new_page()
     T0[0] = time.time()
     pg.goto(URL, wait_until="networkidle", timeout=90000)
@@ -271,8 +310,11 @@ with sync_playwright() as p:
         open_chat(pg)   # the chat panel is hidden until the card is chosen
         pg.wait_for_timeout(1200)
         for q in PROMPTS:
-            create = q.endswith(" => create")
-            ask(pg, q[:-len(" => create")] if create else q, create=create)
+            # "prompt => env K=V;K2=V2 => create": type the prompt, fill the env box, click Create
+            parts = [x.strip() for x in q.split(" => ")]
+            create = parts[-1] == "create"
+            env = next((x[4:] for x in parts[1:] if x.startswith("env ")), None)
+            ask(pg, parts[0], create=create, env=env)
         pg.mouse.wheel(0, 900)
         pg.wait_for_timeout(4000)
     else:
@@ -319,6 +361,10 @@ if bucket and ns and files:
     import oci
     signer = oci.auth.signers.get_resource_principals_signer()
     osc = oci.object_storage.ObjectStorageClient({}, signer=signer)
+    try:
+        osc.get_bucket(ns, bucket)
+    except Exception:  # noqa: BLE001  (a fresh install: no reports bucket yet)
+        osc.create_bucket(ns, oci.object_storage.models.CreateBucketDetails(name=bucket, compartment_id=os.environ["REPORT_COMPARTMENT"]))
     name = f"demo/{PART}-{time.strftime('%Y%m%d-%H%M%S')}.webm"
     with open(os.path.join(OUT, files[0]), "rb") as fh:
         osc.put_object(ns, bucket, name, fh, content_type="video/webm")

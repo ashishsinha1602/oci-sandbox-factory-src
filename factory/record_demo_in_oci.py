@@ -22,10 +22,11 @@ import sandbox_factory as sf
 
 PLAYWRIGHT_IMAGE = "mcr.microsoft.com/playwright/python:v1.49.0-noble"
 BUCKET = "sbx-factory-reports"
+GRAFANA_PASSWORD = os.environ.get("SF_GRAFANA_PASSWORD", "Grafana-Demo-2026")
 PROMPTS = [
     "What do I have running?",
-    "A database with an MCP endpoint and the Studio UI to chat with the data, for 2 days => create",
-    "Deploy my app from https://github.com/ashishsinha1602/oci-sandbox-factory/tree/main/examples/hello-app with a database for 2 days => create",
+    "Deploy Grafana for my team from the public image grafana/grafana on port 3000, for 2 days. It reads its admin password from GF_SECURITY_ADMIN_PASSWORD."
+    f" => env GF_SECURITY_ADMIN_PASSWORD={GRAFANA_PASSWORD} => create",
     "I have Airflow writing to S3 and Glue building Iceberg tables, about 1 GB a day. Move it to OCI.",
     "here is the code https://github.com/ashishsinha1602/oci-sandbox-factory/tree/main/examples/telemetry-pipeline => create",
 ]
@@ -74,7 +75,8 @@ def main():
         containers=[m.CreateContainerDetails(
             display_name="recorder", image_url=PLAYWRIGHT_IMAGE,
             environment_variables={"SF_URL": url, "SF_USER": a.user, "SF_PASSWORD": password, "SF_PART": a.part,
-                                   "SF_PROMPTS": json.dumps(PROMPTS), "REPORT_BUCKET": BUCKET, "REPORT_NAMESPACE": ns},
+                                   "SF_PROMPTS": json.dumps(PROMPTS), "REPORT_BUCKET": BUCKET, "REPORT_NAMESPACE": ns,
+                                   "REPORT_COMPARTMENT": ctrl, "SF_GRAFANA_PASSWORD": GRAFANA_PASSWORD, "SF_MASK": GRAFANA_PASSWORD},
             volume_mounts=[m.CreateVolumeMountDetails(volume_name="script", mount_path="/workspace")],
             command=["bash", "-c", "pip install --quiet oci requests playwright==1.49.0 && python -u /workspace/record_demo.py"])])).data
     print(f"started {name}", flush=True)

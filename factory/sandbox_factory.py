@@ -461,6 +461,46 @@ def profile_model() -> str:
         return ""
 
 
+def kafka_public_addon(outputs: dict, sandbox_id: str) -> None:
+    """Give a Kafka cluster its public SASL/SCRAM endpoint, through the SDK.
+
+    Installs the PUBLICCONNECTIVITY add-on (or reuses one already there),
+    waits for its work request, and records the public bootstrap in the
+    outputs. Only for a cluster with a superuser (the vault is configured); a
+    failure leaves the private endpoint working and says so on the card.
+    """
+    k = outputs.get("kafka") if isinstance(outputs.get("kafka"), dict) else None
+    if not k or not k.get("cluster_id") or not k.get("superuser_secret_id") or k.get("public_bootstrap"):
+        return
+    m = oci.managed_kafka.models
+    kc = client(oci.managed_kafka.KafkaClusterClient)
+    cid, name = k["cluster_id"], f"{PREFIX}-{sandbox_id}-public"
+    try:
+        have = [a for a in kc.list_addons(kafka_cluster_id=cid).data.items if a.lifecycle_state not in ("DELETED", "FAILED")]
+        if not have:
+            print(f"installing the Kafka public endpoint ({name})", flush=True)
+            r = kc.install_addon(m.InstallPublicConnectivityAddonDetails(
+                name=name, addon_type="PUBLICCONNECTIVITY", authentication_mechanism="SASL",
+                network_cidrs=k.get("public_cidrs") or ["0.0.0.0/0"],
+                description=f"Public bootstrap for {sandbox_id}, SASL/SCRAM"), cid)
+            wr, started = r.headers.get("opc-work-request-id"), time.time()
+            while wr and time.time() - started < 3600:
+                st = kc.get_work_request(wr).data.status
+                if st in ("SUCCEEDED", "FAILED", "CANCELED"):
+                    print(f"  public endpoint {st} after {int(time.time() - started)}s", flush=True)
+                    break
+                time.sleep(POLL_SECONDS)
+            have = [a for a in kc.list_addons(kafka_cluster_id=cid).data.items if a.lifecycle_state == "ACTIVE"]
+        if have:
+            addon = kc.get_addon(cid, have[0].name).data
+            if getattr(addon, "bootstrap_url", None):
+                k["public_bootstrap"] = addon.bootstrap_url
+                return
+        outputs.setdefault("warnings", []).append("The Kafka public endpoint did not come up; the private bootstrap works from inside the sandbox network.")
+    except Exception as e:  # noqa: BLE001
+        outputs.setdefault("warnings", []).append(f"The Kafka public endpoint could not be installed ({type(e).__name__}); the private bootstrap works from inside the sandbox network.")
+
+
 def build_variables(args, fnd: dict, cfg: dict, app_containers: list | None) -> dict:
     """Resource Manager variables are strings; lists/objects go as JSON."""
     gw = gateway_available(cfg)
@@ -596,6 +636,7 @@ def cmd_create(args, app_containers: list | None = None) -> dict:
         job = run_job(rm, stack_id, "APPLY", args.sandbox_id)
     outputs = job_outputs(rm, job.id)
     db_links_through_gateway(outputs)
+    kafka_public_addon(outputs, args.sandbox_id)
     pws = adb_passwords_from_state(rm, stack_id)
     if isinstance(outputs.get("adb"), dict):
         # Sensitive outputs are masked in the job outputs; read the password from the state
@@ -641,6 +682,12 @@ def cmd_list(args) -> list:
 
 def destroy_stack(rm, stack, keep_stack: bool = False):
     label = stack.freeform_tags.get("sandbox_id", stack.display_name)
+    # the Kafka public endpoint is installed through the SDK (not in the stack),
+    # so remove it first or the cluster cannot be deleted
+    try:
+        kafka_addon_reset(foundation(), label)
+    except Exception as e:  # noqa: BLE001
+        print(f"  kafka add-on check skipped ({type(e).__name__})", flush=True)
     try:
         run_job(rm, stack.id, "DESTROY", label)
     except SystemExit:

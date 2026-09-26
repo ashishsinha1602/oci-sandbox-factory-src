@@ -37,12 +37,12 @@ output "queues" {
 # and Data Catalog has its own browser for harvested assets.
 output "consoles" {
   value = {
-    data_flow    = "https://cloud.oracle.com/data-flow/apps?region=${var.region}&compartmentId=${local.compartment_id}"
-    data_catalog = "https://cloud.oracle.com/data-catalog/data-catalogs?region=${var.region}&compartmentId=${local.compartment_id}"
+    data_flow      = "https://cloud.oracle.com/data-flow/apps?region=${var.region}&compartmentId=${local.compartment_id}"
+    data_catalog   = "https://cloud.oracle.com/data-catalog/data-catalogs?region=${var.region}&compartmentId=${local.compartment_id}"
     object_storage = "https://cloud.oracle.com/object-storage/buckets?region=${var.region}&compartmentId=${local.compartment_id}"
-    functions     = "https://cloud.oracle.com/functions/applications?region=${var.region}&compartmentId=${local.compartment_id}"
-    queues        = "https://cloud.oracle.com/queue/queues?region=${var.region}&compartmentId=${local.compartment_id}"
-    nosql         = "https://cloud.oracle.com/nosql/tables?region=${var.region}&compartmentId=${local.compartment_id}"
+    functions      = "https://cloud.oracle.com/functions/applications?region=${var.region}&compartmentId=${local.compartment_id}"
+    queues         = "https://cloud.oracle.com/queue/queues?region=${var.region}&compartmentId=${local.compartment_id}"
+    nosql          = "https://cloud.oracle.com/nosql/tables?region=${var.region}&compartmentId=${local.compartment_id}"
   }
 }
 
@@ -105,14 +105,15 @@ output "nosql" {
 
 output "kafka" {
   value = var.enable_kafka ? {
-    mode              = var.kafka_mode
-    bootstrap_servers = module.kafka[0].bootstrap_servers
-    topics            = var.kafka_topics
-    auth_note         = module.kafka[0].auth_note
-    cluster_id        = module.kafka[0].cluster_id
-    public_bootstrap  = module.kafka[0].public_bootstrap
+    mode                = var.kafka_mode
+    bootstrap_servers   = module.kafka[0].bootstrap_servers
+    topics              = var.kafka_topics
+    auth_note           = module.kafka[0].auth_note
+    cluster_id          = module.kafka[0].cluster_id
+    public_bootstrap    = module.kafka[0].public_bootstrap
     superuser_secret_id = module.kafka[0].superuser_secret_id
-    console_url       = module.kafka[0].pool_id != null ? "https://cloud.oracle.com/storage/streaming/streampools/${module.kafka[0].pool_id}?region=${var.region}" : "https://cloud.oracle.com/kafka/clusters?region=${var.region}&compartmentId=${local.compartment_id}"
+    public_cidrs        = module.kafka[0].public_cidrs
+    console_url         = module.kafka[0].pool_id != null ? "https://cloud.oracle.com/storage/streaming/streampools/${module.kafka[0].pool_id}?region=${var.region}" : "https://cloud.oracle.com/kafka/clusters?region=${var.region}&compartmentId=${local.compartment_id}"
   } : null
 }
 

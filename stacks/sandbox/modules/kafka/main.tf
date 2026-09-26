@@ -102,7 +102,7 @@ resource "oci_managed_kafka_kafka_cluster" "this" {
   coordination_type = "KRAFT"
   kafka_version     = var.kafka_version
 
-  cluster_config_id      = oci_managed_kafka_kafka_cluster_config.this[0].id
+  cluster_config_id = oci_managed_kafka_kafka_cluster_config.this[0].id
   # Version 1 is what a freshly created config has, and the number is known at
   # plan time; reading it from the config resource is what tripped the
   # provider's "inconsistent final plan" on every retry.
@@ -157,8 +157,8 @@ resource "oci_vault_secret" "superuser" {
   key_id         = var.key_id
   # A deleted secret keeps its name for a while, so a rebuilt sandbox needs a
   # fresh one.
-  secret_name    = "${var.name}-kafka-superuser-${random_id.secret[0].hex}"
-  description    = "SASL/SCRAM superuser password for ${var.name}-kafka, written by the Kafka service."
+  secret_name = "${var.name}-kafka-superuser-${random_id.secret[0].hex}"
+  description = "SASL/SCRAM superuser password for ${var.name}-kafka, written by the Kafka service."
   secret_content {
     content_type = "BASE64"
     content      = base64encode("pending")
@@ -183,11 +183,24 @@ resource "oci_managed_kafka_kafka_cluster_superusers_management" "this" {
   }
 }
 
+# The public endpoint add-on. The OCI provider reports "Work Request error"
+# with no message while the service finishes the add-on, and fails even after
+# the orphan is removed and the stack re-applied, so by default the factory
+# installs it through the SDK after the apply (sandbox_factory.kafka_public_addon).
+variable "public_addon_in_terraform" {
+  type    = bool
+  default = false
+}
+
+output "public_cidrs" {
+  value = var.public_cidrs
+}
+
 resource "oci_managed_kafka_kafka_cluster_addon" "public" {
-  count                    = local.superuser ? 1 : 0
+  count                    = local.superuser && var.public_addon_in_terraform ? 1 : 0
   kafka_cluster_id         = oci_managed_kafka_kafka_cluster.this[0].id
   addon_type               = "PUBLICCONNECTIVITY"
-  authentication_mechanism = "SASL"   # the API's spelling of SASL/SCRAM; "SASL_SCRAM" is rejected
+  authentication_mechanism = "SASL" # the API's spelling of SASL/SCRAM; "SASL_SCRAM" is rejected
   name                     = "${var.name}-public"
   description              = "Public bootstrap for ${var.name}, SASL/SCRAM."
   network_cidrs            = var.public_cidrs

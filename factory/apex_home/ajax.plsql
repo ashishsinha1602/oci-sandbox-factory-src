@@ -273,7 +273,7 @@ declare
        where rn = 1 and not (action = 'DESTROY' and status = 'DONE');
       if l_live >= l_cap then
         l_out.put('err', 'You already have ' || l_live || ' sandboxes, and the limit is ' || l_cap
-                      || '. Destroy one before creating another.');
+                      || '. Destroy one before creating another, or build again under the name of one that FAILED to replace it.');
         return;
       end if;
     end if;

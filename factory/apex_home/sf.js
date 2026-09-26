@@ -851,7 +851,9 @@ function sfInit(){
       add('NoSQL'+(nt>1?' x'+nt:''),'provisioned 5 read + 5 write units + 1 GB per table',nt*(5*P.nosql_read+5*(P.nosql_write||0)+(P.nosql_storage||0))); }
     var jobs=(a.dataflow_jobs||[]).length||(w&&(w.spark||[]).length)||0;
     if(jobs&&P.e4_ocpu){
-      var sch=String((w&&w.schedule)||'@once'), runs=1, mm=sch.match(/^\*\/(\d+)\s/);
+      // runs a month: the pipeline's schedule, or the schedule of a function that starts the job
+      var fsch=((a.functions||[]).filter(function(f){return f.schedule})[0]||{}).schedule;
+      var sch=String((w&&w.schedule)||fsch||'@once'), runs=1, mm=sch.match(/^\*\/(\d+)\s/);
       if(mm)runs=Math.round(H*60/Number(mm[1])); else if(sch==='@hourly')runs=H; else if(sch==='@daily'||/^\d+\s+\d+\s+\*\s+\*\s+\*$/.test(sch))runs=31;
       var perRun=2*(1*P.e4_ocpu+16*(P.e4_memory||0))*(10/60);
       add('Data Flow'+(jobs>1?' x'+jobs:''),'Spark driver + 1 executor, E4 1 OCPU / 16 GB each, about 10 min a run ('+usd(perRun)+'), '+(runs===1?'one run':runs+' runs a month')+'; nothing between runs',jobs*runs*perRun); }

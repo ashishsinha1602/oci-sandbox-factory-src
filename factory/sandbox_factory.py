@@ -672,6 +672,35 @@ def function_source(name: str, files: dict) -> dict:
     return flat
 
 
+def schedule_problem(cron: str) -> str | None:
+    """Why OCI Resource Scheduler could not run this cron, or None.
+
+    The scheduler runs a schedule at most hourly; the sandbox stack turns a
+    sub-hourly minute field (*/15, or 0,20,40) into one hourly schedule per
+    minute, so only the minute field may be finer than an hour, and at most
+    12 times an hour (every 5 minutes).
+    """
+    if not cron.strip():
+        return None
+    parts = cron.split()
+    if len(parts) != 5:
+        return "use five cron fields: minute hour day month weekday, e.g. */15 * * * * for every 15 minutes"
+    minute = parts[0]
+    if minute == "*":
+        return "every minute is not possible; every 5 minutes (*/5 * * * *) is the most frequent"
+    if minute.startswith("*/"):
+        step = minute[2:]
+        if not step.isdigit() or not 5 <= int(step) <= 59:
+            return "the minute step must be 5 to 59, e.g. */15"
+        return None
+    mins = minute.split(",")
+    if not all(m.isdigit() and int(m) < 60 for m in mins):
+        return "the minute field must be */N or minutes such as 0,30"
+    if len(mins) > 12:
+        return "at most 12 runs an hour (every 5 minutes)"
+    return None
+
+
 def prepare_functions(functions: list | None, sandbox_id: str, cfg: dict) -> list | None:
     """Every function gets an image OCI Functions can actually pull.
 
@@ -682,6 +711,13 @@ def prepare_functions(functions: list | None, sandbox_id: str, cfg: dict) -> lis
     """
     if not functions:
         return functions
+    macros = {"@hourly": "0 * * * *", "@daily": "0 0 * * *", "@midnight": "0 0 * * *", "@weekly": "0 0 * * 0", "@monthly": "0 0 1 * *"}
+    functions = [dict(f, schedule=macros.get((f.get("schedule") or "").strip(), (f.get("schedule") or "").strip()))
+                 for f in functions]
+    for f in functions:
+        problem = schedule_problem(f.get("schedule") or "")
+        if problem:
+            raise SystemExit(f"function {f['name']}: schedule {f.get('schedule')!r}: {problem}")
     namespace = client(oci.object_storage.ObjectStorageClient).get_namespace().data
     region_key = next(r.key.lower() for r in client(oci.identity.IdentityClient).list_regions().data
                       if r.name == cfg["region"])

@@ -176,7 +176,7 @@ def cases(fn_image: str | None):
         # a scheduled function written inline (the EventBridge + Lambda shape): every
         # run drops a file in the bucket, so the schedule is proven by the files
         "sched": base("sched", buckets=[{"name": "raw"}],
-                      functions=[{"name": "tick", "schedule": "*/5 * * * *", "timeout_sec": 120,
+                      functions=[{"name": "tick", "schedule": "*/15 * * * *", "timeout_sec": 120,
                                   "files": {"func.py": TICK_FN, "requirements.txt": "oci"}}]),
         # Iceberg on Object Storage written by Data Flow (the Glue + Iceberg shape)
         "iceberg": base("iceberg", buckets=[{"name": "lake"}],
@@ -214,7 +214,7 @@ def verify_sched(o, fnd):
     fn = (o.get("functions") or [{}])[0]
     record("sched: function has a schedule", bool(fn.get("schedule")), str(fn.get("schedule")))
     ticks = []
-    for _ in range(24):                       # up to 12 minutes: a */5 schedule fires at least twice
+    for _ in range(40):                       # up to 20 minutes: a */15 schedule fires at least once
         ticks = [x.name for x in osc.list_objects(ns, b, prefix="ticks/", fields="name").data.objects]
         if len(ticks) >= 1:
             break

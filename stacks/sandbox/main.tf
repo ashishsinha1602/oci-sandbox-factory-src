@@ -301,20 +301,36 @@ locals {
   fn_schedules = { for f in var.functions : f.name => f if try(f.schedule, "") != "" }
 }
 
+# Resource Scheduler runs a schedule at most hourly, so "every 15 minutes" is
+# four hourly schedules (minutes 0, 15, 30, 45) and a minute list is one
+# schedule per minute. Everything after the minute field is kept as given.
+locals {
+  fn_schedule_parts = merge([for name, f in local.fn_schedules : {
+    for m in(
+      startswith(split(" ", trimspace(f.schedule))[0], "*/")
+      ? [for x in range(0, 60, tonumber(trimprefix(split(" ", trimspace(f.schedule))[0], "*/"))) : tostring(x)]
+      : split(",", split(" ", trimspace(f.schedule))[0])
+      ) : "${name}@${m}" => {
+      fn   = name
+      cron = join(" ", concat([m], slice(split(" ", trimspace(f.schedule)), 1, 5)))
+    }
+  }]...)
+}
+
 resource "oci_resource_scheduler_schedule" "fn" {
-  for_each = length(var.functions) > 0 ? local.fn_schedules : {}
+  for_each = length(var.functions) > 0 ? local.fn_schedule_parts : {}
 
   compartment_id     = local.compartment_id
-  display_name       = "${local.name}-${each.key}"
-  description        = "Invokes function ${each.key} on ${each.value.schedule}"
+  display_name       = "${local.name}-${replace(each.key, "@", "-m")}"
+  description        = "Invokes function ${each.value.fn} (${each.value.cron})"
   action             = "START_RESOURCE"
   recurrence_type    = "CRON"
-  recurrence_details = each.value.schedule
+  recurrence_details = each.value.cron
   defined_tags       = local.defined_tags
   freeform_tags      = local.freeform_tags
 
   resources {
-    id = one([for f in module.functions[0].functions : f.id if f.name == each.key])
+    id = one([for f in module.functions[0].functions : f.id if f.name == each.value.fn])
   }
 }
 

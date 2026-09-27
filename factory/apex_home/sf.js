@@ -236,7 +236,7 @@ function sfInit(){
     var qa=(o.dataflow_jobs||[]).filter(function(d){return d.query})[0], lake=(o.buckets||[])[0];
     if(qa&&lake&&lake.namespace)L.push(['Iceberg query results (CSV)',u['bucket:'+lake.name]+'&prefix=query-results/']);
     if(o.catalog){ var na=(o.catalog.assets||[]).length, hv=o.catalog.harvest||{}, bad=Object.keys(hv).filter(function(k){return hv[k].state!=='SUCCEEDED'}).length;
-      L.push(['Data Catalog '+(o.catalog.display_name||'')+(na?' ('+na+' bucket'+(na>1?'s':'')+' registered'+(bad?', harvest failed on the Oracle side':'')+')':''),u['catalog']]); }
+      L.push(['Data Catalog '+(o.catalog.display_name||'')+(na?' ('+na+' bucket'+(na>1?'s':'')+' registered'+(bad?', harvest did not complete':'')+')':''),u['catalog']]); }
     if(o.logs&&o.logs.console_url)L.push(['Logs ('+(o.logs.logs||[]).length+')',o.logs.console_url]);
     if(o.rag&&!o.rag.error){ var db=(o.buckets||[]).filter(function(b){return b.name===o.rag.bucket})[0]; if(db)L.push(['Documents: drop files here',u['bucket:'+db.name]]); if(o.rag.ask_url)L.push(['Ask the documents (REST)',null]); }
     if(o.aidp)L.push(['AI Data Platform '+(o.aidp.display_name||''),o.aidp.console_url]);

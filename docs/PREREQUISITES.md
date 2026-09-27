@@ -204,7 +204,7 @@ Learned from a full reset of our own install (2026-09-25):
 - Kafka's public endpoint add-on is unreliable through the Terraform provider
   (being moved to the SDK).
 - Data Catalog: every sandbox bucket is registered in the catalog with a
-  resource-principal connection, and a harvest is started for each. The Object
-  Storage harvester currently fails inside Oracle's service (DCAT-20001, a null
-  pointer in `oracle.dcat.harvest`); the card says so. The buckets still appear
-  in the catalog as registered assets.
+  resource-principal connection and a filename pattern, and a harvest runs after
+  each build. The harvest succeeds and the buckets appear as folders; file-level
+  entities depend on the harvest scope Oracle's console sets, which the API does
+  not expose yet, so the catalog shows the buckets, not the files inside them.

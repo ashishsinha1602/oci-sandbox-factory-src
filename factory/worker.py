@@ -612,9 +612,9 @@ def harvest_catalog(outputs: dict) -> None:
     Registration is Terraform (the asset and its resource-principal connection);
     a harvest is a job run, which Terraform cannot express, so it is started
     here: one HARVEST job definition and one job per asset, run once now. The
-    outcome is recorded on the card. Best effort: Oracle's Object Storage
-    harvester currently fails inside the service (DCAT-20001, a null pointer in
-    oracle.dcat.harvest), and a sandbox is never failed for that.
+    outcome is recorded on the card. A filename pattern is attached to the asset
+    first: without one Oracle's harvester dies with a null pointer (DCAT-20001);
+    with one it runs clean. Best effort: a sandbox is never failed for the catalog.
     """
     cat = outputs.get("catalog") or {}
     assets = [a for a in (cat.get("assets") or []) if a.get("key") and a.get("connection_key")]
@@ -627,6 +627,16 @@ def harvest_catalog(outputs: dict) -> None:
     for a in assets:
         name = a["name"]
         try:
+            # the pattern: first folder of the bucket = one logical entity (raw/, gold/, iceberg/ ...)
+            pats = [p for p in dc.list_patterns(cat["id"], display_name=f"{name}-pattern").data.items
+                    if p.lifecycle_state != "DELETED"]
+            pat = pats[0] if pats else dc.create_pattern(cat["id"], M.CreatePatternDetails(
+                display_name=f"{name}-pattern", expression="{bucketName:[^/]+}/{logicalEntity:[^/]+}/.*")).data
+            try:
+                dc.add_data_selector_patterns(cat["id"], a["key"], M.DataSelectorPatternDetails(items=[pat.key]))
+            except oci.exceptions.ServiceError as e:  # already attached on a re-apply
+                if e.status not in (409, 412):
+                    raise
             jds = [j for j in dc.list_job_definitions(cat["id"], display_name=f"{name}-harvest").data.items
                    if j.lifecycle_state != "DELETED"]
             jd = jds[0] if jds else dc.create_job_definition(cat["id"], M.CreateJobDefinitionDetails(

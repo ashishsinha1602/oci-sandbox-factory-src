@@ -36,11 +36,15 @@ VECTOR_DIMENSION = 384
 VISION_MODEL = "google.gemini-2.5-flash"                 # reads text in pictures and describes them
 REFRESH_MINUTES = 5
 
+IMAGE_PROC = "DOCS_IMAGE_TEXT_RUN"
+
+
 def _plsql_image_job(base: str, compartment: str, genai: str) -> str:
-    """The scheduler job body. Kept as one string with the request built in
-    PL/SQL; send_request takes a BLOB body, so the CLOB is converted."""
+    """The image-describing procedure. A stored procedure, not the job body:
+    dbms_scheduler's job_action is capped at 4000 bytes (ORA-16612) and this
+    is longer. send_request takes a BLOB body, so the CLOB is converted."""
     return r"""
-declare
+create or replace procedure __PROC__ as
   l_base   varchar2(1000) := '__BASE__';
   l_cred   varchar2(64)   := 'OCI$RESOURCE_PRINCIPAL';
   l_n      number;
@@ -121,7 +125,7 @@ begin
       end;
     end if;
   end loop;
-end;""".replace("__BASE__", base).replace("__COMPARTMENT__", compartment).replace("__MODEL__", VISION_MODEL).replace("__GENAI__", genai)
+end;""".replace("__PROC__", IMAGE_PROC).replace("__BASE__", base).replace("__COMPARTMENT__", compartment).replace("__MODEL__", VISION_MODEL).replace("__GENAI__", genai)
 
 
 def enable(outputs: dict, region: str, bucket: str, namespace: str, chat_model: str) -> dict | None:
@@ -184,6 +188,11 @@ def enable(outputs: dict, region: str, bucket: str, namespace: str, chat_model: 
                 "similarity_threshold": 0, "match_limit": 5,
             }))
             # pictures become text before the crawler sees them
+            cur.execute(_plsql_image_job(base, compartment, genai))
+            cur.execute("select line, text from user_errors where name = :n and type = 'PROCEDURE' order by sequence", n=IMAGE_PROC)
+            errs = cur.fetchall()
+            if errs:
+                raise RuntimeError(f"{IMAGE_PROC} did not compile: " + "; ".join(f"line {l}: {t.strip()}" for l, t in errs)[:400])
             cur.execute("""
                 begin
                   begin dbms_scheduler.drop_job('ADMIN.DOCS_IMAGE_TEXT', true); exception when others then null; end;
@@ -195,7 +204,7 @@ def enable(outputs: dict, region: str, bucket: str, namespace: str, chat_model: 
                     repeat_interval => 'FREQ=MINUTELY;INTERVAL=' || :every,
                     enabled         => true,
                     comments        => 'Describes every new image in the docs bucket as text, so the vector index can ingest it');
-                end;""", body=_plsql_image_job(base, compartment, genai), every=REFRESH_MINUTES)
+                end;""", body=f"begin {IMAGE_PROC}; end;", every=REFRESH_MINUTES)
             # ask over REST: POST <rest_base>rag/ask {"question": "..."}, as ADMIN (basic auth)
             cur.execute("""
                 begin

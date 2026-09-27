@@ -89,10 +89,12 @@ resource "oci_datacatalog_data_asset" "this" {
 
 # The catalog reads the bucket as itself (resource principal): no key stored.
 resource "oci_datacatalog_connection" "rp" {
-  for_each = { for k, a in oci_datacatalog_data_asset.this : k => a if a.type_key == local.os_type_key }
+  # Keyed on values known at plan time (the asset names); a filter on the type
+  # key, which only exists once the catalog does, is "Invalid for_each argument".
+  for_each = var.enabled ? { for a in local.assets : a.name => a if lookup(a.properties, "default.namespace", "") != "" } : {}
 
   catalog_id     = oci_datacatalog_catalog.this[0].id
-  data_asset_key = each.value.key
+  data_asset_key = oci_datacatalog_data_asset.this[each.key].key
   display_name   = "${each.key}-resource-principal"
   type_key       = local.rp_type_key
   is_default     = true

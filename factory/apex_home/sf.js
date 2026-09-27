@@ -218,7 +218,7 @@ function sfInit(){
     var k=consolesFor(o), rg=window.__sfRegion||'us-phoenix-1', u={};
     (o.buckets||[]).forEach(function(b){u['bucket:'+b.name]=b.namespace?'https://cloud.oracle.com/object-storage/buckets/'+b.namespace+'/'+b.name+'/objects?region='+rg:k.object_storage});
     (o.dataflow_jobs||[]).forEach(function(d){u['spark:'+d.name]=d.id?'https://cloud.oracle.com/data-flow/apps/details/'+d.id+'?region='+rg:k.data_flow});
-    if(o.catalog)u['catalog']=o.catalog.console_url||k.data_catalog;  // Data Catalog is served from console.<region>.oraclecloud.com, not cloud.oracle.com
+    if(o.catalog)u['catalog']=o.catalog.console_url||'https://console.'+rg+'.oraclecloud.com/datacatalogexplorer';  // Data Catalog lives on console.<region>.oraclecloud.com; older rows still carry the 404 cloud.oracle.com link, so it is not used as a fallback
     (o.queues||[]).forEach(function(q){u['queue:'+q.name]=q.id?'https://cloud.oracle.com/queue/queues/'+q.id+'?region='+rg:k.queues});
     if(o.nosql&&o.nosql.tables)o.nosql.tables.forEach(function(n){u['nosql:'+n]=(o.nosql.table_urls||{})[n]||k.nosql});
     return u;

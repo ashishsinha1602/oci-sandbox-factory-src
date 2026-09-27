@@ -811,6 +811,12 @@ def process_one(conn) -> bool:
     try:
         with contextlib.redirect_stdout(log):
             outputs = handle(req, conn)
+            if req["action"] != "DESTROY" and isinstance(outputs, dict) and outputs.get("catalog"):
+                # every sandbox with a catalog, database or not: register, connect, harvest
+                try:
+                    harvest_catalog(outputs)
+                except Exception as e:  # noqa: BLE001  the catalog is a convenience on top, never a reason to fail the build
+                    print(f"catalog: harvest step skipped ({type(e).__name__}: {str(e)[:160]})", flush=True)
             if req["action"] != "DESTROY" and isinstance(outputs, dict) and (outputs.get("adb") or {}).get("connect_string"):
                 # Select AI first: it creates the credential that a seed needs in
                 # order to embed anything with DBMS_VECTOR.
@@ -825,7 +831,6 @@ def process_one(conn) -> bool:
                     if seed:
                         seed_database(outputs, seed)
                     enable_low_code(outputs)
-                    harvest_catalog(outputs)
                     if req.get("enable_rag") == "Y":
                         import oracle_rag
                         docs = next((b for b in (outputs.get("buckets") or []) if str(b.get("name", "")).endswith("-docs")), None)

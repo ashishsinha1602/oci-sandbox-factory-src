@@ -659,7 +659,7 @@ function sfInit(){
       +(cs.length>1?' &mdash; they share a host and reach each other on localhost':'')+', behind a public HTTPS URL: '+cs.map(function(c){return '<code>'+esc(c.name||'web')+'</code> &rarr; '+esc(c.image)+':'+esc(c.port||80)}).join(', ')+'.</li>');
     if(a.app_files){var n=Object.keys(typeof a.app_files==='string'?JSON.parse(a.app_files):a.app_files).length;
       L.push('<li><b>Your app, built here</b> &mdash; '+n+' source files are sent with the request, built into an image in OCI and deployed. Nothing to push to a registry.</li>')}
-    if(a.enable_rag)L.push('<li><b>Documents and RAG</b> &mdash; a docs bucket the database watches: every file you drop in is chunked and embedded by Oracle Select AI (vector index, refreshed every 5 minutes); images are first described as text by OCI Generative AI vision. Ask with <code>select ai narrate</code> or <code>POST .../rag/ask</code>.</li>');
+    if(a.enable_rag)L.push('<li><b>Documents and RAG</b> &mdash; a docs bucket the database watches: every file you drop in is chunked by Oracle Select AI and embedded inside the database by Oracle&rsquo;s all-MiniLM ONNX model (vector index, refreshed every 5 minutes); images are first described as text by OCI Generative AI vision. Ask with <code>select ai narrate</code> or <code>POST .../rag/ask</code>.</li>');
     (a.functions||[]).forEach(function(f){
       var src=f.files?Object.keys(f.files).length+' source file'+(Object.keys(f.files).length>1?'s':'')+', built into an image in OCI':(f.git_url?'built in OCI from '+esc(f.git_url):(f.image?esc(f.image):'the starter function, built in OCI'));
       L.push('<li><b>Function '+esc(f.name)+'</b> &mdash; '+src+'; serverless, billed per call, free when idle'+(f.schedule?'. Runs on a schedule (<code>'+esc(f.schedule)+'</code>) through OCI Resource Scheduler':'')+'. You get a plain HTTPS URL for it.</li>')});
@@ -931,7 +931,7 @@ function sfInit(){
       add('API Gateway','HTTPS in front of the app and functions, at 100,000 calls a month; $'+P.gateway_calls+' per 1M',0.1*P.gateway_calls);
     if(a.enable_catalog||(w&&w.catalog)) perUse.push('Data Catalog (not in Oracle’s price list)');
     if(a.enable_aidp) perUse.push('AI Data Platform (per its own compute)');
-    if(a.enable_rag) perUse.push('Generative AI embeddings and vision (per token, when documents are added)');
+    if(a.enable_rag) perUse.push('Generative AI vision for images and the answers (per token); embeddings run inside the database at no extra cost');
     perUse.forEach(function(n){add(n.split(' (')[0],(n.match(/\((.*)\)/)||[])[1]||'per use',null);});
     if(!items.length)return null;
     var days=Number(a.ttl_days)||3, life=total*days*24/H;

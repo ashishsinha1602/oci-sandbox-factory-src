@@ -4,8 +4,11 @@ The user drops files into the sandbox's docs bucket (PDF, Word, HTML, text,
 JSON, and images). Oracle does the rest:
 
   * Select AI's vector index (DBMS_CLOUD_AI.CREATE_VECTOR_INDEX) watches the
-    bucket, chunks and embeds every document with OCI Generative AI, and
-    refreshes itself every few minutes - Oracle's own crawler.
+    bucket, chunks every document and refreshes itself every few minutes -
+    Oracle's own crawler. The embeddings are made INSIDE the database by
+    Oracle's prebuilt all-MiniLM-L12-v2 ONNX model: no per-token cost, and it
+    works in every region (OCI Generative AI has no on-demand embedding model
+    in some regions, Phoenix among them: embedText answers 404 there).
   * Oracle's ingestion skips pictures, so a scheduled job in the database turns
     every image into text first: OCI Generative AI vision transcribes the text
     in the picture and describes what it shows, and the description is written
@@ -23,7 +26,13 @@ import json
 
 import sandbox_factory as sf
 
-EMBEDDING_MODEL = "cohere.embed-multilingual-v3.0"     # 1024 dimensions, text in any language
+# Oracle's own augmented ONNX transformer, published for DBMS_VECTOR.LOAD_ONNX_MODEL
+ONNX_MODEL = "ALL_MINILM_L12_V2"
+ONNX_FILE = "all_MiniLM_L12_v2.onnx"
+ONNX_URI = ("https://adwc4pm.objectstorage.us-ashburn-1.oci.customer-oci.com/p/"
+            "eLddQappgBJ7jNi6Guz9m9LOtYe2u8LWY19GfgU8flFK4N9YgP4kTlrE9Px3pE12/n/adwc4pm/b/OML-Resources/o/" + ONNX_FILE)
+EMBEDDING_MODEL = "database: " + ONNX_MODEL
+VECTOR_DIMENSION = 384
 VISION_MODEL = "google.gemini-2.5-flash"                 # reads text in pictures and describes them
 REFRESH_MINUTES = 5
 
@@ -141,6 +150,16 @@ def enable(outputs: dict, region: str, bucket: str, namespace: str, chat_model: 
                         ace  => xs$ace_type(privilege_list => xs$name_list('http', 'connect', 'resolve'),
                                             principal_name => 'ADMIN', principal_type => xs_acl.ptype_db));
                     end;""", h=host)
+            # the embedding model, loaded once into the database from Oracle's published file
+            cur.execute("""
+                declare n number;
+                begin
+                  select count(*) into n from user_mining_models where model_name = :m;
+                  if n = 0 then
+                    dbms_cloud.get_object(credential_name => null, directory_name => 'DATA_PUMP_DIR', object_uri => :u);
+                    dbms_vector.load_onnx_model(directory => 'DATA_PUMP_DIR', file_name => :f, model_name => :m);
+                  end if;
+                end;""", m=ONNX_MODEL, u=ONNX_URI, f=ONNX_FILE)
             # a profile of its own: the chat model plus the embedding model the index uses
             cur.execute("""
                 begin
@@ -151,6 +170,7 @@ def enable(outputs: dict, region: str, bucket: str, namespace: str, chat_model: 
                 "provider": "oci", "credential_name": "OCI$RESOURCE_PRINCIPAL", "region": region,
                 "model": chat_model, "embedding_model": EMBEDDING_MODEL,
                 "provider_endpoint": genai, "oci_compartment_id": compartment, "oci_apiformat": "GENERIC",
+                "vector_index_name": "DOCS_IDX",
             }))
             # Oracle's crawler: the vector index over the docs prefix, refreshed on a schedule
             cur.execute("""
@@ -159,7 +179,7 @@ def enable(outputs: dict, region: str, bucket: str, namespace: str, chat_model: 
                 end;""", attrs=json.dumps({
                 "vector_db_provider": "oracle", "location": base,
                 "object_storage_credential_name": "OCI$RESOURCE_PRINCIPAL",
-                "profile_name": "SANDBOX_RAG", "vector_dimension": 1024, "vector_distance_metric": "cosine",
+                "profile_name": "SANDBOX_RAG", "vector_dimension": VECTOR_DIMENSION, "vector_distance_metric": "cosine",
                 "chunk_size": 1024, "chunk_overlap": 128, "refresh_rate": REFRESH_MINUTES,
                 "similarity_threshold": 0, "match_limit": 5,
             }))

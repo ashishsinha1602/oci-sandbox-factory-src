@@ -60,7 +60,8 @@ def main() -> int:
         ex.write_text("\n".join(l for l in ex.read_text(encoding="utf-8").splitlines() if "Liberty" not in l) + "\n", encoding="utf-8")
     run("git", "add", "-A", cwd=work)
     if subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=work).returncode:
-        run("git", "commit", "-q", "-m", "Publish " + (a.release or "update"), cwd=work)
+        run("git", "-c", "user.name=Ashish Sinha", "-c", "user.email=89672346+ashishsinha1602@users.noreply.github.com",
+            "commit", "-q", "-m", "Publish " + (a.release or "update"), cwd=work)
         run("git", "-c", "protocol.version=1", "push", "-q", "origin", "HEAD:main", cwd=work)
         print("public repository updated")
     else:

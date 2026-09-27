@@ -412,17 +412,15 @@ def verify_lake(o, fnd, label="lake"):
         dc = sf.client(oci.data_catalog.DataCatalogClient)
         st = dc.get_catalog(cat["id"]).data.lifecycle_state
         record(f"{label}: Data Catalog is ACTIVE", st == "ACTIVE", cat.get("display_name"))
-
-
-    # the catalog is never an empty shell: every bucket is registered, with a connection, and a harvest was attempted
-    cat = o.get("catalog") or {}
-    assets = cat.get("assets") or []
-    record(f"{label}: the catalog registered the bucket with a resource-principal connection",
-           any(a.get("name") == b and a.get("connection_key") for a in assets), str([(a.get("name"), bool(a.get("connection_key"))) for a in assets]))
-    # (the connection is created by the worker after the apply and recorded on the asset)
-    hv = (cat.get("harvest") or {}).get(b) or {}
-    record(f"{label}: the catalog harvested the bucket", hv.get("state") == "SUCCEEDED",
-           f"{hv.get('state')} {hv.get('error', '')[:120]}")
+        # the catalog is never an empty shell: every bucket is registered, with a connection, and harvested
+        # (a sandbox built without a catalog because the region's catalog-count limit is used up is the
+        # documented fallback and is reported by the "built within region limits" check instead)
+        assets = cat.get("assets") or []
+        record(f"{label}: the catalog registered the bucket with a resource-principal connection",
+               any(a.get("name") == b and a.get("connection_key") for a in assets), str([(a.get("name"), bool(a.get("connection_key"))) for a in assets]))
+        hv = (cat.get("harvest") or {}).get(b) or {}
+        record(f"{label}: the catalog harvested the bucket", hv.get("state") == "SUCCEEDED",
+               f"{hv.get('state')} {hv.get('error', '')[:120]}")
 
 def verify_db(o):
     url = (o.get("app") or {}).get("url")

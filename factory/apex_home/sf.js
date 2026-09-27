@@ -205,7 +205,7 @@ function sfInit(){
     var c=o.sandbox&&o.sandbox.compartment_id, rg=window.__sfRegion||'';
     if(!c)return {};
     var q='?region='+rg+'&compartmentId='+c;
-    return {data_flow:'https://cloud.oracle.com/data-flow/apps'+q, data_catalog:'https://cloud.oracle.com/data-catalog/data-catalogs'+q,
+    return {data_flow:'https://cloud.oracle.com/data-flow/apps'+q, data_catalog:'https://console.'+rg+'.oraclecloud.com/datacatalogexplorer',
       object_storage:'https://cloud.oracle.com/object-storage/buckets'+q, functions:'https://cloud.oracle.com/functions/applications'+q,
       queues:'https://cloud.oracle.com/queue/queues'+q, nosql:'https://cloud.oracle.com/nosql/tables'+q};
   }
@@ -218,7 +218,7 @@ function sfInit(){
     var k=consolesFor(o), rg=window.__sfRegion||'us-phoenix-1', u={};
     (o.buckets||[]).forEach(function(b){u['bucket:'+b.name]=b.namespace?'https://cloud.oracle.com/object-storage/buckets/'+b.namespace+'/'+b.name+'/objects?region='+rg:k.object_storage});
     (o.dataflow_jobs||[]).forEach(function(d){u['spark:'+d.name]=d.id?'https://cloud.oracle.com/data-flow/apps/details/'+d.id+'?region='+rg:k.data_flow});
-    if(o.catalog)u['catalog']=o.catalog.id?'https://cloud.oracle.com/data-catalog/data-catalogs/'+o.catalog.id+'?region='+rg:k.data_catalog;
+    if(o.catalog)u['catalog']=o.catalog.console_url||k.data_catalog;  // Data Catalog is served from console.<region>.oraclecloud.com, not cloud.oracle.com
     (o.queues||[]).forEach(function(q){u['queue:'+q.name]=q.id?'https://cloud.oracle.com/queue/queues/'+q.id+'?region='+rg:k.queues});
     if(o.nosql&&o.nosql.tables)o.nosql.tables.forEach(function(n){u['nosql:'+n]=(o.nosql.table_urls||{})[n]||k.nosql});
     return u;
@@ -231,7 +231,10 @@ function sfInit(){
     (o.queues||[]).forEach(function(q){L.push(['Queue '+q.name,u['queue:'+q.name]])});
     (o.functions||[]).forEach(function(f){ if(f.url)L.push(['Function '+f.name,f.url]); });
     if(o.functions&&o.functions.length&&!o.functions.some(function(f){return f.url}))L.push(['Functions: '+o.functions.map(function(f){return f.name}).join(', '),k.functions]);
-    (o.dataflow_jobs||[]).forEach(function(d){L.push(['Spark job '+d.name,u['spark:'+d.name]])});
+    (o.dataflow_jobs||[]).forEach(function(d){L.push([(d.query?'Iceberg tables: query app ':'Spark job ')+d.name,u['spark:'+d.name]])});
+    // Iceberg: the query app writes its answers as CSV under query-results/ in the lake bucket
+    var qa=(o.dataflow_jobs||[]).filter(function(d){return d.query})[0], lake=(o.buckets||[])[0];
+    if(qa&&lake&&lake.namespace)L.push(['Iceberg query results (CSV)',u['bucket:'+lake.name]+'&prefix=query-results/']);
     if(o.catalog)L.push(['Data Catalog '+(o.catalog.display_name||''),u['catalog']]);
     if(o.logs&&o.logs.console_url)L.push(['Logs ('+(o.logs.logs||[]).length+')',o.logs.console_url]);
     if(o.rag&&!o.rag.error){ var db=(o.buckets||[]).filter(function(b){return b.name===o.rag.bucket})[0]; if(db)L.push(['Documents: drop files here',u['bucket:'+db.name]]); if(o.rag.ask_url)L.push(['Ask the documents (REST)',null]); }

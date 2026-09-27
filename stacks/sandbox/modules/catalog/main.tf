@@ -52,6 +52,8 @@ output "catalog" {
     display_name      = oci_datacatalog_catalog.this[0].display_name
     number_of_objects = oci_datacatalog_catalog.this[0].number_of_objects
     service_url       = oci_datacatalog_catalog.this[0].service_api_url
+    # the catalog's own console page. cloud.oracle.com/data-catalog/... is not a route (404).
+    console_url       = oci_datacatalog_catalog.this[0].service_console_url
   } : null
 }
 

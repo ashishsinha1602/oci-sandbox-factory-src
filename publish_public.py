@@ -25,6 +25,7 @@ FILES = {                                  # source path -> public path
     "public/README.md": "README.md",
     "LICENSE": "LICENSE",
     "docs/PREREQUISITES.md": "docs/PREREQUISITES.md",
+    "docs/SECURITY.md": "docs/SECURITY.md",
 }
 TREES = ["foundation", "stacks/sandbox", "examples"]   # public: the Terraform users install, and the examples
 SKIP = {".terraform", "terraform.tfstate", "terraform.tfstate.backup", "__pycache__", "dist"}

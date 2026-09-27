@@ -797,6 +797,12 @@ function sfInit(){
     if(a.functions&&a.functions.length&&isFunctionCode(files)){
       var fn=a.functions.filter(function(f){return !f.files&&!f.git_url})[0];
       if(fn){ fn.files=functionFiles(files); delete fn.image; }
+      // The model sometimes answers with its own rewrite of the attached handler. The user's
+      // code is the one that ships: any function file that also exists in the attachment is
+      // replaced by the attached original, byte for byte.
+      var att=functionFiles(files);
+      a.functions.forEach(function(f){ if(!f.files)return; Object.keys(f.files).forEach(function(n){ var base=n.split('/').pop();
+        Object.keys(att).forEach(function(m){ if(m.split('/').pop()===base && att[m]!==f.files[n]) f.files[n]=att[m]; }); }); });
     }
     if(a.workload||hasDockerfile(files))return null;
     if(a.type==='deploy'||a.git_url){

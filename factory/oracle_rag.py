@@ -214,18 +214,28 @@ def enable(outputs: dict, region: str, bucket: str, namespace: str, chat_model: 
                     p_source_type => 'plsql/block', p_mimes_allowed => 'application/json',
                     p_source => q'[
                       declare
-                        l_q varchar2(4000) := :question;
-                        l_a clob;
+                        l_q varchar2(4000);
+                        l_o json_object_t;
+                        l_j clob;
                       begin
-                        dbms_cloud_ai.set_profile('SANDBOX_RAG');
-                        l_a := dbms_cloud_ai.generate(prompt => l_q, profile_name => 'SANDBOX_RAG', action => 'narrate');
-                        htp.p(json_object('question' value l_q, 'answer' value l_a returning clob));
+                        l_q := :question;
+                        -- json_object_t, not json_object: a CLOB value in json_object does not compile here (ORDS-25001)
+                        l_o := json_object_t();
+                        l_o.put('question', l_q);
+                        l_o.put('answer', dbms_cloud_ai.generate(prompt => l_q, profile_name => 'SANDBOX_RAG', action => 'narrate'));
+                        l_j := l_o.to_clob();
+                        owa_util.mime_header('application/json', true);
+                        for i in 0 .. ceil(dbms_lob.getlength(l_j) / 8000) - 1 loop
+                          htp.prn(dbms_lob.substr(l_j, 8000, i * 8000 + 1));
+                        end loop;
                       exception when others then
+                        owa_util.mime_header('application/json', true);
                         htp.p(json_object('question' value l_q, 'error' value substr(sqlerrm, 1, 500)));
                       end;]');
                   begin
-                    ords.create_privilege(p_name => 'rag.ask', p_role_name => 'SQL Developer', p_patterns => '/rag/*',
+                    ords.create_privilege(p_name => 'rag.ask', p_role_name => 'SQL Developer',
                                           p_label => 'Ask the documents', p_description => 'Basic auth as a database user');
+                    ords.create_privilege_mapping(p_privilege_name => 'rag.ask', p_pattern => '/rag/*');
                   exception when others then null;
                   end;
                   commit;

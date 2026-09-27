@@ -419,6 +419,7 @@ def verify_lake(o, fnd, label="lake"):
     assets = cat.get("assets") or []
     record(f"{label}: the catalog registered the bucket with a resource-principal connection",
            any(a.get("name") == b and a.get("connection_key") for a in assets), str([(a.get("name"), bool(a.get("connection_key"))) for a in assets]))
+    # (the connection is created by the worker after the apply and recorded on the asset)
     hv = (cat.get("harvest") or {}).get(b) or {}
     record(f"{label}: the catalog harvested the bucket", hv.get("state") == "SUCCEEDED",
            f"{hv.get('state')} {hv.get('error', '')[:120]}")

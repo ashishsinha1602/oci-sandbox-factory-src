@@ -58,15 +58,8 @@ data "oci_datacatalog_catalog_types" "object_storage" {
   type_category = "dataAsset"
   name          = "Oracle Object Storage"
 }
-data "oci_datacatalog_catalog_types" "resource_principal" {
-  count         = var.enabled ? 1 : 0
-  catalog_id    = oci_datacatalog_catalog.this[0].id
-  type_category = "connection"
-  name          = "Resource Principal"
-}
 locals {
   os_type_key = var.enabled ? one([for i in data.oci_datacatalog_catalog_types.object_storage[0].type_collection[0].items : i.key]) : ""
-  rp_type_key = var.enabled ? one([for i in data.oci_datacatalog_catalog_types.resource_principal[0].type_collection[0].items : i.key if i.parent_type_key == local.os_type_key]) : ""
   default_assets = var.namespace == "" ? [] : [for b in var.buckets : {
     name        = b
     type_key    = local.os_type_key
@@ -87,20 +80,10 @@ resource "oci_datacatalog_data_asset" "this" {
   properties   = each.value.properties
 }
 
-# The catalog reads the bucket as itself (resource principal): no key stored.
-resource "oci_datacatalog_connection" "rp" {
-  # Keyed on values known at plan time (the asset names); a filter on the type
-  # key, which only exists once the catalog does, is "Invalid for_each argument".
-  for_each = var.enabled ? { for a in local.assets : a.name => a if lookup(a.properties, "default.namespace", "") != "" } : {}
-
-  catalog_id     = oci_datacatalog_catalog.this[0].id
-  data_asset_key = oci_datacatalog_data_asset.this[each.key].key
-  display_name   = "${each.key}-resource-principal"
-  type_key       = local.rp_type_key
-  is_default     = true
-  properties     = { "default.ociRegion" = var.region, "default.ociCompartment" = var.compartment_id }
-}
-
+# The resource-principal connection, the filename pattern and the harvest are
+# made by the worker after the apply: the catalog-types data source cannot tell
+# the two "Resource Principal" connection types apart (no parent type key), and a
+# harvest is a job run, which Terraform cannot express.
 output "catalog" {
   value = var.enabled ? {
     id                = oci_datacatalog_catalog.this[0].id
@@ -109,12 +92,8 @@ output "catalog" {
     service_url       = oci_datacatalog_catalog.this[0].service_api_url
     # the catalog's own console page. cloud.oracle.com/data-catalog/... is not a route (404).
     console_url       = oci_datacatalog_catalog.this[0].service_console_url
-    # what is registered, with the keys the worker needs to start a harvest
-    assets = [for k, a in oci_datacatalog_data_asset.this : {
-      name           = k
-      key            = a.key
-      connection_key = try(oci_datacatalog_connection.rp[k].key, null)
-    }]
+    # what is registered; the worker adds the connection, the pattern and the harvest
+    assets = [for k, a in oci_datacatalog_data_asset.this : { name = k, key = a.key, type_key = a.type_key }]
   } : null
 }
 

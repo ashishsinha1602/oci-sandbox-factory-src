@@ -617,16 +617,29 @@ def harvest_catalog(outputs: dict) -> None:
     with one it runs clean. Best effort: a sandbox is never failed for the catalog.
     """
     cat = outputs.get("catalog") or {}
-    assets = [a for a in (cat.get("assets") or []) if a.get("key") and a.get("connection_key")]
+    assets = [a for a in (cat.get("assets") or []) if a.get("key")]
     if not cat.get("id") or not assets:
         return
     import time as _t
     dc = sf.client(oci.data_catalog.DataCatalogClient)
     M = oci.data_catalog.models
+    cfg = sf.config()
+    compartment = (outputs.get("sandbox") or {}).get("compartment_id") or sf.foundation()["compartments"]["sandboxes"]
     result = {}
     for a in assets:
         name = a["name"]
         try:
+            # the connection: the "Resource Principal" type whose parent is this asset's type
+            conns = [c for c in dc.list_connections(cat["id"], a["key"]).data.items if c.lifecycle_state != "DELETED"]
+            if conns:
+                conn_key = conns[0].key
+            else:
+                rp = next(t for t in oci.pagination.list_call_get_all_results(dc.list_types, cat["id"], type_category="connection").data
+                          if t.name == "Resource Principal" and dc.get_type(cat["id"], t.key).data.parent_type_key == a.get("type_key"))
+                conn_key = dc.create_connection(cat["id"], a["key"], M.CreateConnectionDetails(
+                    display_name=f"{name}-resource-principal", type_key=rp.key, is_default=True,
+                    properties={"default": {"ociRegion": cfg["region"], "ociCompartment": compartment}})).data.key
+            a["connection_key"] = conn_key
             # the pattern: first folder of the bucket = one logical entity (raw/, gold/, iceberg/ ...)
             pats = [p for p in dc.list_patterns(cat["id"], display_name=f"{name}-pattern").data.items
                     if p.lifecycle_state != "DELETED"]

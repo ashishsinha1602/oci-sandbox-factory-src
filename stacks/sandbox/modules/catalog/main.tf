@@ -60,18 +60,22 @@ data "oci_datacatalog_catalog_types" "object_storage" {
 }
 locals {
   os_type_key = var.enabled ? one([for i in data.oci_datacatalog_catalog_types.object_storage[0].type_collection[0].items : i.key]) : ""
-  default_assets = var.namespace == "" ? [] : [for b in var.buckets : {
+  # The for_each KEYS must be known at plan time: bucket names and asset names
+  # are variables, so they are. The VALUES (type key, namespace) may only be
+  # known at apply, which for_each allows. A guard like `namespace == "" ? [] : ...`
+  # made the whole list unknown and the apply failed with "Invalid for_each argument".
+  default_assets = length(var.data_assets) > 0 ? {} : { for b in var.buckets : b => {
     name        = b
     type_key    = local.os_type_key
     description = "Object Storage bucket ${b} of sandbox ${var.name}"
     # the value the catalog accepts for an Object Storage asset: the Swift endpoint, no path
     properties  = { "default.url" = "https://swiftobjectstorage.${var.region}.oraclecloud.com", "default.namespace" = var.namespace }
-  }]
-  assets = length(var.data_assets) > 0 ? var.data_assets : local.default_assets
+  } }
+  assets = merge(local.default_assets, { for a in var.data_assets : a.name => a })
 }
 
 resource "oci_datacatalog_data_asset" "this" {
-  for_each = var.enabled ? { for a in local.assets : a.name => a } : {}
+  for_each = var.enabled ? local.assets : {}
 
   catalog_id   = oci_datacatalog_catalog.this[0].id
   display_name = each.value.name

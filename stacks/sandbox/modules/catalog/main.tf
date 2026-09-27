@@ -23,6 +23,19 @@ variable "data_assets" {
 }
 variable "defined_tags" { type = map(string) }
 variable "freeform_tags" { type = map(string) }
+# When data_assets is empty, every bucket of the sandbox is registered as an
+# Object Storage asset with a resource-principal connection, so the catalog is
+# never an empty shell. The worker then asks the catalog to harvest them.
+variable "region" { type = string }
+variable "namespace" {
+  type    = string
+  default = ""
+}
+variable "buckets" {
+  description = "Bucket names of this sandbox, registered by default."
+  type        = list(string)
+  default     = []
+}
 
 # OCI Data Catalog is the counterpart to the AWS Glue Data Catalog: the
 # metastore that says what data exists and where. Data Flow jobs read it to
@@ -36,14 +49,54 @@ resource "oci_datacatalog_catalog" "this" {
   freeform_tags  = var.freeform_tags
 }
 
+# Type keys are per catalog and must be looked up. "Resource Principal" exists
+# for several asset types; the one whose parent is the Object Storage asset type
+# is the right one.
+data "oci_datacatalog_catalog_types" "object_storage" {
+  count         = var.enabled ? 1 : 0
+  catalog_id    = oci_datacatalog_catalog.this[0].id
+  type_category = "dataAsset"
+  name          = "Oracle Object Storage"
+}
+data "oci_datacatalog_catalog_types" "resource_principal" {
+  count         = var.enabled ? 1 : 0
+  catalog_id    = oci_datacatalog_catalog.this[0].id
+  type_category = "connection"
+  name          = "Resource Principal"
+}
+locals {
+  os_type_key = var.enabled ? one([for i in data.oci_datacatalog_catalog_types.object_storage[0].type_collection[0].items : i.key]) : ""
+  rp_type_key = var.enabled ? one([for i in data.oci_datacatalog_catalog_types.resource_principal[0].type_collection[0].items : i.key if i.parent_type_key == local.os_type_key]) : ""
+  default_assets = var.namespace == "" ? [] : [for b in var.buckets : {
+    name        = b
+    type_key    = local.os_type_key
+    description = "Object Storage bucket ${b} of sandbox ${var.name}"
+    # the value the catalog accepts for an Object Storage asset: the Swift endpoint, no path
+    properties  = { "default.url" = "https://swiftobjectstorage.${var.region}.oraclecloud.com", "default.namespace" = var.namespace }
+  }]
+  assets = length(var.data_assets) > 0 ? var.data_assets : local.default_assets
+}
+
 resource "oci_datacatalog_data_asset" "this" {
-  for_each = var.enabled ? { for a in var.data_assets : a.name => a } : {}
+  for_each = var.enabled ? { for a in local.assets : a.name => a } : {}
 
   catalog_id   = oci_datacatalog_catalog.this[0].id
   display_name = each.value.name
   type_key     = each.value.type_key
   description  = each.value.description
   properties   = each.value.properties
+}
+
+# The catalog reads the bucket as itself (resource principal): no key stored.
+resource "oci_datacatalog_connection" "rp" {
+  for_each = { for k, a in oci_datacatalog_data_asset.this : k => a if a.type_key == local.os_type_key }
+
+  catalog_id     = oci_datacatalog_catalog.this[0].id
+  data_asset_key = each.value.key
+  display_name   = "${each.key}-resource-principal"
+  type_key       = local.rp_type_key
+  is_default     = true
+  properties     = { "default.ociRegion" = var.region, "default.ociCompartment" = var.compartment_id }
 }
 
 output "catalog" {
@@ -54,6 +107,12 @@ output "catalog" {
     service_url       = oci_datacatalog_catalog.this[0].service_api_url
     # the catalog's own console page. cloud.oracle.com/data-catalog/... is not a route (404).
     console_url       = oci_datacatalog_catalog.this[0].service_console_url
+    # what is registered, with the keys the worker needs to start a harvest
+    assets = [for k, a in oci_datacatalog_data_asset.this : {
+      name           = k
+      key            = a.key
+      connection_key = try(oci_datacatalog_connection.rp[k].key, null)
+    }]
   } : null
 }
 

@@ -606,6 +606,53 @@ def enable_low_code(outputs: dict) -> None:
         print(f"Low-code setup skipped ({type(e).__name__}: {e})", flush=True)
 
 
+def harvest_catalog(outputs: dict) -> None:
+    """Ask the Data Catalog to harvest every bucket the stack registered.
+
+    Registration is Terraform (the asset and its resource-principal connection);
+    a harvest is a job run, which Terraform cannot express, so it is started
+    here: one HARVEST job definition and one job per asset, run once now. The
+    outcome is recorded on the card. Best effort: Oracle's Object Storage
+    harvester currently fails inside the service (DCAT-20001, a null pointer in
+    oracle.dcat.harvest), and a sandbox is never failed for that.
+    """
+    cat = outputs.get("catalog") or {}
+    assets = [a for a in (cat.get("assets") or []) if a.get("key") and a.get("connection_key")]
+    if not cat.get("id") or not assets:
+        return
+    import time as _t
+    dc = sf.client(oci.data_catalog.DataCatalogClient)
+    M = oci.data_catalog.models
+    result = {}
+    for a in assets:
+        name = a["name"]
+        try:
+            jds = [j for j in dc.list_job_definitions(cat["id"], display_name=f"{name}-harvest").data.items
+                   if j.lifecycle_state != "DELETED"]
+            jd = jds[0] if jds else dc.create_job_definition(cat["id"], M.CreateJobDefinitionDetails(
+                display_name=f"{name}-harvest", job_type="HARVEST", data_asset_key=a["key"],
+                connection_key=a["connection_key"], is_incremental=True)).data
+            jobs = [j for j in dc.list_jobs(cat["id"], display_name=f"{name}-harvest-job").data.items
+                    if j.lifecycle_state != "DELETED"]
+            job = jobs[0] if jobs else dc.create_job(cat["id"], M.CreateJobDetails(
+                display_name=f"{name}-harvest-job", job_definition_key=jd.key)).data
+            ex = dc.create_job_execution(cat["id"], job.key, M.CreateJobExecutionDetails()).data
+            state = ex.lifecycle_state
+            for _ in range(12):
+                _t.sleep(10)
+                e = dc.get_job_execution(cat["id"], job.key, ex.key).data
+                state = e.lifecycle_state
+                if state not in ("CREATED", "IN_PROGRESS", "INACTIVE"):
+                    break
+            err = str(getattr(e, "error_message", "") or "") if state == "FAILED" else ""
+            result[name] = {"state": state, "job_key": job.key, "error": err[:200]}
+            print(f"catalog: harvest of {name} {state}{(' - ' + err[:120]) if err else ''}", flush=True)
+        except Exception as e:  # noqa: BLE001
+            result[name] = {"state": "NOT_STARTED", "error": f"{type(e).__name__}: {str(e)[:160]}"}
+            print(f"catalog: harvest of {name} not started ({type(e).__name__}: {str(e)[:120]})", flush=True)
+    cat["harvest"] = result
+
+
 def materialise_app(req: dict) -> pathlib.Path | None:
     """app_files is {filename: content} - a small app shipped with the request.
 
@@ -755,6 +802,7 @@ def process_one(conn) -> bool:
                     if seed:
                         seed_database(outputs, seed)
                     enable_low_code(outputs)
+                    harvest_catalog(outputs)
                     if req.get("enable_rag") == "Y":
                         import oracle_rag
                         docs = next((b for b in (outputs.get("buckets") or []) if str(b.get("name", "")).endswith("-docs")), None)

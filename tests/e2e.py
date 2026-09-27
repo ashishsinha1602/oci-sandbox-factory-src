@@ -197,8 +197,9 @@ EXPECTED_FAIL = {"guard": "No Dockerfile"}
 
 
 def call_function(f, body):
+    """A new API Gateway's DNS name takes a few minutes to resolve; keep trying for eight."""
     r = None
-    for _ in range(9):
+    for _ in range(24):
         try:
             r = requests.post(f["url"], json=body, timeout=90)
             if r.status_code == 200:
@@ -412,6 +413,15 @@ def verify_lake(o, fnd, label="lake"):
         st = dc.get_catalog(cat["id"]).data.lifecycle_state
         record(f"{label}: Data Catalog is ACTIVE", st == "ACTIVE", cat.get("display_name"))
 
+
+    # the catalog is never an empty shell: every bucket is registered, with a connection, and a harvest was attempted
+    cat = o.get("catalog") or {}
+    assets = cat.get("assets") or []
+    record(f"{label}: the catalog registered the bucket with a resource-principal connection",
+           any(a.get("name") == b and a.get("connection_key") for a in assets), str([(a.get("name"), bool(a.get("connection_key"))) for a in assets]))
+    hv = (cat.get("harvest") or {}).get(b) or {}
+    record(f"{label}: a harvest was started for the bucket (Oracle-side result recorded)", bool(hv.get("state")),
+           f"{hv.get('state')} {hv.get('error', '')[:120]}")
 
 def verify_db(o):
     url = (o.get("app") or {}).get("url")

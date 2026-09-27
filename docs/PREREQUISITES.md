@@ -202,5 +202,9 @@ Learned from a full reset of our own install (2026-09-25):
   authentication-scheme change, not yet done.
 - One region per install (a second region is a second install with another prefix).
 - Kafka's public endpoint add-on is unreliable through the Terraform provider
-  (being moved to the SDK); the Data Catalog harvest registers the bucket but the
-  harvest itself can fail inside the service.
+  (being moved to the SDK).
+- Data Catalog: every sandbox bucket is registered in the catalog with a
+  resource-principal connection, and a harvest is started for each. The Object
+  Storage harvester currently fails inside Oracle's service (DCAT-20001, a null
+  pointer in `oracle.dcat.harvest`); the card says so. The buckets still appear
+  in the catalog as registered assets.

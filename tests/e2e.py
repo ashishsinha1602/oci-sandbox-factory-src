@@ -535,13 +535,21 @@ def verify_ai(f: Factory):
     files = {str(p.relative_to(ex)).replace("\\", "/"): p.read_text(encoding="utf-8") for p in ex.rglob("*") if p.is_file()}
     digest = f"\n\nATTACHED CODE ({len(files)} files from examples/telemetry-pipeline):\nfiles: {', '.join(files)}\n" + "".join(
         f"\n=== {n} ===\n{files[n][:8000]}\n" for n in files if n.endswith((".py", ".md")))
-    r = f.ajax(USER, "chat", {"model": "google.gemini-2.5-flash", "messages": [
-        {"role": "user", "text": "I have Airflow writing to S3 and a Glue job building an Iceberg table. Move it to OCI."},
-        {"role": "assistant", "text": "Please give me the code: a Git URL or a folder."},
-        {"role": "user", "text": "here is the code"}]}, clob=digest)
-    m = re.search(r"\{[\s\S]*\}", r.get("raw", ""))
-    j = json.loads(m.group(0)) if m else {}
-    w = ((j.get("action") or {}).get("workload")) or {}
+    # a model answer is not deterministic: an empty or cut-off reply is asked again, up to three times
+    w, j = {}, {}
+    for _ in range(3):
+        r = f.ajax(USER, "chat", {"model": "google.gemini-2.5-flash", "messages": [
+            {"role": "user", "text": "I have Airflow writing to S3 and a Glue job building an Iceberg table. Move it to OCI."},
+            {"role": "assistant", "text": "Please give me the code: a Git URL or a folder."},
+            {"role": "user", "text": "here is the code"}]}, clob=digest)
+        m = re.search(r"\{[\s\S]*\}", r.get("raw", ""))
+        try:
+            j = json.loads(m.group(0)) if m else {}
+        except ValueError:
+            j = {}
+        w = ((j.get("action") or {}).get("workload")) or {}
+        if w.get("dags") and w.get("spark"):
+            break
     record("ai: attached code becomes a workload plan (DAG + Spark) with a cost table",
            bool(w.get("dags")) and bool(w.get("spark")) and bool((j.get("cost") or {}).get("items")), str(w)[:200])
 

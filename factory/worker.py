@@ -999,6 +999,14 @@ def process_one(conn) -> bool:
             print(f"  request {req['id']} waiting: Resource Manager is at capacity, re-queued", flush=True)
             time.sleep(RETRY_BACKOFF_SECONDS)
             return True
+        if _refused(e) and wait_for_permissions(after_bootstrap=True):
+            # The worker's OWN access was refused (the probe says so; a resource
+            # that is really gone would pass the probe and fail below as usual).
+            # Not the user's request failing: it goes back to the queue, and the
+            # worker has waited until its access works again.
+            requeue(conn, req["id"])
+            print(f"  request {req['id']} waiting: the worker's access was refused and has recovered; re-queued", flush=True)
+            return True
         log.write(traceback.format_exc())
         finish(conn, req["id"], False, error=f"{type(e).__name__}: {e}")
         print(f"  request {req['id']} FAILED: {e}")
@@ -1068,10 +1076,69 @@ def recover_own_claims(conn) -> None:
     conn.commit()
 
 
+PERMISSION_WAIT_SECONDS = int(os.environ.get("SBX_PERMISSION_WAIT_SECONDS", "600"))
+
+
+def _refused(e: Exception) -> bool:
+    return isinstance(e, oci.exceptions.ServiceError) and e.status in (401, 403, 404) and \
+        e.code in ("NotAuthorizedOrNotFound", "NotAuthenticated", "NotAuthorized", "DENIED")
+
+
+def wait_for_permissions(after_bootstrap: bool = False) -> bool:
+    """The worker's identity must be able to use Resource Manager and the registry
+    before it takes requests.
+
+    On a fresh install the dynamic group and its policy are created by the same
+    apply that launches the workers, a minute or two earlier. A worker whose first
+    calls reach IAM before that has propagated was seen (clean install sbx10,
+    2026-09-29) to stay refused for good, token refreshes included, until it was
+    restarted; every request then failed. So: probe with harmless reads, and while
+    refused keep the requests queued, say so on the status page, take fresh
+    credentials every 30 s, and after PERMISSION_WAIT_SECONDS exit so the
+    container restart policy starts a clean process. Returns True if it had to wait.
+    """
+    import install_status
+    ctrl = sf.foundation()["compartments"]["control"]
+    t0, waited = time.time(), False
+    while True:
+        try:
+            sf.client(oci.resource_manager.ResourceManagerClient).list_stacks(compartment_id=ctrl, limit=1)
+            sf.client(oci.artifacts.ArtifactsClient).list_container_repositories(compartment_id=ctrl, limit=1)
+            if waited:
+                print(f"permissions: granted after {int(time.time() - t0)} s", flush=True)
+                if after_bootstrap:            # at start-up, bootstrap marks ready when the application is in
+                    try:
+                        install_status.mark("ready", "sign in at app_url" if os.environ.get("SBX_APP_URL") else "application installed")
+                    except Exception:  # noqa: BLE001
+                        pass
+            return waited
+        except Exception as e:  # noqa: BLE001
+            if not _refused(e):
+                print(f"permissions: probe inconclusive ({type(e).__name__}: {str(e)[:160]}); carrying on", flush=True)
+                return waited
+            if not waited:
+                try:
+                    install_status.mark("waiting for permissions",
+                                        "OCI is still applying the worker's access (a few minutes on a new install); requests stay queued")
+                except Exception:  # noqa: BLE001
+                    pass
+            waited = True
+            if time.time() - t0 > PERMISSION_WAIT_SECONDS:
+                print(f"permissions: still refused after {PERMISSION_WAIT_SECONDS} s ({e.code}); exiting so the container restarts with a clean identity", flush=True)
+                sys.exit(3)
+            print(f"permissions: refused ({e.code} from {getattr(e, 'target_service', '?')}); fresh credentials in 30 s", flush=True)
+            time.sleep(30)
+            sf._AUTH = None                    # the next client gets a new signer and a new token
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--once", action="store_true")
     a = ap.parse_args()
+    # The worker's own access first: until OCI has applied it, the status page
+    # says so (never "ready") and every request waits in the queue.
+    if sf.in_oci():
+        wait_for_permissions()
     # A fresh tenancy: create the schema, install the application, load the
     # prompts. Idempotent, so every worker may run it.
     try:

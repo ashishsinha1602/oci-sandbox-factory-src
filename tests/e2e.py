@@ -665,6 +665,17 @@ def main():
     except Exception as e:  # noqa: BLE001
         cat_ok = True
         record("preflight: limits readable", False, f"{type(e).__name__}: {e}")
+    # the install says it is ready (the worker's own access included) before anything is asked of it
+    try:
+        c0 = f.conn.cursor()
+        c0.execute(f"select phase, detail from admin.install_status where id = 1")
+        row = c0.fetchone()
+        record("install: status page says ready", bool(row) and row[0] == "ready", str(row))
+    except Exception as e:  # noqa: BLE001
+        record("install: status page says ready", False, f"{type(e).__name__}: {e}")
+    c0 = f.conn.cursor()
+    c0.execute(f"select nvl(max(id), 0) from {controldb.SCHEMA}.sandbox_requests")
+    first_request_id = c0.fetchone()[0]
     todo = cases(fn_image)
     if not cat_ok:
         todo["lake"]["enable_catalog"] = False
@@ -706,6 +717,17 @@ def main():
     finally:
         set_cap(cap_before)
 
+    # The failure a user must never see: a request that failed because the
+    # worker's OWN identity was refused (IAM not yet applied, stale credentials).
+    try:
+        c1 = f.conn.cursor()
+        c1.execute(f"""select id, sandbox_id, substr(error, 1, 160) from {controldb.SCHEMA}.sandbox_requests
+                        where id > :i and status = 'FAILED'
+                          and (error like '%NotAuthorizedOrNotFound%' or error like '%''DENIED''%' or error like '%NotAuthenticated%')""", i=first_request_id)
+        bad = c1.fetchall()
+        record("worker: no request failed on the worker's own access (IAM refusals)", not bad, str(bad)[:300] if bad else "none")
+    except Exception as e:  # noqa: BLE001
+        record("worker: no request failed on the worker's own access (IAM refusals)", False, f"{type(e).__name__}: {e}")
     ts = dt.datetime.now().strftime("%Y%m%d-%H%M")
     rep = HERE / "reports"
     rep.mkdir(exist_ok=True)

@@ -1,7 +1,7 @@
 # The Sandbox Factory worker, for running inside OCI as a Container Instance.
 # Published as <region>.ocir.io/<ns>/sandbox-factory/worker:release by factory/release_image.py
 # (built inside OCI, linux/amd64 for the E4 workers).
-# Copyright (c) 2026 Ashish Sinha. All rights reserved. See LICENSE.
+# Copyright 2026 Ashish Sinha. Licensed under the Apache License, Version 2.0; see LICENSE.
 FROM python:3.12-slim AS build
 WORKDIR /app
 COPY factory/*.py factory/*.txt factory/apex_export_customized.sql factory/

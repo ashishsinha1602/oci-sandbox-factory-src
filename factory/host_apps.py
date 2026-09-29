@@ -136,15 +136,27 @@ _IP = {}
 
 
 def public_ip() -> str:
-    """The worker VM's public address, from the instance metadata service."""
+    """The worker VM's public address. The instance metadata names the VNIC but not
+    its public IP, so the VNIC is read through the API (instance principal)."""
     if "ip" in _IP:
         return _IP["ip"]
     req = urllib.request.Request("http://169.254.169.254/opc/v2/vnics/", headers={"Authorization": "Bearer Oracle"})
     with urllib.request.urlopen(req, timeout=5) as r:
         vnics = json.load(r)
-    ip = next((v.get("publicIp") for v in vnics if v.get("publicIp")), None) or next((v.get("privateIp") for v in vnics), "")
-    _IP["ip"] = ip
-    return ip
+    ip = ""
+    try:
+        import oci
+        import sandbox_factory as sf
+        net = sf.client(oci.core.VirtualNetworkClient)
+        for v in vnics:
+            pub = net.get_vnic(v["vnicId"]).data.public_ip
+            if pub:
+                ip = pub
+                break
+    except Exception as e:  # noqa: BLE001
+        print(f"public ip lookup failed ({type(e).__name__}: {str(e)[:120]}); using the private address", flush=True)
+    _IP["ip"] = ip or next((v.get("privateIp") for v in vnics), "")
+    return _IP["ip"]
 
 
 def remove(sandbox_id: str) -> bool:

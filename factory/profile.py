@@ -79,10 +79,6 @@ def detect() -> dict:
         "genai_model": models[0][0] if models else "",
         # Free Tier edition: OCI Generative AI is not in Always Free, so the assistant
         # goes to Google's Gemini API with the installer's own (free) key when given one
-        "edition": os.environ.get("SBX_EDITION", "standard"),
-        "free_apps": "1" if os.environ.get("SBX_EDITION") == "free" and os.environ.get("SBX_FREE_APPS") == "1" else "0",
-        "genai_provider": "google" if os.environ.get("SBX_EDITION") == "free" and os.environ.get("SBX_GEMINI_API_KEY") else "oci",
-        "google_api_key": os.environ.get("SBX_GEMINI_API_KEY", "") if os.environ.get("SBX_EDITION") == "free" else "",
     }
 
 
@@ -134,7 +130,17 @@ def refresh(conn=None, force: bool = False) -> dict:
         prof["genai_models"], prof["genai_model"] = have.get("genai_models", "[]"), have["genai_model"]
     if not fresh:
         save(cur, prof)
-        conn.commit()
+    # What the install is, every start (a newer release may add a key; a valid
+    # saved profile must not hide it). The assistant key is taken from the
+    # install only when one was given there, so a key an administrator pasted in
+    # the application is never overwritten by an empty value.
+    static = {"edition": os.environ.get("SBX_EDITION", "standard"),
+              "free_apps": "1" if os.environ.get("SBX_EDITION") == "free" and os.environ.get("SBX_FREE_APPS") == "1" else "0"}
+    if os.environ.get("SBX_EDITION") == "free" and os.environ.get("SBX_GEMINI_API_KEY"):
+        static.update({"genai_provider": "google", "google_api_key": os.environ["SBX_GEMINI_API_KEY"]})
+    save(cur, static)
+    conn.commit()
+    prof.update(static)
     if own:
         conn.close()
     return prof

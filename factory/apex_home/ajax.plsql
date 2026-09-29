@@ -22,6 +22,14 @@ declare
     || 'Every container receives ADB_CONNECT_STRING, ADB_ADMIN_PASSWORD, ADB_DB_NAME and KAFKA_BOOTSTRAP_SERVERS as environment variables. '
     || 'Sandboxes live 1 to 30 days (ttl_days 1-30, default 3; use what the user asks for), are tagged with their owner and expiry, and each gets its own public URL. ';
 
+  -- Free Tier edition: appended to BLOCKS so the assistant never proposes what Always Free lacks.
+  c_free_note constant varchar2(1200) :=
+       ' THIS INSTALL IS THE FREE TIER EDITION (an Oracle Cloud Free Tier account): only an Always Free Autonomous Database '
+    || '(with REST and in-database document search), OCI NoSQL tables and Object Storage buckets can be built. '
+    || 'NOT available here: Kafka, containerised apps and container images, Functions, Data Flow, Data Catalog, Queue, AI Data Platform, '
+    || 'extra databases, paid database tiers and Select AI. When the user asks for one of those, say plainly that it is not available on a '
+    || 'Free Tier account, offer the free alternative (a database with sample data, NoSQL, buckets), and never set those flags or add those objects.';
+
   -- What the current user has (for status questions and destroy-by-name).
   function cfg_value(p_key varchar2, p_default varchar2) return varchar2 is
     l_v varchar2(4000);
@@ -108,6 +116,64 @@ declare
 
   function msg(p_role varchar2, p_text clob) return json_object_t;   -- defined below
 
+  -- Free Tier edition: OCI Generative AI is not in Always Free, so the assistant
+  -- calls Google's Gemini API with the installer's own key (SBX.FACTORY_CONFIG
+  -- google_api_key). Same messages in, same text out as the OCI path below.
+  function google_chat(p_messages json_array_t, p_retry boolean default true) return clob is
+    l_req   json_object_t := json_object_t();
+    l_cont  json_array_t  := json_array_t();
+    l_sys   json_object_t;
+    l_m     json_object_t;
+    l_c     json_object_t;
+    l_parts json_array_t;
+    l_p     json_object_t;
+    l_gen   json_object_t := json_object_t();
+    l_resp  dbms_cloud_types.resp;
+    l_body  clob;
+    l_text  clob;
+    l_again json_array_t;
+    l_model varchar2(100) := nvl(cfg_value('google_model', ''), 'gemini-2.5-flash');
+  begin
+    for i in 0 .. p_messages.get_size - 1 loop
+      l_m := treat(p_messages.get(i) as json_object_t);
+      l_p := json_object_t(); l_p.put('text', treat(l_m.get_array('content').get(0) as json_object_t).get_clob('text'));
+      l_parts := json_array_t(); l_parts.append(l_p);
+      if l_m.get_string('role') = 'SYSTEM' then
+        l_sys := json_object_t(); l_sys.put('parts', l_parts);
+      else
+        l_c := json_object_t();
+        l_c.put('role', case when l_m.get_string('role') = 'ASSISTANT' then 'model' else 'user' end);
+        l_c.put('parts', l_parts);
+        l_cont.append(l_c);
+      end if;
+    end loop;
+    l_req.put('contents', l_cont);
+    if l_sys is not null then l_req.put('systemInstruction', l_sys); end if;
+    l_gen.put('temperature', 0.2);
+    l_gen.put('maxOutputTokens', 32000);
+    l_req.put('generationConfig', l_gen);
+    begin
+      l_resp := dbms_cloud.send_request(
+        credential_name => null,
+        uri             => 'https://generativelanguage.googleapis.com/v1beta/models/' || l_model || ':generateContent?key=' || cfg_value('google_api_key', ''),
+        method          => dbms_cloud.method_post,
+        headers         => json_object('Content-Type' value 'application/json'),
+        body            => clob_to_blob(l_req.to_clob));
+    exception when others then
+      raise_application_error(-20001, 'The Gemini API refused the request: ' || regexp_replace(substr(sqlerrm, 1, 300), 'key=[^ &]+', 'key=***'));
+    end;
+    l_body := dbms_cloud.get_response_text(l_resp);
+    l_text := treat(treat(json_object_t.parse(l_body).get_array('candidates').get(0) as json_object_t)
+                   .get_object('content').get_array('parts').get(0) as json_object_t).get_clob('text');
+    if p_retry and instr(l_text, '{') = 0 then
+      l_again := p_messages;
+      l_again.append(msg('ASSISTANT', l_text));
+      l_again.append(msg('USER', 'Answer again with ONLY the JSON object described above, no prose, no fences.'));
+      return google_chat(l_again, false);
+    end if;
+    return l_text;
+  end;
+
   function ai_chat(p_messages json_array_t, p_retry boolean default true) return clob is
     l_text  clob;
     l_again json_array_t;
@@ -119,6 +185,11 @@ declare
     l_j    json_object_t;
     l_comp varchar2(200);
   begin
+    if cfg_value('genai_provider', 'oci') = 'google' then
+      return google_chat(p_messages, p_retry);
+    elsif cfg_value('edition', 'standard') = 'free' then
+      raise_application_error(-20001, 'The assistant is off: OCI Generative AI is not part of Always Free. Add a Gemini API key to the install (Google AI Studio, free) or use the one-click starters and the form.');
+    end if;
     select value into l_comp from factory_config where key = 'compartment_ocid';
     l_req.put('compartmentId', l_comp);
     l_sm.put('servingType', 'ON_DEMAND');
@@ -181,7 +252,7 @@ declare
     l clob := p;
   begin
     l := replace(l, '{MIGRATION}', prompt_text('migration'));
-    l := replace(l, '{BLOCKS}', c_blocks);
+    l := replace(l, '{BLOCKS}', c_blocks || case when cfg_value('edition', 'standard') = 'free' then c_free_note end);
     l := replace(l, '{TEMPLATES}', templates());
     l := replace(l, '{REGISTRY}', nvl(l_registry, '(none configured)'));
     l := replace(l, '{SANDBOXES}', my_sandboxes());
@@ -319,6 +390,8 @@ begin
     l_out.put('model', c_genai_model);
     l_out.put('user', :APP_USER);
     l_out.put('cap', to_number(cfg_value('max_sandboxes_per_user', '3')));
+    l_out.put('edition', cfg_value('edition', 'standard'));
+    l_out.put('provider', cfg_value('genai_provider', 'oci'));
     select count(*) into l_id from (
       select sandbox_id, action, status,
              row_number() over (partition by sandbox_id order by id desc) rn

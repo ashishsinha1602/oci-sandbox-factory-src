@@ -148,3 +148,31 @@ variable "app_admin_password" {
     error_message = "12 to 30 characters with an upper-case letter, a lower-case letter and a digit, and no quotes or spaces."
   }
 }
+
+# ---- Edition ------------------------------------------------------------------
+# standard: workers are Container Instances, every OCI service is on the menu.
+# free:     for an Oracle Cloud Free Tier account (no payment method). The worker
+#           runs on one Always Free VM, sandboxes are limited to Always Free
+#           services, and anything else is declined with a plain message.
+variable "edition" {
+  type        = string
+  default     = "standard"
+  description = "standard (Pay As You Go or paid account) or free (Oracle Cloud Free Tier: Always Free resources only)."
+  validation {
+    condition     = contains(["standard", "free"], var.edition)
+    error_message = "edition must be standard or free."
+  }
+}
+
+variable "worker_shape" {
+  type        = string
+  default     = "VM.Standard.E2.1.Micro"
+  description = "Free Tier edition only: the Always Free VM shape the worker runs on. VM.Standard.E2.1.Micro is the x86 shape every Free Tier tenancy gets."
+}
+
+variable "gemini_api_key" {
+  type        = string
+  default     = ""
+  sensitive   = true
+  description = "Free Tier edition only: a Google AI Studio API key (free) for the assistant, because OCI Generative AI is not part of Always Free. Empty = the assistant is off; the one-click starters and the form still work."
+}

@@ -88,8 +88,9 @@ resource "oci_identity_dynamic_group" "worker" {
   compartment_id = var.tenancy_ocid
   name           = "${var.prefix}-worker-dg"
   description    = "Sandbox factory workers, build and test containers in ${var.prefix}-control."
-  matching_rule  = "ALL {resource.type = 'computecontainerinstance', resource.compartment.id = '${oci_identity_compartment.control.id}'}"
-  freeform_tags  = local.freeform_tags
+  # container instances (standard edition) or the worker VM (Free Tier edition) in <prefix>-control
+  matching_rule = "ANY {ALL {resource.type = 'computecontainerinstance', resource.compartment.id = '${oci_identity_compartment.control.id}'}, ALL {instance.compartment.id = '${oci_identity_compartment.control.id}'}}"
+  freeform_tags = local.freeform_tags
 }
 
 resource "oci_identity_policy" "worker" {
@@ -127,13 +128,47 @@ resource "oci_identity_policy" "worker" {
   ]
 }
 
+locals {
+  free   = var.edition == "free"
+  use_ci = var.enable_worker && !local.free # standard: container instances
+  use_vm = var.enable_worker && local.free  # Free Tier: one Always Free VM running the same image under podman
+
+  # One environment for both shapes, so the worker behaves the same wherever it runs.
+  worker_env = {
+    SBX_PREFIX  = var.prefix
+    SBX_EDITION = var.edition
+    # the shipped starter images live next to the worker image (…/sandbox-factory/)
+    SBX_RELEASE_REGISTRY = regex("^(.*/)[^/]+$", split(":", var.worker_image)[0])[0]
+    SBX_WORKER_KIND      = "oci"
+    SBX_BUILD_MODE       = "kaniko"
+    SBX_CONTROL_CONNECT  = oci_database_autonomous_database.control[0].connection_strings[0].all_connection_strings["LOW"]
+    SBX_ADMIN_PASSWORD   = random_password.control_adb_admin[0].result
+    # the first login (app.tf) and who owns what the install creates
+    SBX_APP_ADMIN_USER     = local.app_admin_user
+    SBX_APP_ADMIN_PASSWORD = local.app_admin_password
+    SBX_OWNER              = var.owner
+    SBX_APP_URL            = local.app_url
+    SBX_GEMINI_API_KEY     = var.gemini_api_key
+    SBX_FOUNDATION = jsonencode({
+      compartments = { root = oci_identity_compartment.root.id, control = oci_identity_compartment.control.id, sandboxes = oci_identity_compartment.sandboxes.id }
+      network = {
+        vcn_id         = oci_core_vcn.sandbox.id, public_subnet_id = oci_core_subnet.public.id, private_subnet_id = oci_core_subnet.private.id
+        nat_gateway_id = oci_core_nat_gateway.nat.id, service_gateway_id = oci_core_service_gateway.sgw.id
+      }
+      tag_namespace = oci_identity_tag_namespace.sandbox.name
+    })
+    OCIR_USER  = local.ocir_user
+    OCIR_TOKEN = local.ocir_token
+  }
+}
+
 data "oci_identity_availability_domains" "worker" {
   count          = var.enable_worker ? 1 : 0
   compartment_id = var.tenancy_ocid
 }
 
 resource "oci_container_instances_container_instance" "worker" {
-  for_each                 = var.enable_worker ? toset(local.worker_names) : toset([])
+  for_each                 = local.use_ci ? toset(local.worker_names) : toset([])
   compartment_id           = oci_identity_compartment.control.id
   availability_domain      = data.oci_identity_availability_domains.worker[0].availability_domains[0].name
   display_name             = each.key
@@ -153,37 +188,104 @@ resource "oci_container_instances_container_instance" "worker" {
   }
 
   containers {
-    display_name = "worker"
-    image_url    = var.worker_image
-    environment_variables = {
-      WORKER_NAME = each.key
-      SBX_PREFIX  = var.prefix
-      # the shipped starter images live next to the worker image (…/sandbox-factory/)
-      SBX_RELEASE_REGISTRY = regex("^(.*/)[^/]+$", split(":", var.worker_image)[0])[0]
-      SBX_WORKER_KIND      = "oci"
-      SBX_BUILD_MODE       = "kaniko"
-      SBX_CONTROL_CONNECT  = oci_database_autonomous_database.control[0].connection_strings[0].all_connection_strings["LOW"]
-      SBX_ADMIN_PASSWORD   = random_password.control_adb_admin[0].result
-      # the first login (app.tf) and who owns what the install creates
-      SBX_APP_ADMIN_USER     = local.app_admin_user
-      SBX_APP_ADMIN_PASSWORD = local.app_admin_password
-      SBX_OWNER              = var.owner
-      SBX_APP_URL            = local.app_url
-      SBX_FOUNDATION = jsonencode({
-        compartments = { root = oci_identity_compartment.root.id, control = oci_identity_compartment.control.id, sandboxes = oci_identity_compartment.sandboxes.id }
-        network = {
-          vcn_id         = oci_core_vcn.sandbox.id, public_subnet_id = oci_core_subnet.public.id, private_subnet_id = oci_core_subnet.private.id
-          nat_gateway_id = oci_core_nat_gateway.nat.id, service_gateway_id = oci_core_service_gateway.sgw.id
-        }
-        tag_namespace = oci_identity_tag_namespace.sandbox.name
-      })
-      OCIR_USER  = local.ocir_user
-      OCIR_TOKEN = local.ocir_token
-    }
+    display_name          = "worker"
+    image_url             = var.worker_image
+    environment_variables = merge(local.worker_env, { WORKER_NAME = each.key })
   }
 
   # IAM is eventually consistent: a worker that starts before its policy lands
   # spends its first minutes on 404s from Resource Manager.
+  depends_on = [time_sleep.worker_iam]
+}
+
+# ---- Free Tier edition: the worker on an Always Free VM ----------------------
+# Container Instances are not part of Always Free, so a Free Tier tenancy runs
+# the very same worker image under podman on one Always Free VM in the private
+# subnet (no public IP; OCIR and the OCI APIs are reached through the NAT and
+# service gateways). systemd restarts it, and every start pulls the image again,
+# so a reboot picks up a new release.
+data "oci_core_images" "worker" {
+  count                    = local.use_vm ? 1 : 0
+  compartment_id           = var.tenancy_ocid
+  operating_system         = "Oracle Linux"
+  operating_system_version = "9"
+  shape                    = var.worker_shape
+  sort_by                  = "TIMECREATED"
+  sort_order               = "DESC"
+}
+
+locals {
+  worker_env_file   = join("\n", [for k, v in merge(local.worker_env, { WORKER_NAME = "${var.prefix}-worker" }) : "${k}=${v}"])
+  worker_cloud_init = <<-EOT
+    #cloud-config
+    write_files:
+      - path: /etc/sbx/worker.env
+        permissions: '0600'
+        content: |
+          ${indent(10, local.worker_env_file)}
+      - path: /etc/systemd/system/sbx-worker.service
+        permissions: '0644'
+        content: |
+          [Unit]
+          Description=Sandbox Factory worker
+          After=network-online.target
+          Wants=network-online.target
+
+          [Service]
+          Restart=always
+          RestartSec=20
+          ExecStartPre=-/usr/bin/podman rm -f sbx-worker
+          ExecStart=/usr/bin/podman run --rm --name sbx-worker --pull=always --env-file /etc/sbx/worker.env --log-driver=journald ${var.worker_image}
+
+          [Install]
+          WantedBy=multi-user.target
+    runcmd:
+      - dnf -y install podman
+      - systemctl daemon-reload
+      - systemctl enable --now sbx-worker
+  EOT
+}
+
+resource "oci_core_instance" "worker" {
+  count               = local.use_vm ? 1 : 0
+  compartment_id      = oci_identity_compartment.control.id
+  availability_domain = data.oci_identity_availability_domains.worker[0].availability_domains[0].name
+  display_name        = "${var.prefix}-worker"
+  shape               = var.worker_shape
+  freeform_tags       = merge(local.freeform_tags, { role = "worker" })
+
+  dynamic "shape_config" {
+    for_each = can(regex("Flex$", var.worker_shape)) ? [1] : []
+    content {
+      ocpus         = 1
+      memory_in_gbs = 6
+    }
+  }
+
+  source_details {
+    source_type = "image"
+    source_id   = data.oci_core_images.worker[0].images[0].id
+  }
+
+  create_vnic_details {
+    subnet_id        = oci_core_subnet.private.id
+    display_name     = "${var.prefix}-worker"
+    assign_public_ip = false
+  }
+
+  metadata = {
+    user_data = base64encode(local.worker_cloud_init)
+  }
+
+  lifecycle {
+    # a newer Oracle Linux image must not replace a working worker
+    ignore_changes = [source_details[0].source_id]
+    precondition {
+      condition     = !can(regex("^VM\\.Standard\\.A1", var.worker_shape))
+      error_message = "The worker image is built for x86 (amd64). Use VM.Standard.E2.1.Micro for the Free Tier worker until an Arm build of the worker image ships."
+    }
+  }
+
   depends_on = [time_sleep.worker_iam]
 }
 
@@ -194,5 +296,8 @@ resource "time_sleep" "worker_iam" {
 }
 
 output "workers" {
-  value = [for k, w in oci_container_instances_container_instance.worker : { name = k, id = w.id, state = w.state }]
+  value = concat(
+    [for k, w in oci_container_instances_container_instance.worker : { name = k, id = w.id, state = w.state }],
+    [for w in oci_core_instance.worker : { name = w.display_name, id = w.id, state = w.state }],
+  )
 }

@@ -182,6 +182,44 @@ def rag_buckets(req: dict) -> list | None:
     return buckets or None
 
 
+EDITION = os.environ.get("SBX_EDITION", "standard")
+
+# What an Oracle Cloud Free Tier account cannot have (not in Always Free). A
+# request for any of it is declined up front with the free alternative, instead
+# of failing minutes later inside Resource Manager with a service error.
+FREE_CAN = ("an Always Free Autonomous Database (23ai, with REST and in-database document search), "
+            "NoSQL tables and Object Storage buckets")
+
+
+def free_edition_check(req: dict) -> None:
+    """Free Tier edition: decline what Always Free does not include, and keep the database free."""
+    if EDITION != "free":
+        return
+    wanted = []
+    if req.get("enable_kafka") == "Y":
+        wanted.append("Kafka")
+    if any(req.get(k) for k in ("git_url", "app_image", "app_files", "app_containers", "app_instances")) or req.get("enable_app") == "Y":
+        wanted.append("containerised apps (Container Instances)")
+    if req.get("functions"):
+        wanted.append("Functions")
+    if req.get("dataflow_jobs"):
+        wanted.append("Data Flow (Spark, Iceberg)")
+    if req.get("queues"):
+        wanted.append("Queue")
+    if req.get("enable_catalog") == "Y":
+        wanted.append("Data Catalog")
+    if req.get("enable_aidp") == "Y":
+        wanted.append("AI Data Platform")
+    if req.get("adb_databases"):
+        wanted.append("extra databases (Always Free allows two per tenancy, and the factory uses one)")
+    if wanted:
+        raise ValueError("Not available on an Oracle Cloud Free Tier account: " + ", ".join(wanted)
+                         + ". This Free Tier install can build " + FREE_CAN
+                         + ". Upgrade the tenancy to Pay As You Go and reinstall the standard edition for everything else.")
+    if req.get("adb_tier") == "paid":
+        req["adb_tier"] = "free"
+
+
 def factory_args(req: dict) -> argparse.Namespace:
     return argparse.Namespace(
         sandbox_id=req["sandbox_id"], owner=req["requester"], team="hackathon",
@@ -745,6 +783,7 @@ def recorded_namespace(conn, sandbox_id: str) -> str | None:
 
 def handle(req: dict, conn=None) -> dict:
     expand_templates(req)
+    free_edition_check(req)
     args = factory_args(req)
     if req["action"] == "DESTROY" and conn is not None:
         args.os_namespace = recorded_namespace(conn, req["sandbox_id"])
@@ -826,7 +865,13 @@ def process_one(conn) -> bool:
                 # not mark a working sandbox as failed - record it and move on.
                 try:
                     cfg = sf.config()
-                    enable_select_ai(outputs, cfg["region"], cfg)
+                    if EDITION == "free":
+                        # OCI Generative AI is not part of Always Free: no Select AI, say so on the card
+                        outputs.setdefault("warnings", []).append(
+                            "Select AI is not available on a Free Tier account (OCI Generative AI is not part of Always Free). "
+                            "REST and in-database document search work.")
+                    else:
+                        enable_select_ai(outputs, cfg["region"], cfg)
                     seed = (req.get("seed_sql") or "").strip()
                     if seed:
                         seed_database(outputs, seed)

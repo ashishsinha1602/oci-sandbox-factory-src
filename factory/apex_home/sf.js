@@ -1218,8 +1218,15 @@ function sfInit(){
       var nm=document.querySelector('#sf-model-name'); if(nm)nm.textContent=sel.options[sel.selectedIndex].text;
     }
     if(c.user){var w=$('#sf-who');
-      w.textContent='Signed in as '+c.user+' · '+(c.live||0)+' of '+(c.cap||3)+' sandboxes';
+      w.textContent='Signed in as '+c.user+' · '+(c.live||0)+' of '+(c.cap||3)+' sandboxes'+(c.edition==='free'?' · Free Tier edition':'');
       w.classList.remove('sf-hide');}
+    // Free Tier edition: what Always Free does not include is shown, not offered
+    window.__sfEdition=c.edition||'standard';
+    if(c.edition==='free'){
+      $$('.sf-toggle').forEach(function(t){ if(t.dataset.k==='enable_kafka'||t.dataset.k==='enable_app'){
+        t.classList.add('sf-off'); t.title='Not available on an Oracle Cloud Free Tier account'; t.onclick=function(){alert('Not available on an Oracle Cloud Free Tier account. Free Tier builds an Always Free Autonomous Database, NoSQL tables and Object Storage buckets.')}; } });
+      if(!c.models||!c.models.length){ var nm=document.querySelector('#sf-model-name'); if(nm)nm.textContent=c.provider==='google'?'Gemini (Google AI Studio)':'assistant off: add a Gemini key to the install'; }
+    }
   })
     .catch(function(){}).then(function(){drawRecipes(); buildTabs(); addClear(); restoreChat()});
   refresh();

@@ -19,8 +19,8 @@ whenever sqlerror exit sql.sqlcode rollback
 begin
 wwv_flow_imp.import_begin (
  p_version_yyyy_mm_dd=>'2026.03.30'
-,p_release=>'26.1.4'
-,p_default_workspace_id=>9025991640487042
+,p_release=>'26.1.5'
+,p_default_workspace_id=>9025994294486404
 ,p_default_application_id=>112
 ,p_default_id_offset=>0
 ,p_default_owner=>'SBX'
@@ -61,8 +61,8 @@ prompt APPLICATION 112 - Sandbox Factory
 --       Reports:
 --       E-Mail:
 --     Supporting Objects:  Excluded
---   Version:         26.1.4
---   Instance ID:     9025861191072203
+--   Version:         26.1.5
+--   Instance ID:     9025851921305224
 --
 
 prompt --application/delete_application
@@ -1928,11 +1928,19 @@ wwv_flow_imp.g_varchar2_table(1009) := '656C27293B0A2020202069662873656C2626632E
 wwv_flow_imp.g_varchar2_table(1010) := '6F7074696F6E2076616C75653D22272B657363286D2E6964292B27223E272B657363286D2E6C6162656C7C7C6D2E6964292B273C2F6F7074696F6E3E277D292E6A6F696E282727293B0A202020202020696628632E6D6F64656C2973656C2E76616C7565';
 wwv_flow_imp.g_varchar2_table(1011) := '3D632E6D6F64656C3B0A202020202020766172206E6D3D646F63756D656E742E717565727953656C6563746F7228272373662D6D6F64656C2D6E616D6527293B206966286E6D296E6D2E74657874436F6E74656E743D73656C2E6F7074696F6E735B7365';
 wwv_flow_imp.g_varchar2_table(1012) := '6C2E73656C6563746564496E6465785D2E746578743B0A202020207D0A20202020696628632E75736572297B76617220773D2428272373662D77686F27293B0A202020202020772E74657874436F6E74656E743D275369676E656420696E20617320272B';
-wwv_flow_imp.g_varchar2_table(1013) := '632E757365722B2720C2B720272B28632E6C6976657C7C30292B27206F6620272B28632E6361707C7C33292B272073616E64626F786573273B0A202020202020772E636C6173734C6973742E72656D6F7665282773662D6869646527293B7D0A20207D29';
-wwv_flow_imp.g_varchar2_table(1014) := '0A202020202E63617463682866756E6374696F6E28297B7D292E7468656E2866756E6374696F6E28297B647261775265636970657328293B206275696C645461627328293B20616464436C65617228293B20726573746F72654368617428297D293B0A20';
-wwv_flow_imp.g_varchar2_table(1015) := '207265667265736828293B0A7D0A2866756E6374696F6E28297B2066756E6374696F6E20676F28297B2069662877696E646F772E617065782626617065782E736572766572297B7366496E697428297D20656C7365207B73657454696D656F757428676F';
-wwv_flow_imp.g_varchar2_table(1016) := '2C313030297D207D20696628646F63756D656E742E726561647953746174653D3D3D276C6F6164696E6727297B646F63756D656E742E6164644576656E744C697374656E65722827444F4D436F6E74656E744C6F61646564272C676F297D20656C736520';
-wwv_flow_imp.g_varchar2_table(1017) := '7B676F28297D207D2928293B0A';
+wwv_flow_imp.g_varchar2_table(1013) := '632E757365722B2720C2B720272B28632E6C6976657C7C30292B27206F6620272B28632E6361707C7C33292B272073616E64626F786573272B28632E65646974696F6E3D3D3D2766726565273F2720C2B7204672656520546965722065646974696F6E27';
+wwv_flow_imp.g_varchar2_table(1014) := '3A2727293B0A202020202020772E636C6173734C6973742E72656D6F7665282773662D6869646527293B7D0A202020202F2F204672656520546965722065646974696F6E3A207768617420416C77617973204672656520646F6573206E6F7420696E636C';
+wwv_flow_imp.g_varchar2_table(1015) := '7564652069732073686F776E2C206E6F74206F6666657265640A2020202077696E646F772E5F5F736645646974696F6E3D632E65646974696F6E7C7C277374616E64617264273B0A20202020696628632E65646974696F6E3D3D3D276672656527297B0A';
+wwv_flow_imp.g_varchar2_table(1016) := '202020202020242428272E73662D746F67676C6527292E666F72456163682866756E6374696F6E2874297B20696628742E646174617365742E6B3D3D3D27656E61626C655F6B61666B61277C7C742E646174617365742E6B3D3D3D27656E61626C655F61';
+wwv_flow_imp.g_varchar2_table(1017) := '707027297B0A2020202020202020742E636C6173734C6973742E616464282773662D6F666627293B20742E7469746C653D274E6F7420617661696C61626C65206F6E20616E204F7261636C6520436C6F756420467265652054696572206163636F756E74';
+wwv_flow_imp.g_varchar2_table(1018) := '273B20742E6F6E636C69636B3D66756E6374696F6E28297B616C65727428274E6F7420617661696C61626C65206F6E20616E204F7261636C6520436C6F756420467265652054696572206163636F756E742E20467265652054696572206275696C647320';
+wwv_flow_imp.g_varchar2_table(1019) := '616E20416C776179732046726565204175746F6E6F6D6F75732044617461626173652C204E6F53514C207461626C657320616E64204F626A6563742053746F72616765206275636B6574732E27297D3B207D207D293B0A20202020202069662821632E6D';
+wwv_flow_imp.g_varchar2_table(1020) := '6F64656C737C7C21632E6D6F64656C732E6C656E677468297B20766172206E6D3D646F63756D656E742E717565727953656C6563746F7228272373662D6D6F64656C2D6E616D6527293B206966286E6D296E6D2E74657874436F6E74656E743D632E7072';
+wwv_flow_imp.g_varchar2_table(1021) := '6F76696465723D3D3D27676F6F676C65273F2747656D696E692028476F6F676C652041492053747564696F29273A27617373697374616E74206F66663A2061646420612047656D696E69206B657920746F2074686520696E7374616C6C273B207D0A2020';
+wwv_flow_imp.g_varchar2_table(1022) := '20207D0A20207D290A202020202E63617463682866756E6374696F6E28297B7D292E7468656E2866756E6374696F6E28297B647261775265636970657328293B206275696C645461627328293B20616464436C65617228293B20726573746F7265436861';
+wwv_flow_imp.g_varchar2_table(1023) := '7428297D293B0A20207265667265736828293B0A7D0A2866756E6374696F6E28297B2066756E6374696F6E20676F28297B2069662877696E646F772E617065782626617065782E736572766572297B7366496E697428297D20656C7365207B7365745469';
+wwv_flow_imp.g_varchar2_table(1024) := '6D656F757428676F2C313030297D207D20696628646F63756D656E742E726561647953746174653D3D3D276C6F6164696E6727297B646F63756D656E742E6164644576656E744C697374656E65722827444F4D436F6E74656E744C6F61646564272C676F';
+wwv_flow_imp.g_varchar2_table(1025) := '297D20656C7365207B676F28297D207D2928293B0A';
 wwv_flow_imp_shared.create_app_static_file(
  p_id=>wwv_flow_imp.id(9200000000000003)
 ,p_file_name=>'sf.js'
@@ -2187,7 +2195,7 @@ wwv_flow_imp_page.create_page_plug(
 '.sf-field textarea{min-height:96px;resize:vertical}',
 '.sf-toggles{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}',
 '.sf-toggle{display:flex;align-items:center;gap:10px;padding:10px 14px;border:1px solid #d6dde6;border-radius:10px;cursor:pointer;user-select:none;font-size:14px}',
-'.sf-toggle .dot{width:12px;height:12px;border-radius:50%;background:#cbd5e1}.sf-toggle.on{border-color:#1a73e8;background:#eaf2fe}.sf-toggle.on .dot{background:#1a73e8}',
+'.sf-toggle .dot{width:12px;height:12px;border-radius:50%;background:#cbd5e1}.sf-toggle.sf-off{opacity:.45;cursor:not-allowed;text-decoration:line-through}.sf-toggle.on{border-color:#1a73e8;background:#eaf2fe}.sf-toggle.on .dot{background:#1a73e8}',
 '.sf-btn{background:#1a73e8;color:#fff;border:0;border-radius:10px;padding:11px 20px;font-size:14px;font-weight:600;cursor:pointer}',
 '.sf-btn.sec{background:#eef2f6;color:#1f2937}.sf-btn:disabled{opacity:.45;cursor:default}.sf-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}',
 '.sf-ai{background:linear-gradient(135deg,#f5f3ff,#eaf4ff);border:1px solid #d9e4ff;border-radius:12px;padding:16px 18px;margin:12px 0}',
@@ -2311,7 +2319,7 @@ wwv_flow_imp_page.create_page_plug(
 '  <div class="sf-status" id="sf-status"></div>',
 '</div>',
 '',
-'<script src="#APP_FILES#sf.js?v=30bca775ee"></script>',
+'<script src="#APP_FILES#sf.js?v=34eaf5fefb"></script>',
 ''))
 ,p_plug_query_num_rows=>15
 ,p_attributes=>wwv_flow_t_plugin_attributes(wwv_flow_t_varchar2(
@@ -2349,6 +2357,14 @@ wwv_flow_imp_page.create_page_process(
 '    || ''OCI NoSQL (serverless JSON tables), and a containerised app (a public container image, or a Git repository with a Dockerfile at its root, built for ARM). ''',
 '    || ''Every container receives ADB_CONNECT_STRING, ADB_ADMIN_PASSWORD, ADB_DB_NAME and KAFKA_BOOTSTRAP_SERVERS as environment variables. ''',
 '    || ''Sandboxes live 1 to 30 days (ttl_days 1-30, default 3; use what the user asks for), are tagged with their owner and expiry, and each gets its own public URL. '';',
+'',
+'  -- Free Tier edition: appended to BLOCKS so the assistant never proposes what Always Free lacks.',
+'  c_free_note constant varchar2(1200) :=',
+'       '' THIS INSTALL IS THE FREE TIER EDITION (an Oracle Cloud Free Tier account): only an Always Free Autonomous Database ''',
+'    || ''(with REST and in-database document search), OCI NoSQL tables and Object Storage buckets can be built. ''',
+'    || ''NOT available here: Kafka, containerised apps and container images, Functions, Data Flow, Data Catalog, Queue, AI Data Platform, ''',
+'    || ''extra databases, paid database tiers and Select AI. When the user asks for one of those, say plainly that it is not available on a ''',
+'    || ''Free Tier account, offer the free alternative (a database with sample data, NoSQL, buckets), and never set those flags or add those objects.'';',
 '',
 '  -- What the current user has (for status questions and destroy-by-name).',
 '  function cfg_value(p_key varchar2, p_default varchar2) return varchar2 is',
@@ -2436,6 +2452,64 @@ wwv_flow_imp_page.create_page_process(
 '',
 '  function msg(p_role varchar2, p_text clob) return json_object_t;   -- defined below',
 '',
+'  -- Free Tier edition: OCI Generative AI is not in Always Free, so the assistant',
+'  -- calls Google''s Gemini API with the installer''s own key (SBX.FACTORY_CONFIG',
+'  -- google_api_key). Same messages in, same text out as the OCI path below.',
+'  function google_chat(p_messages json_array_t, p_retry boolean default true) return clob is',
+'    l_req   json_object_t := json_object_t();',
+'    l_cont  json_array_t  := json_array_t();',
+'    l_sys   json_object_t;',
+'    l_m     json_object_t;',
+'    l_c     json_object_t;',
+'    l_parts json_array_t;',
+'    l_p     json_object_t;',
+'    l_gen   json_object_t := json_object_t();',
+'    l_resp  dbms_cloud_types.resp;',
+'    l_body  clob;',
+'    l_text  clob;',
+'    l_again json_array_t;',
+'    l_model varchar2(100) := nvl(cfg_value(''google_model'', ''''), ''gemini-2.5-flash'');',
+'  begin',
+'    for i in 0 .. p_messages.get_size - 1 loop',
+'      l_m := treat(p_messages.get(i) as json_object_t);',
+'      l_p := json_object_t(); l_p.put(''text'', treat(l_m.get_array(''content'').get(0) as json_object_t).get_clob(''text''));',
+'      l_parts := json_array_t(); l_parts.append(l_p);',
+'      if l_m.get_string(''role'') = ''SYSTEM'' then',
+'        l_sys := json_object_t(); l_sys.put(''parts'', l_parts);',
+'      else',
+'        l_c := json_object_t();',
+'        l_c.put(''role'', case when l_m.get_string(''role'') = ''ASSISTANT'' then ''model'' else ''user'' end);',
+'        l_c.put(''parts'', l_parts);',
+'        l_cont.append(l_c);',
+'      end if;',
+'    end loop;',
+'    l_req.put(''contents'', l_cont);',
+'    if l_sys is not null then l_req.put(''systemInstruction'', l_sys); end if;',
+'    l_gen.put(''temperature'', 0.2);',
+'    l_gen.put(''maxOutputTokens'', 32000);',
+'    l_req.put(''generationConfig'', l_gen);',
+'    begin',
+'      l_resp := dbms_cloud.send_request(',
+'        credential_name => null,',
+'        uri             => ''https://generativelanguage.googleapis.com/v1beta/models/'' || l_model || '':generateContent?key='' || cfg_value(''google_api_key'', ''''),',
+'        method          => dbms_cloud.method_post,',
+'        headers         => json_object(''Content-Type'' value ''application/json''),',
+'        body            => clob_to_blob(l_req.to_clob));',
+'    exception when others then',
+'      raise_application_error(-20001, ''The Gemini API refused the request: '' || regexp_replace(substr(sqlerrm, 1, 300), ''key=[^ &]+'', ''key=***''));',
+'    end;',
+'    l_body := dbms_cloud.get_response_text(l_resp);',
+'    l_text := treat(treat(json_object_t.parse(l_body).get_array(''candidates'').get(0) as json_object_t)',
+'                   .get_object(''content'').get_array(''parts'').get(0) as json_object_t).get_clob(''text'');',
+'    if p_retry and instr(l_text, ''{'') = 0 then',
+'      l_again := p_messages;',
+'      l_again.append(msg(''ASSISTANT'', l_text));',
+'      l_again.append(msg(''USER'', ''Answer again with ONLY the JSON object described above, no prose, no fences.''));',
+'      return google_chat(l_again, false);',
+'    end if;',
+'    return l_text;',
+'  end;',
+'',
 '  function ai_chat(p_messages json_array_t, p_retry boolean default true) return clob is',
 '    l_text  clob;',
 '    l_again json_array_t;',
@@ -2447,6 +2521,11 @@ wwv_flow_imp_page.create_page_process(
 '    l_j    json_object_t;',
 '    l_comp varchar2(200);',
 '  begin',
+'    if cfg_value(''genai_provider'', ''oci'') = ''google'' then',
+'      return google_chat(p_messages, p_retry);',
+'    elsif cfg_value(''edition'', ''standard'') = ''free'' then',
+'      raise_application_error(-20001, ''The assistant is off: OCI Generative AI is not part of Always Free. Add a Gemini API key to the install (Google AI Studio, free) or use the one-click starters and the form.'');',
+'    end if;',
 '    select value into l_comp from factory_config where key = ''compartment_ocid'';',
 '    l_req.put(''compartmentId'', l_comp);',
 '    l_sm.put(''servingType'', ''ON_DEMAND'');',
@@ -2509,7 +2588,7 @@ wwv_flow_imp_page.create_page_process(
 '    l clob := p;',
 '  begin',
 '    l := replace(l, ''{MIGRATION}'', prompt_text(''migration''));',
-'    l := replace(l, ''{BLOCKS}'', c_blocks);',
+'    l := replace(l, ''{BLOCKS}'', c_blocks || case when cfg_value(''edition'', ''standard'') = ''free'' then c_free_note end);',
 '    l := replace(l, ''{TEMPLATES}'', templates());',
 '    l := replace(l, ''{REGISTRY}'', nvl(l_registry, ''(none configured)''));',
 '    l := replace(l, ''{SANDBOXES}'', my_sandboxes());',
@@ -2647,6 +2726,8 @@ wwv_flow_imp_page.create_page_process(
 '    l_out.put(''model'', c_genai_model);',
 '    l_out.put(''user'', :APP_USER);',
 '    l_out.put(''cap'', to_number(cfg_value(''max_sandboxes_per_user'', ''3'')));',
+'    l_out.put(''edition'', cfg_value(''edition'', ''standard''));',
+'    l_out.put(''provider'', cfg_value(''genai_provider'', ''oci''));',
 '    select count(*) into l_id from (',
 '      select sandbox_id, action, status,',
 '             row_number() over (partition by sandbox_id order by id desc) rn',

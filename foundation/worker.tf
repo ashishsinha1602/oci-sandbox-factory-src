@@ -88,8 +88,11 @@ resource "oci_identity_dynamic_group" "worker" {
   compartment_id = var.tenancy_ocid
   name           = "${var.prefix}-worker-dg"
   description    = "Sandbox factory workers, build and test containers in ${var.prefix}-control."
-  # container instances (standard edition) or the worker VM (Free Tier edition) in <prefix>-control
-  matching_rule = "ANY {ALL {resource.type = 'computecontainerinstance', resource.compartment.id = '${oci_identity_compartment.control.id}'}, ALL {instance.compartment.id = '${oci_identity_compartment.control.id}'}}"
+  # Standard: the container instances in <prefix>-control (the released rule, unchanged).
+  # Free Tier: the worker VM in <prefix>-control. One flat rule per edition: a nested
+  # ANY {ALL {...}, ALL {...}} is accepted by IAM but never matched the container
+  # instances (clean standard install sbx10, 2026-09-29: every worker call refused).
+  matching_rule = local.free ? "ALL {instance.compartment.id = '${oci_identity_compartment.control.id}'}" : "ALL {resource.type = 'computecontainerinstance', resource.compartment.id = '${oci_identity_compartment.control.id}'}"
   freeform_tags = local.freeform_tags
 }
 

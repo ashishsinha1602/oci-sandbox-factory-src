@@ -926,15 +926,25 @@ def destroy_stack(rm, stack, keep_stack: bool = False):
         empty_sandbox_buckets(label)
     except Exception as e:  # noqa: BLE001
         print(f"  bucket clean-up skipped ({type(e).__name__}: {e})", flush=True)
-    try:
-        run_job(rm, stack.id, "DESTROY", label)
-    except SystemExit:
-        # Cloud resources detach and release on their own clock (a private
-        # endpoint's VNIC, a bucket emptied a moment ago). A second pass a
-        # couple of minutes later removes what the first could not.
-        print("  destroy did not finish; waiting 120s and trying once more", flush=True)
-        time.sleep(120)
-        run_job(rm, stack.id, "DESTROY", label)
+    for attempt in (1, 2, 3):
+        try:
+            run_job(rm, stack.id, "DESTROY", label)
+            break
+        except SystemExit:
+            if attempt == 3:
+                raise
+            # Cloud resources detach and release on their own clock (a private
+            # endpoint's VNIC). And a sandbox's own scheduled function can drop a
+            # file in its bucket after the bucket was emptied (sbx11, 2026-09-29:
+            # one tick a second after the destroy began, and the retry failed on
+            # the same non-empty bucket). So every retry empties the buckets again;
+            # by then the first pass has removed the function and its schedule.
+            print(f"  destroy did not finish; emptying the buckets again and retrying in 120s (attempt {attempt + 1} of 3)", flush=True)
+            time.sleep(120)
+            try:
+                empty_sandbox_buckets(label)
+            except Exception as e:  # noqa: BLE001
+                print(f"  bucket clean-up skipped ({type(e).__name__}: {e})", flush=True)
     if not keep_stack:
         rm.delete_stack(stack.id)
         print(f"  stack {stack.display_name} deleted")

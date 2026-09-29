@@ -1034,6 +1034,12 @@ def cmd_destroy(args):
         # build, a refused name) has nothing in OCI, yet its card stayed FAILED
         # and every Destroy failed too. Nothing to destroy is a finished destroy.
         print(f"No stack for {args.sandbox_id}: nothing in OCI to destroy; the sandbox is gone", flush=True)
+        # ...except an image repository: it is created before the build runs, so a build
+        # refused at that point (no Dockerfile) left an empty one behind (clean install sbx12)
+        try:
+            delete_sandbox_repos(args.sandbox_id)
+        except Exception as e:  # noqa: BLE001
+            print(f"  image repositories not removed ({type(e).__name__}: {str(e)[:120]})", flush=True)
         return
     assert_owner(stack, getattr(args, "owner", None), "destroy")
     empty_buckets(args.sandbox_id, getattr(args, "os_namespace", None))

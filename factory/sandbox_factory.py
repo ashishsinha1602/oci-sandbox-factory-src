@@ -291,8 +291,43 @@ def run_job(rm, stack_id: str, operation: str, label: str) -> oci.resource_manag
     if job.lifecycle_state != "SUCCEEDED":
         log = rm.get_job_logs_content(job.id).data
         print("\n".join(log.splitlines()[-40:]), file=sys.stderr)
-        raise SystemExit(f"{operation} failed")
+        reason = job_failure_reason(log)
+        raise SystemExit(f"{operation} failed" + (f": {reason}" if reason else ""))
     return job
+
+
+# OCI's own words for a limit are not what a user needs to read on a card.
+LIMIT_WORDS = {
+    "adb-free-count": ("Oracle Cloud allows 2 Always Free Autonomous Databases per tenancy and both are in use "
+                       "(one is this factory's own control database). Destroy another sandbox that has a database, "
+                       "then try again."),
+    "catalog-count": "the region's Data Catalog limit is used up. Destroy a sandbox that has a catalog, or ask Oracle for more.",
+    "gateway-count": "the region's API Gateway limit is used up. Destroy a sandbox that has an app, or ask Oracle for more.",
+}
+
+
+def job_failure_reason(log: str) -> str:
+    """The first real error of a failed Terraform job, in words a user can act on.
+
+    The card used to say only "APPLY failed" (clean install sbx13, 2026-09-29: a Free
+    Tier sandbox asking for a third Always Free database). Throttling (429) lines are
+    Resource Manager's own retries, not the cause, so they are skipped.
+    """
+    errs = []
+    for line in log.splitlines():
+        if "Error:" not in line or "429" in line or "TooManyRequests" in line:
+            continue
+        errs.append(line.split("Error:", 1)[1].strip())
+    if not errs:
+        return ""
+    first = errs[0]
+    for limit, words in LIMIT_WORDS.items():
+        if limit in first:
+            return words
+    m = re.search(r"service limits were exceeded: ([\w, -]+)", first)
+    if m:
+        return f"an OCI service limit is used up ({m.group(1).strip()}). Ask Oracle to raise it in Limits, Quotas and Usage, or destroy a sandbox that uses it."
+    return first[:300]
 
 
 def job_outputs(rm, job_id: str) -> dict:

@@ -695,7 +695,10 @@ def enable_low_code(outputs: dict) -> None:
             ok = False
             if base:
                 import requests
-                for _ in range(4):
+                # up to 6 minutes: on a new database ORDS was seen (sbx11, 2026-09-29) to
+                # take longer than the 80 s this used to allow, and the card then said
+                # "no REST" for endpoints that answered a few minutes later
+                for _ in range(18):
                     try:
                         r = requests.get(f"{base}/ords/admin/metadata-catalog/", auth=("ADMIN", pw), timeout=30)
                         ok = r.status_code == 200
@@ -710,7 +713,6 @@ def enable_low_code(outputs: dict) -> None:
             else:
                 outputs.setdefault("warnings", []).append(
                     "REST endpoints for the ADMIN tables did not come up on this database; use SQL Developer Web or APEX instead.")
-                rested = 0
         print(f"ORDS auto-REST on for {rested}/{len(tables)} table(s), authenticated (basic auth as ADMIN); "
               f"APEX is ready at the APEX URL", flush=True)
     except Exception as e:  # noqa: BLE001

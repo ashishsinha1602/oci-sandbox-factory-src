@@ -55,7 +55,11 @@ begin
         end loop;
         if l_html then
           if l_phase = 'ready' and l_app is not null then
-            owa_util.redirect_url(l_app);
+            -- a meta refresh, not a Location header: ORDS answers 200 to a PL/SQL handler's redirect
+            owa_util.mime_header('text/html', true);
+            htp.p('<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=' || htf.escape_sc(l_app) || '">'
+               || '<title>Sandbox Factory is ready</title></head><body style="font-family:system-ui,sans-serif;padding:40px">'
+               || '<p>Sandbox Factory is ready. Opening the application&hellip; <a href="' || htf.escape_sc(l_app) || '">Open it now</a></p></body></html>');
             return;
           end if;
           owa_util.mime_header('text/html', true);

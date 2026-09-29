@@ -70,7 +70,7 @@ def main() -> int:
     if a.release:
         run(sys.executable, str(HERE / "release.py"))
         run("gh", "release", "create", a.release, str(HERE / "dist" / "sandbox-factory-foundation.zip"),
-            str(HERE / "dist" / "sandbox-factory-sandbox.zip"), "--repo", "ashishsinha1602/oci-sandbox-factory",
+            str(HERE / "dist" / "sandbox-factory-foundation-free.zip"), str(HERE / "dist" / "sandbox-factory-sandbox.zip"), "--repo", "ashishsinha1602/oci-sandbox-factory",
             "--target", "main", "--title", a.release, "--notes", "Install with the Deploy to Oracle Cloud button in the README.")
         print("released", a.release)
     return 0

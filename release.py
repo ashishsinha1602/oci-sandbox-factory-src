@@ -4,8 +4,9 @@
 Resource Manager takes a zip of Terraform plus a schema.yaml and renders the
 schema as a form. Two zips ship:
 
-    sandbox-factory-foundation.zip   one-time tenancy setup
-    sandbox-factory-sandbox.zip      one sandbox (also what the worker uploads)
+    sandbox-factory-foundation.zip       one-time tenancy setup (standard edition, edition selectable)
+    sandbox-factory-foundation-free.zip  the same, with the Free Tier edition preset (no choice to get wrong)
+    sandbox-factory-sandbox.zip          one sandbox (also what the worker uploads)
 
     python release.py                       # build into dist/
     python release.py --check               # verify contents, build nothing
@@ -76,6 +77,34 @@ def build(name: str, root: pathlib.Path) -> pathlib.Path:
     return out
 
 
+def build_free_variant(foundation_zip: pathlib.Path) -> pathlib.Path:
+    """The Free Tier button: the foundation zip with schema.yaml edited so the
+    edition is preset to free and hidden, and the Gemini key field always shown.
+    Same Terraform byte for byte; only the form differs."""
+    import io
+    import yaml
+    out = DIST / "sandbox-factory-foundation-free.zip"
+    with zipfile.ZipFile(foundation_zip) as src, zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as dst:
+        for info in src.infolist():
+            data = src.read(info.filename)
+            if info.filename == "schema.yaml":
+                doc = yaml.safe_load(data.decode("utf-8"))
+                doc["title"] = "Sandbox Factory (Free Tier edition)"
+                doc["description"] = ("Sandbox Factory for an Oracle Cloud Free Tier account: Always Free resources only. "
+                                      "Users describe what they need in a chat; the factory builds it with Terraform, hands over "
+                                      "links and passwords, and removes it when its lifetime ends. Needs a tenancy administrator to install.")
+                for g in doc["variableGroups"]:
+                    g["variables"] = [v for v in g["variables"] if v != "edition"]
+                    if g["title"] == "Hidden":
+                        g["variables"].append("edition")
+                doc["variables"]["edition"]["default"] = "free"
+                doc["variables"]["gemini_api_key"].pop("visible", None)
+                data = yaml.safe_dump(doc, sort_keys=False, allow_unicode=True, width=100).encode("utf-8")
+            dst.writestr(info, data)
+    print(f"{out.relative_to(HERE)}  free-tier variant of the foundation")
+    return out
+
+
 def check_app_export() -> list[str]:
     """The APEX application that ships in the worker image must be the page in
     the repository: a fresh install once got an export older than today's
@@ -126,6 +155,7 @@ def main() -> int:
         return 0
     for name, root in STACKS.items():
         build(name, root)
+    build_free_variant(DIST / 'sandbox-factory-foundation.zip')
     return 0
 
 

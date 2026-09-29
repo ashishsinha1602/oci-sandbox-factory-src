@@ -15,7 +15,9 @@ Also on the [Terraform Registry](https://registry.terraform.io/modules/ashishsin
 
 [![Deploy to Oracle Cloud](https://oci-resourcemanager-plugin.plugins.oci.oraclecloud.com/latest/deploy-to-oracle-cloud.svg)](https://cloud.oracle.com/resourcemanager/stacks/create?zipUrl=https://github.com/ashishsinha1602/oci-sandbox-factory/releases/latest/download/sandbox-factory-foundation.zip)
 
-**Free Tier account?** Pick *Edition: free* on the form. See [FREE-TIER](docs/FREE-TIER.md) for what a Free Tier install can and cannot build.
+**Oracle Cloud Free Tier account (no card)?** Use this button instead; it installs the Free Tier edition, Always Free resources only. See [FREE-TIER](docs/FREE-TIER.md) for what it can and cannot build.
+
+[![Deploy to Oracle Cloud, Free Tier](https://oci-resourcemanager-plugin.plugins.oci.oraclecloud.com/latest/deploy-to-oracle-cloud.svg)](https://cloud.oracle.com/resourcemanager/stacks/create?zipUrl=https://github.com/ashishsinha1602/oci-sandbox-factory/releases/latest/download/sandbox-factory-foundation-free.zip)
 
 ## What it builds
 

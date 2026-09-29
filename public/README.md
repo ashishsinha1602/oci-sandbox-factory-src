@@ -67,6 +67,14 @@ access.
 Paste a folder link into the chat, for example
 `https://github.com/ashishsinha1602/oci-sandbox-factory/tree/main/examples/telemetry-pipeline`.
 
+## Uninstall
+
+1. Destroy your sandboxes first, from the application (each card's **Destroy**) or let them expire.
+   Their images, buckets and databases go with them.
+2. In Resource Manager, open the Sandbox Factory stack and run **Destroy**. Compartments are deleted last
+   and can take a few minutes; if the job reports a compartment still active, run **Destroy** again.
+3. The standard edition's vault is scheduled for deletion (at least 7 days), as Oracle requires.
+
 ## Licence
 
 Apache License 2.0. Copyright 2026 Ashish Sinha. Install it, run it, change it, ship it; see [LICENSE](LICENSE).

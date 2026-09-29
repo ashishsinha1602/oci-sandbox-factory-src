@@ -619,6 +619,11 @@ def run_wave(f, fnd, todo, keep):
         ns = osc.get_namespace().data
         lb = [b.name for b in osc.list_buckets(ns, fnd["compartments"]["sandboxes"]).data if b.name.startswith("sbx-" + PREFIX)]
         record("cleanup: no e2e container instances or buckets left", not left and not lb, f"instances {left} buckets {lb}")
+        # the images built for the destroyed sandboxes go with them (they blocked uninstalling the factory)
+        art = sf.client(oci.artifacts.ArtifactsClient)
+        repos = [r.display_name for r in oci.pagination.list_call_get_all_results(art.list_container_repositories, compartment_id=fnd["compartments"]["control"]).data
+                 if any((r.display_name or "").split("/")[1:2] == [PREFIX + n] for n in todo) and (r.display_name or "").split("/")[0].startswith(sf.PREFIX)]
+        record("cleanup: no image repositories left for destroyed sandboxes", not repos, str(repos)[:200])
         hist = [h["sandbox_id"] for h in f.ajax(USER, "history", {})]
         built = [n for n, (st, _, _) in results.items() if st == "DONE"]
         record("cleanup: destroyed sandboxes appear in History", all((PREFIX + n) in hist for n in built), str([h for h in hist if h.startswith(PREFIX)])[:200])

@@ -948,6 +948,34 @@ def destroy_stack(rm, stack, keep_stack: bool = False):
     if not keep_stack:
         rm.delete_stack(stack.id)
         print(f"  stack {stack.display_name} deleted")
+    try:
+        delete_sandbox_repos(label)
+    except Exception as e:  # noqa: BLE001  never fail a finished destroy over the registry
+        print(f"  image repositories not removed ({type(e).__name__}: {str(e)[:120]})", flush=True)
+
+
+def delete_sandbox_repos(sandbox_id: str) -> list[str]:
+    """The images built for a sandbox go with it.
+
+    Every image the factory builds for a sandbox lives in a repository named
+    <prefix>/<sandbox>/<name> (or <prefix>-<id>/<sandbox>/<name>, see image_repo)
+    in the control compartment. Nothing removed them: they piled up, cost storage,
+    and a compartment that still holds a repository cannot be deleted, so
+    uninstalling the factory failed (clean install sbx11, 2026-09-29). Deleting
+    a repository deletes its images.
+    """
+    sid = sandbox_id[4:] if sandbox_id.startswith("sbx-") else sandbox_id
+    art = client(oci.artifacts.ArtifactsClient)
+    ctl = foundation()["compartments"]["control"]
+    gone = []
+    for r in oci.pagination.list_call_get_all_results(art.list_container_repositories, compartment_id=ctl).data:
+        parts = (r.display_name or "").split("/")
+        if len(parts) >= 3 and parts[0] in (PREFIX, f"{PREFIX}-{ctl[-6:]}") and parts[1] == sid:
+            art.delete_container_repository(r.id)
+            gone.append(r.display_name)
+    if gone:
+        print(f"  image repositories removed: {', '.join(gone)}", flush=True)
+    return gone
 
 
 def empty_buckets(sandbox_id: str, namespace: str | None = None) -> None:

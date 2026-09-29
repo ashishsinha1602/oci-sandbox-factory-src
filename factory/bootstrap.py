@@ -19,9 +19,11 @@ HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
 import controldb  # noqa: E402
+import install_status  # noqa: E402
 
 
 def bootstrap() -> None:
+    install_status.mark("worker started", "preparing the control database")
     conn = controldb.connect("ADMIN")
     cur = conn.cursor()
     # One worker at a time, from the very first step: on a fresh install all
@@ -40,6 +42,7 @@ def bootstrap() -> None:
     cur.execute("select count(*) from dba_users where username = :1", [controldb.SCHEMA])
     if not cur.fetchone()[0]:
         print("bootstrap: control schema missing; running controldb.setup()", flush=True)
+        install_status.mark("creating control schema", "tables, trigger and the APEX workspace")
         controldb.setup([])                       # its own connection; ours keeps the lock
     else:
         # columns the newer code needs, on an install made by an older release
@@ -69,6 +72,7 @@ def bootstrap() -> None:
         import apex_customize
         print(f"bootstrap: {'installing' if not row else 'upgrading'} the Sandbox Factory application "
               f"({installed or 'none'} -> {shipped})", flush=True)
+        install_status.mark("installing application", "importing the APEX application; a few minutes")
         apex_customize.install(export.read_text(encoding="utf-8"), 112)
         cur.execute(f"""merge into {controldb.SCHEMA}.factory_config c using (select 'app_release' key, :v value from dual) s
                         on (c.key = s.key) when matched then update set c.value = s.value
@@ -90,6 +94,7 @@ def bootstrap() -> None:
     # Every step below is independent: one that fails is reported and the rest
     # still run (a failed prompt load once skipped the profile, templates and
     # prices of a fresh install, leaving it without chat).
+    install_status.mark("loading prompts")
     try:
         import prompts
         for line in prompts.load():
@@ -97,6 +102,7 @@ def bootstrap() -> None:
     except Exception as e:  # noqa: BLE001
         print(f"bootstrap: prompts not loaded ({type(e).__name__}: {e})", flush=True)
     # what this install is: region, registry, the chat models that answer here
+    install_status.mark("refreshing profile", "region, registry and the models this region serves")
     try:
         import os
         import profile as tenancy_profile
@@ -124,12 +130,15 @@ def bootstrap() -> None:
         print("bootstrap: templates loaded", flush=True)
     except Exception as e:  # noqa: BLE001
         print(f"bootstrap: templates not loaded ({type(e).__name__}: {e})", flush=True)
+    install_status.mark("refreshing prices", "Oracle's public price list")
     try:
         import profile as tenancy_profile
         tenancy_profile.refresh_prices()
         print("bootstrap: prices refreshed from Oracle's price list", flush=True)
     except Exception as e:  # noqa: BLE001
         print(f"bootstrap: prices not refreshed ({type(e).__name__}: {e})", flush=True)
+    import os as _os
+    install_status.mark("ready", "sign in at app_url" if _os.environ.get("SBX_APP_URL") else "application installed")
 
 
 if __name__ == "__main__":

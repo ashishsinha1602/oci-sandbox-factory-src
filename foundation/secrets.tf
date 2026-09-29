@@ -6,7 +6,7 @@
 # Always Free, so the Free Tier edition creates no vault (and cannot hit the
 # tenancy's vault limit, which counts vaults still pending deletion for 7 days).
 resource "oci_kms_vault" "secrets" {
-  count          = local.free ? 0 : 1
+  count          = (local.free || !var.enable_vault) ? 0 : 1
   compartment_id = oci_identity_compartment.control.id
   display_name   = "${var.prefix}-secrets"
   vault_type     = "DEFAULT"
@@ -16,7 +16,7 @@ resource "oci_kms_vault" "secrets" {
 # vault reports ACTIVE; creating the key at once failed a fresh install with
 # "lookup <vault>-management.kms...: no such host". Wait, then create the key.
 resource "time_sleep" "vault_dns" {
-  count           = local.free ? 0 : 1
+  count           = (local.free || !var.enable_vault) ? 0 : 1
   create_duration = "180s"
   triggers = {
     management_endpoint = oci_kms_vault.secrets[0].management_endpoint
@@ -24,7 +24,7 @@ resource "time_sleep" "vault_dns" {
 }
 
 resource "oci_kms_key" "secrets" {
-  count               = local.free ? 0 : 1
+  count               = (local.free || !var.enable_vault) ? 0 : 1
   compartment_id      = oci_identity_compartment.control.id
   display_name        = "${var.prefix}-secrets-key"
   management_endpoint = time_sleep.vault_dns[0].triggers["management_endpoint"]
@@ -38,7 +38,7 @@ resource "oci_kms_key" "secrets" {
 # Streaming with Apache Kafka writes each cluster's superuser password into
 # the sandbox's secret. Tenancy-level, like the other service grants here.
 resource "oci_identity_policy" "kafka_superuser" {
-  count          = local.free ? 0 : 1
+  count          = (local.free || !var.enable_vault) ? 0 : 1
   provider       = oci.home
   compartment_id = var.tenancy_ocid
   name           = "${var.prefix}-kafka-superuser"

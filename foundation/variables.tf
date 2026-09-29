@@ -180,3 +180,9 @@ variable "gemini_api_key" {
   sensitive   = true
   description = "Free Tier edition only: a Google AI Studio API key (free) for the assistant, because OCI Generative AI is not part of Always Free. Empty = the assistant is off; the one-click starters and the form still work."
 }
+
+variable "enable_vault" {
+  type        = bool
+  default     = true
+  description = "Standard edition: create the vault that holds each Kafka sandbox's superuser password. Turn off in a tenancy that cannot create a vault (the vault limit counts vaults pending deletion for 30 days); Kafka sandboxes then get no public superuser credentials, everything else is unaffected."
+}

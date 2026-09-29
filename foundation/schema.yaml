@@ -57,6 +57,7 @@ variableGroups:
       - enable_quotas
       - quota_limits
       - worker_image
+      - enable_vault
       - control_adb_allowed_cidrs
       - admin_cidr
       - vcn_cidr
@@ -101,6 +102,11 @@ variables:
       eq:
         - edition
         - free
+  enable_vault:
+    type: boolean
+    title: Create the secrets vault
+    description: Holds each Kafka sandbox's superuser password. Turn off only if the tenancy cannot create a vault (limit reached).
+    default: true
   app_admin_user:
     type: string
     title: Admin username

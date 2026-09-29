@@ -175,12 +175,16 @@ def public_ip() -> str:
     return _IP["ip"]
 
 
-def remove(sandbox_id: str) -> bool:
+def remove(sandbox_id: str, images: bool = True) -> bool:
+    """The sandbox's pod, and (on destroy) the images built for it. A deploy
+    replaces the pod but must keep the image it has just built."""
     name = f"sbx-{sandbox_id}"
     st, raw = _call("DELETE", f"/pods/{name}?force=true", timeout=300)
     gone = st in (200, 204)
     if st not in (200, 204, 404):
         raise RuntimeError(f"remove pod {name}: HTTP {st} {raw[:200]!r}")
+    if not images:
+        return gone
     # images built for this sandbox
     st, raw = _call("GET", "/images/json", timeout=60)
     for img in json.loads(raw or b"[]") if st == 200 else []:
@@ -193,7 +197,7 @@ def remove(sandbox_id: str) -> bool:
 def deploy(sandbox_id: str, containers: list[dict], env: dict, owner: str, expires: str) -> dict:
     """One pod, one host port per container that exposes one; the first container is the sandbox's URL."""
     name = f"sbx-{sandbox_id}"
-    remove(sandbox_id)                                   # a re-run replaces the pod
+    remove(sandbox_id, images=False)                     # a re-run replaces the pod, keeps the image just built
     for c in containers:
         if not str(c["image"]).startswith("localhost/"):
             print(f"pulling {c['image']}", flush=True)

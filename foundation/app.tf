@@ -25,11 +25,11 @@ output "app_url" {
 
 output "next_step" {
   description = "What to do once this apply is green."
-  value       = "Wait a few minutes (Free Tier edition: up to 10), then open app_url and sign in with app_admin_user / app_admin_password. A 404 means the worker is still installing the application; status_url answers as soon as the worker has started and says which step it is on."
+  value       = "Open status_url: it shows the install progress and opens the application by itself when it is ready (a few minutes; up to 10 on the Free Tier edition). If it shows 404 for the first minutes, the worker has not started yet; wait and reload. Then sign in with app_admin_user / app_admin_password."
 }
 
 output "status_url" {
-  description = "Install progress as JSON, from the worker's first minute on: which bootstrap step is running, and 'ready' with the application URL when done. 404 until the worker's first start."
+  description = "Open this first. Install progress from the worker's first minute on; it refreshes itself and opens the application when ready (JSON for scripts). 404 only until the worker's first start."
   value       = var.enable_control_adb ? try(replace(oci_database_autonomous_database.control[0].connection_urls[0].apex_url, "/ords/apex", "/ords/admin/status/"), "") : ""
 }
 

@@ -28,6 +28,7 @@ variableGroups:
   - title: Install
     variables:
       - edition
+      - worker_shape
       - gemini_api_key
       - parent_compartment_ocid
       - prefix
@@ -56,7 +57,6 @@ variableGroups:
       - enable_quotas
       - quota_limits
       - worker_image
-      - worker_shape
       - control_adb_allowed_cidrs
       - admin_cidr
       - vcn_cidr
@@ -89,10 +89,18 @@ variables:
         - edition
         - free
   worker_shape:
-    type: string
-    title: Free Tier worker VM shape
-    description: The Always Free VM the worker runs on in the Free Tier edition. Keep VM.Standard.E2.1.Micro.
-    default: VM.Standard.E2.1.Micro
+    type: enum
+    title: Free Tier worker VM
+    description: >-
+      The Always Free VM the worker runs on. Arm (1 OCPU, 6 GB) is ready in about two minutes.
+      Pick the x86 Micro only if the install fails with "Out of host capacity" for Arm; it works
+      but needs about fifteen minutes to start.
+    enum: [VM.Standard.A1.Flex, VM.Standard.E2.1.Micro]
+    default: VM.Standard.A1.Flex
+    visible:
+      eq:
+        - edition
+        - free
   app_admin_user:
     type: string
     title: Admin username

@@ -203,7 +203,8 @@ resource "oci_container_instances_container_instance" "worker" {
 # the very same worker image under podman on one Always Free VM in the private
 # subnet (no public IP; OCIR and the OCI APIs are reached through the NAT and
 # service gateways). systemd restarts it, and every start pulls the image again,
-# so a reboot picks up a new release.
+# so a reboot picks up a new release. The worker image is published for both
+# x86 and Arm, so either Always Free shape runs it.
 # Always Free shapes are offered in ONE availability domain per tenancy (Oracle
 # picks it), so the VM goes wherever the shape exists, not blindly in AD-1.
 data "oci_core_shapes" "worker" {
@@ -303,10 +304,6 @@ resource "oci_core_instance" "worker" {
     precondition {
       condition     = length(local.worker_ads) > 0
       error_message = "No availability domain in this region offers ${var.worker_shape} to this tenancy. Always Free shapes exist only in the home region; install there, or set worker_shape to a shape this tenancy can launch."
-    }
-    precondition {
-      condition     = !can(regex("^VM\\.Standard\\.A1", var.worker_shape))
-      error_message = "The worker image is built for x86 (amd64). Use VM.Standard.E2.1.Micro for the Free Tier worker until an Arm build of the worker image ships."
     }
   }
 

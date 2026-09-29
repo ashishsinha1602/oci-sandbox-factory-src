@@ -166,8 +166,12 @@ variable "edition" {
 
 variable "worker_shape" {
   type        = string
-  default     = "VM.Standard.E2.1.Micro"
-  description = "Free Tier edition only: the Always Free VM shape the worker runs on. VM.Standard.E2.1.Micro is the x86 shape every Free Tier tenancy gets."
+  default     = "VM.Standard.A1.Flex"
+  description = "Free Tier edition only: the Always Free VM the worker runs on. VM.Standard.A1.Flex (Arm, 1 OCPU / 6 GB) starts in about two minutes; VM.Standard.E2.1.Micro (x86, 1 GB) is the fallback when the region has no Arm capacity and takes about fifteen."
+  validation {
+    condition     = contains(["VM.Standard.A1.Flex", "VM.Standard.E2.1.Micro"], var.worker_shape)
+    error_message = "worker_shape must be VM.Standard.A1.Flex or VM.Standard.E2.1.Micro (the Always Free shapes)."
+  }
 }
 
 variable "gemini_api_key" {

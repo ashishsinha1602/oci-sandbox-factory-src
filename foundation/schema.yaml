@@ -7,12 +7,10 @@
 # outputs are the application URL and the first login.
 title: Sandbox Factory
 description: >-
-  Self-service, AI-planned OCI sandboxes that delete themselves. Users describe what
-  they need in a chat; the factory builds it in its own compartment with Terraform,
-  gives them the links and passwords, and removes it when its lifetime ends.
-  Requires a tenancy administrator for the install (it creates IAM policies). Works on
-  a Pay-As-You-Go account (standard edition) and on an Oracle Cloud Free Tier account
-  (Free Tier edition: Always Free resources only).
+  Self-service, AI-planned OCI sandboxes that delete themselves. Users describe what they
+  need in a chat; the factory builds it with Terraform, hands over links and passwords, and
+  removes it when its lifetime ends. Needs a tenancy administrator to install. Standard
+  edition: Pay-As-You-Go account. Free Tier edition: Always Free resources only.
 schemaVersion: 1.1.0
 version: "1.0"
 locale: en

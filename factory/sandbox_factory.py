@@ -354,9 +354,16 @@ def catalog_available(cfg: dict, fnd: dict) -> bool:
             return True
         dc = client(oci.data_catalog.DataCatalogClient)
         used = 0
+        # Catalogs live in sbx-sandboxes; the worker may not list sbx-control, and one
+        # compartment it cannot read must not turn the whole check into "assume free".
+        # A catalog that is still DELETING holds its slot (create answers QuotaExceeded).
         for comp in (fnd["compartments"]["sandboxes"], fnd["compartments"]["control"]):
-            used += sum(1 for c in dc.list_catalogs(compartment_id=comp).data
-                        if c.lifecycle_state not in ("DELETED", "DELETING", "FAILED"))
+            try:
+                used += sum(1 for c in dc.list_catalogs(compartment_id=comp).data
+                            if c.lifecycle_state not in ("DELETED", "FAILED"))
+            except oci.exceptions.ServiceError as e:
+                if e.status not in (401, 403, 404):
+                    raise
         ok = used < limit
         if not ok:
             NOTES.append(f"Built without a Data Catalog: this region's limit ({limit}) is used up. "

@@ -745,8 +745,16 @@ def harvest_catalog(outputs: dict) -> None:
             if conns:
                 conn_key = conns[0].key
             else:
-                rp = next(t for t in oci.pagination.list_call_get_all_results(dc.list_types, cat["id"], type_category="connection").data
-                          if t.name == "Resource Principal" and dc.get_type(cat["id"], t.key).data.parent_type_key == a.get("type_key"))
+                # The type LIST carries each connection type's parent. get_type() is not
+                # used: with SDK 2.187 it answered a different parent_type_key for the
+                # Object Storage "Resource Principal" type, nothing matched, and every
+                # lake sandbox was left without a connection or a harvest (sbx10, 2026-09-29).
+                rps = oci.pagination.list_call_get_all_results(dc.list_types, cat["id"], type_category="connection",
+                                                               name="Resource Principal").data
+                rp = next((t for t in rps if t.parent_type_key == a.get("type_key")), None)
+                if rp is None:
+                    raise RuntimeError(f"no Resource Principal connection type for asset type {a.get('type_key')}; "
+                                       f"catalog offers {[(t.key, t.parent_type_key) for t in rps]}")
                 conn_key = dc.create_connection(cat["id"], a["key"], M.CreateConnectionDetails(
                     display_name=f"{name}-resource-principal", type_key=rp.key, is_default=True,
                     properties={"default": {"ociRegion": cfg["region"], "ociCompartment": compartment}})).data.key

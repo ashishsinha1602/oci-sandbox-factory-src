@@ -541,9 +541,13 @@ function sfInit(){
            var t=b.textContent; b.textContent='copied'; setTimeout(function(){b.textContent=t},900); }
   });
 
+  // Free Tier edition: only starters that Always Free can build are offered
+  function freeOk(r){ var p=recipePayload(r);
+    return !(p.enable_app||p.enable_kafka||p.enable_catalog||p.enable_aidp||p.functions||p.dataflow_jobs||p.queues||p.databases||p.app_instances) }
   function drawRecipes(){
     var el=$('#sf-recs'); if(!el)return;
     var list=RECIPES.filter(function(r){return OCIR||!needsRegistry(r)});
+    if(window.__sfEdition==='free')list=list.filter(freeOk);
     el.innerHTML=list.map(function(r,i){
       return '<div class="sf-rec" data-i="'+i+'"><div class="t">'+esc(r.t)+'</div><div class="d">'+esc(r.d)+'</div>'
         +'<div class="p">'+r.tags.map(function(x){return '<span>'+esc(x)+'</span>'}).join('')+'</div></div>';
@@ -655,7 +659,7 @@ function sfInit(){
   // What a plan or a chat action will actually build in OCI, in plain words.
   function infraHtml(a){
     var L=[];
-    if(a.enable_adb)L.push('<li><b>Autonomous Database</b> &mdash; '+esc(a.adb_tier||'paid, 2 ECPU')+', Oracle 23ai, private subnet. Select AI (plain-English queries) and AI cataloguing are switched on for you. Every table is also published as a REST endpoint through ORDS, and an APEX workspace is waiting if you want to click a low-code app together. You get SQL Developer Web and APEX URLs.</li>');
+    if(a.enable_adb)L.push(window.__sfEdition==='free'?'<li><b>Autonomous Database</b> &mdash; Always Free (1 OCPU, 20 GB), Oracle 23ai, public endpoint. Every table is published as a REST endpoint through ORDS, in-database document search works, and an APEX workspace is waiting. You get SQL Developer Web and APEX URLs. Select AI is not available on Free Tier.</li>':'<li><b>Autonomous Database</b> &mdash; '+esc(a.adb_tier||'paid, 2 ECPU')+', Oracle 23ai, private subnet. Select AI (plain-English queries) and AI cataloguing are switched on for you. Every table is also published as a REST endpoint through ORDS, and an APEX workspace is waiting if you want to click a low-code app together. You get SQL Developer Web and APEX URLs.</li>');
     if(a.enable_nosql)L.push('<li><b>OCI NoSQL</b> &mdash; serverless JSON tables with on-demand capacity. You get the table names and the compartment; no cluster to size and nothing running when idle.</li>');
     if(a.enable_kafka)L.push('<li><b>Kafka</b> &mdash; Streaming with Apache Kafka, 1 broker, 50 GB, topic <code>events</code>, a public bootstrap endpoint with a SASL/SCRAM superuser (username + password on the card), and a private one for containers in the sandbox.</li>');
     var cs=(a.containers&&a.containers.length)?a.containers:((a.enable_app||a.git_url||a.app_image)?[{name:'web',image:a.git_url||a.app_image||'nginx:alpine',port:a.app_port||80}]:[]);

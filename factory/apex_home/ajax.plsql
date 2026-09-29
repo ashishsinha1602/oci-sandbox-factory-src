@@ -325,6 +325,29 @@ declare
     if l_act = 'DEPLOY' and l_git is null then
       l_act := 'CREATE';
     end if;
+    -- Free Tier edition: what Always Free does not include is refused here, with
+    -- the free alternative, instead of being queued and failed by the worker.
+    if cfg_value('edition', 'standard') = 'free' and l_act <> 'DESTROY' then
+      declare
+        l_no varchar2(1000);
+      begin
+        l_no := case when l_kafka = 'Y' then 'Kafka, ' end
+             || case when l_app = 'Y' or l_image is not null or l_git is not null or l_cont is not null or l_files is not null
+                      or l_atpl is not null or l_insts is not null then 'containerised apps, ' end
+             || case when l_fns is not null then 'Functions, ' end
+             || case when l_dfj is not null then 'Data Flow, ' end
+             || case when l_qs is not null then 'Queue, ' end
+             || case when l_cat = 'Y' then 'Data Catalog, ' end
+             || case when l_aidp = 'Y' then 'AI Data Platform, ' end
+             || case when l_dbs is not null then 'extra databases, ' end;
+        if l_no is not null then
+          l_out.put('err', 'Not available on an Oracle Cloud Free Tier account: ' || rtrim(l_no, ', ')
+                        || '. This install can build an Always Free Autonomous Database (with REST and in-database document search), NoSQL tables and Object Storage buckets.');
+          return;
+        end if;
+        l_tier := 'free';
+      end;
+    end if;
 
     -- A sandbox belongs to whoever first asked for it. Without this check any
     -- signed-in user could destroy someone else's sandbox, or reuse its name and

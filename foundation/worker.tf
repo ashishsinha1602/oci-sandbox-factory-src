@@ -204,6 +204,22 @@ resource "oci_container_instances_container_instance" "worker" {
 # subnet (no public IP; OCIR and the OCI APIs are reached through the NAT and
 # service gateways). systemd restarts it, and every start pulls the image again,
 # so a reboot picks up a new release.
+# Always Free shapes are offered in ONE availability domain per tenancy (Oracle
+# picks it), so the VM goes wherever the shape exists, not blindly in AD-1.
+data "oci_core_shapes" "worker" {
+  for_each            = local.use_vm ? toset([for ad in data.oci_identity_availability_domains.worker[0].availability_domains : ad.name]) : toset([])
+  compartment_id      = var.tenancy_ocid
+  availability_domain = each.key
+  filter {
+    name   = "name"
+    values = [var.worker_shape]
+  }
+}
+
+locals {
+  worker_ads = [for ad, d in data.oci_core_shapes.worker : ad if length(d.shapes) > 0]
+}
+
 data "oci_core_images" "worker" {
   count                    = local.use_vm ? 1 : 0
   compartment_id           = var.tenancy_ocid
@@ -249,7 +265,7 @@ locals {
 resource "oci_core_instance" "worker" {
   count               = local.use_vm ? 1 : 0
   compartment_id      = oci_identity_compartment.control.id
-  availability_domain = data.oci_identity_availability_domains.worker[0].availability_domains[0].name
+  availability_domain = local.worker_ads[0]
   display_name        = "${var.prefix}-worker"
   shape               = var.worker_shape
   freeform_tags       = merge(local.freeform_tags, { role = "worker" })
@@ -280,6 +296,10 @@ resource "oci_core_instance" "worker" {
   lifecycle {
     # a newer Oracle Linux image must not replace a working worker
     ignore_changes = [source_details[0].source_id]
+    precondition {
+      condition     = length(local.worker_ads) > 0
+      error_message = "No availability domain in this region offers ${var.worker_shape} to this tenancy. Always Free shapes exist only in the home region; install there, or set worker_shape to a shape this tenancy can launch."
+    }
     precondition {
       condition     = !can(regex("^VM\\.Standard\\.A1", var.worker_shape))
       error_message = "The worker image is built for x86 (amd64). Use VM.Standard.E2.1.Micro for the Free Tier worker until an Arm build of the worker image ships."

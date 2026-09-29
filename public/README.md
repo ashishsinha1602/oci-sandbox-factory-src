@@ -19,6 +19,17 @@ Also on the [Terraform Registry](https://registry.terraform.io/modules/ashishsin
 
 [![Deploy to Oracle Cloud, Free Tier](https://oci-resourcemanager-plugin.plugins.oci.oraclecloud.com/latest/deploy-to-oracle-cloud.svg)](https://cloud.oracle.com/resourcemanager/stacks/create?zipUrl=https://github.com/ashishsinha1602/oci-sandbox-factory/releases/latest/download/sandbox-factory-foundation-free.zip)
 
+## After the apply is green
+
+Terraform builds the infrastructure; the application is installed by the worker on its
+**first start, a few minutes later** (up to 10 on the Free Tier edition, where the worker
+VM first installs podman and pulls the image). Until then the application URL shows 404.
+That is normal. The stack outputs give you:
+
+- `app_url`: the application, sign in with `app_admin_user` / `app_admin_password`
+- `status_url`: install progress as JSON, from the worker's first minute on
+- `next_step`: the same advice, in the outputs panel
+
 ## What it builds
 
 | Ask for | You get |

@@ -250,13 +250,17 @@ locals {
           [Service]
           Restart=always
           RestartSec=20
+          TimeoutStartSec=0
           ExecStartPre=-/usr/bin/podman rm -f sbx-worker
           ExecStart=/usr/bin/podman run --rm --name sbx-worker --pull=always --env-file /etc/sbx/worker.env --log-driver=journald ${var.worker_image}
 
           [Install]
           WantedBy=multi-user.target
     runcmd:
-      - dnf -y install podman
+      # 1 GB of RAM (E2.1.Micro) is not enough for dnf plus the agents: without
+      # swap the kernel kills dnf and cloud-init with it, and the worker never starts.
+      - [ sh, -c, "test -f /swapfile || (fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile && echo '/swapfile none swap sw 0 0' >> /etc/fstab)" ]
+      - dnf -y --setopt=install_weak_deps=False --disablerepo='*' --enablerepo=ol9_baseos_latest --enablerepo=ol9_appstream install podman
       - systemctl daemon-reload
       - systemctl enable --now sbx-worker
   EOT

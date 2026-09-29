@@ -1,7 +1,4 @@
 declare
-  -- Ajax callback "SF" for the Sandbox Factory home page.
-  --   x01 = action (plan | chat | submit | status), x02 = JSON payload
-  -- Replies never use an "error" key: APEX would treat that as a failed request.
   l_action varchar2(30) := apex_application.g_x01;
   l_in     json_object_t;
   l_out    json_object_t := json_object_t();
@@ -26,9 +23,14 @@ declare
   c_free_note constant varchar2(1200) :=
        ' THIS INSTALL IS THE FREE TIER EDITION (an Oracle Cloud Free Tier account): only an Always Free Autonomous Database '
     || '(with REST and in-database document search), OCI NoSQL tables and Object Storage buckets can be built. '
-    || 'NOT available here: Kafka, containerised apps and container images, Functions, Data Flow, Data Catalog, Queue, AI Data Platform, '
-    || 'extra databases, paid database tiers and Select AI. When the user asks for one of those, say plainly that it is not available on a '
-    || 'Free Tier account, offer the free alternative (a database with sample data, NoSQL, buckets), and never set those flags or add those objects.';
+    || 'NOT available here: Kafka, Functions, Data Flow, Data Catalog, Queue, AI Data Platform, extra databases, paid database tiers, '
+    || 'Select AI and extra container instances (app_instances). When the user asks for one of those, say plainly that it is not available on a '
+    || 'Free Tier account, offer the free alternative, and never set those flags or add those objects.';
+  c_free_apps constant varchar2(400) :=
+       ' Containerised apps ARE available: they run on the Free Tier worker VM (podman, shared host, HTTP on a public IP and port, no HTTPS gateway); '
+    || 'use enable_app / containers / git_url / app_files as normal.';
+  c_free_noapps constant varchar2(300) :=
+       ' Containerised apps and container images are NOT available on this install (its worker runs on the x86 Micro VM); decline them too.';
 
   -- What the current user has (for status questions and destroy-by-name).
   function cfg_value(p_key varchar2, p_default varchar2) return varchar2 is
@@ -88,10 +90,6 @@ declare
     return nvl(l_json, '[]');
   end;
 
-  -- utl_raw.cast_to_raw takes a VARCHAR2, so a request over 32767 bytes (a
-  -- conversation with attached code) died with ORA-06502. Convert properly.
-  -- htp.p takes at most 32767 characters; a long answer (a pipeline plan with
-  -- its file review and cost table) raised ORA-06502. Write CLOBs in pieces.
   procedure out_clob(p in clob) is
     o pls_integer := 1;
     n pls_integer := nvl(dbms_lob.getlength(p), 0);
@@ -188,7 +186,7 @@ declare
     if cfg_value('genai_provider', 'oci') = 'google' then
       return google_chat(p_messages, p_retry);
     elsif cfg_value('edition', 'standard') = 'free' then
-      raise_application_error(-20001, 'The assistant is off: OCI Generative AI is not part of Always Free. Add a Gemini API key to the install (Google AI Studio, free) or use the one-click starters and the form.');
+      raise_application_error(-20001, 'The assistant is off: OCI Generative AI is not part of Always Free. An administrator can switch it on by pasting a free Google AI Studio key in the box above the chat. The one-click starters and the form work without it.');
     end if;
     select value into l_comp from factory_config where key = 'compartment_ocid';
     l_req.put('compartmentId', l_comp);
@@ -235,10 +233,6 @@ declare
   exception when no_data_found then return '';
   end;
 
-  -- Prompts live in SBX.FACTORY_PROMPTS, loaded from factory/prompts/*.txt by
-  -- factory/prompts.py, so they can grow without hitting the 32767-byte cap on
-  -- this process and can be tuned without an APEX deploy. Placeholders such as
-  -- {BLOCKS} or {PRICES} are filled here from the live configuration.
   function prompt_text(p_key varchar2) return clob is
     l clob;
   begin
@@ -252,7 +246,7 @@ declare
     l clob := p;
   begin
     l := replace(l, '{MIGRATION}', prompt_text('migration'));
-    l := replace(l, '{BLOCKS}', c_blocks || case when cfg_value('edition', 'standard') = 'free' then c_free_note end);
+    l := replace(l, '{BLOCKS}', c_blocks || case when cfg_value('edition', 'standard') = 'free' then c_free_note || case when cfg_value('free_apps', '0') = '1' then c_free_apps else c_free_noapps end end);
     l := replace(l, '{TEMPLATES}', templates());
     l := replace(l, '{REGISTRY}', nvl(l_registry, '(none configured)'));
     l := replace(l, '{SANDBOXES}', my_sandboxes());
@@ -332,7 +326,8 @@ declare
         l_no varchar2(1000);
       begin
         l_no := case when l_kafka = 'Y' then 'Kafka, ' end
-             || case when l_app = 'Y' or l_image is not null or l_git is not null or l_cont is not null or l_files is not null
+             || case when cfg_value('free_apps', '0') = '1' then case when l_insts is not null then 'extra container instances, ' end
+                     when l_app = 'Y' or l_image is not null or l_git is not null or l_cont is not null or l_files is not null
                       or l_atpl is not null or l_insts is not null then 'containerised apps, ' end
              || case when l_fns is not null then 'Functions, ' end
              || case when l_dfj is not null then 'Data Flow, ' end
@@ -415,12 +410,52 @@ begin
     l_out.put('cap', to_number(cfg_value('max_sandboxes_per_user', '3')));
     l_out.put('edition', cfg_value('edition', 'standard'));
     l_out.put('provider', cfg_value('genai_provider', 'oci'));
+    l_out.put('free_apps', cfg_value('free_apps', '0') = '1');
+    begin
+      select case when is_admin = 'Yes' then 1 else 0 end into l_id from apex_workspace_apex_users where user_name = :APP_USER;
+    exception when others then l_id := 0;
+    end;
+    l_out.put('is_admin', l_id = 1);
     select count(*) into l_id from (
       select sandbox_id, action, status,
              row_number() over (partition by sandbox_id order by id desc) rn
         from sandbox_requests where requester = :APP_USER)
      where rn = 1 and not (action = 'DESTROY' and status = 'DONE');
     l_out.put('live', l_id);
+
+  elsif l_action = 'set_key' then
+    -- Free Tier edition: switch the assistant on with a Google AI Studio key (no reinstall).
+    declare
+      l_key  varchar2(200) := substr(trim(l_in.get_string('key')), 1, 200);
+      l_msgs json_array_t := json_array_t();
+      l_adm  number := 0;
+    begin
+      begin
+        select case when is_admin = 'Yes' then 1 else 0 end into l_adm from apex_workspace_apex_users where user_name = :APP_USER;
+      exception when others then l_adm := 0;
+      end;
+      if l_adm = 0 then
+        l_out.put('err', 'Only a factory administrator can set the assistant key.');
+      elsif not regexp_like(l_key, '^AIza[A-Za-z0-9_-]{30,}$') then
+        l_out.put('err', 'That does not look like a Google AI Studio key (they start with AIza).');
+      else
+        merge into factory_config c using (select 'google_api_key' key, l_key value from dual) s on (c.key = s.key)
+          when matched then update set c.value = s.value when not matched then insert (key, value) values (s.key, s.value);
+        merge into factory_config c using (select 'genai_provider' key, 'google' value from dual) s on (c.key = s.key)
+          when matched then update set c.value = s.value when not matched then insert (key, value) values (s.key, s.value);
+        commit;
+        begin
+          l_msgs.append(msg('USER', 'Reply with the single word OK.'));
+          l_out.put('reply', substr(google_chat(l_msgs, false), 1, 40));
+          l_out.put('ok', true);
+        exception when others then
+          update factory_config set value = 'oci' where key = 'genai_provider';
+          delete from factory_config where key = 'google_api_key';
+          commit;
+          l_out.put('err', 'Google did not accept that key: ' || regexp_replace(substr(sqlerrm, 1, 300), 'key=[^ &]+', 'key=***'));
+        end;
+      end if;
+    end;
 
   elsif l_action = 'plan' then
     declare
@@ -460,10 +495,6 @@ begin
         l_j    json_object_t;
         l_txt  varchar2(4000);
       begin
-        -- Up to two corrections: an answer that is not one JSON object is asked
-        -- for again as JSON only; a build request (or a proposal) that came back
-        -- without its action object is asked for the action. Each new answer is
-        -- checked the same way.
         for l_try in 1 .. 2 loop
           begin
             l_j   := json_object_t.parse(substr(l_raw, instr(l_raw, '{'), instr(l_raw, '}', -1) - instr(l_raw, '{') + 1));

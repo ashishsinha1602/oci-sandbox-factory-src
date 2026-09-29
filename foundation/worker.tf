@@ -132,11 +132,14 @@ locals {
   free   = var.edition == "free"
   use_ci = var.enable_worker && !local.free # standard: container instances
   use_vm = var.enable_worker && local.free  # Free Tier: one Always Free VM running the same image under podman
+  # on the Arm VM (2 OCPU / 12 GB of the free 4 / 24) the sandboxes' containers run beside the worker
+  free_apps = local.free && can(regex("A1", var.worker_shape))
 
   # One environment for both shapes, so the worker behaves the same wherever it runs.
   worker_env = {
-    SBX_PREFIX  = var.prefix
-    SBX_EDITION = var.edition
+    SBX_PREFIX    = var.prefix
+    SBX_EDITION   = var.edition
+    SBX_FREE_APPS = local.free_apps ? "1" : "0"
     # the shipped starter images live next to the worker image (…/sandbox-factory/)
     SBX_RELEASE_REGISTRY = regex("^(.*/)[^/]+$", split(":", var.worker_image)[0])[0]
     SBX_WORKER_KIND      = "oci"
@@ -253,7 +256,7 @@ locals {
           RestartSec=20
           TimeoutStartSec=0
           ExecStartPre=-/usr/bin/podman rm -f sbx-worker
-          ExecStart=/usr/bin/podman run --rm --name sbx-worker --pull=always --env-file /etc/sbx/worker.env --log-driver=journald ${var.worker_image}
+          ExecStart=/usr/bin/podman run --rm --name sbx-worker --pull=always --env-file /etc/sbx/worker.env --log-driver=journald -v /run/podman/podman.sock:/run/podman/podman.sock --security-opt label=disable ${var.worker_image}
 
           [Install]
           WantedBy=multi-user.target
@@ -262,6 +265,8 @@ locals {
       # swap the kernel kills dnf and cloud-init with it, and the worker never starts.
       - [ sh, -c, "test -f /swapfile || (fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile && echo '/swapfile none swap sw 0 0' >> /etc/fstab)" ]
       - dnf -y --setopt=install_weak_deps=False --disablerepo='*' --enablerepo=ol9_baseos_latest --enablerepo=ol9_appstream install podman
+      - systemctl enable --now podman.socket
+      - [ sh, -c, "firewall-cmd --permanent --add-port=8101-8199/tcp && firewall-cmd --reload || true" ]
       - systemctl daemon-reload
       - systemctl enable --now sbx-worker
   EOT
@@ -278,8 +283,8 @@ resource "oci_core_instance" "worker" {
   dynamic "shape_config" {
     for_each = can(regex("Flex$", var.worker_shape)) ? [1] : []
     content {
-      ocpus         = 1
-      memory_in_gbs = 6
+      ocpus         = local.free_apps ? 2 : 1
+      memory_in_gbs = local.free_apps ? 12 : 6
     }
   }
 
@@ -289,9 +294,10 @@ resource "oci_core_instance" "worker" {
   }
 
   create_vnic_details {
-    subnet_id        = oci_core_subnet.private.id
+    # hosting applications: a public address, and the app ports opened in network.tf
+    subnet_id        = local.free_apps ? oci_core_subnet.public.id : oci_core_subnet.private.id
     display_name     = "${var.prefix}-worker"
-    assign_public_ip = false
+    assign_public_ip = local.free_apps
   }
 
   metadata = {

@@ -80,6 +80,7 @@ def detect() -> dict:
         # Free Tier edition: OCI Generative AI is not in Always Free, so the assistant
         # goes to Google's Gemini API with the installer's own (free) key when given one
         "edition": os.environ.get("SBX_EDITION", "standard"),
+        "free_apps": "1" if os.environ.get("SBX_EDITION") == "free" and os.environ.get("SBX_FREE_APPS") == "1" else "0",
         "genai_provider": "google" if os.environ.get("SBX_EDITION") == "free" and os.environ.get("SBX_GEMINI_API_KEY") else "oci",
         "google_api_key": os.environ.get("SBX_GEMINI_API_KEY", "") if os.environ.get("SBX_EDITION") == "free" else "",
     }

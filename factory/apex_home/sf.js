@@ -541,9 +541,31 @@ function sfInit(){
            var t=b.textContent; b.textContent='copied'; setTimeout(function(){b.textContent=t},900); }
   });
 
+  // Free Tier edition: the assistant needs a Google AI Studio key (OCI Generative AI is not Always Free).
+  // An administrator pastes it here; it is tried against Google before it is kept.
+  function keyBox(c){
+    var chat=$('#sf-chat'); if(!chat||c.provider==='google')return;
+    var box=document.createElement('div'); box.id='sf-keybox';
+    box.style.cssText='margin:0 0 10px;padding:10px 12px;border:1px solid #f0c36d;background:#fff8e6;border-radius:10px;font-size:13px';
+    if(c.is_admin){
+      box.innerHTML='<b>The assistant is off.</b> OCI Generative AI is not part of Always Free. Paste a free <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Google AI Studio key</a> to switch it on: '
+        +'<span style="display:inline-flex;gap:6px;margin-top:6px"><input id="sf-key" type="password" placeholder="AIza..." style="width:280px;padding:6px 8px;border:1px solid #d6dde6;border-radius:6px">'
+        +'<button type="button" class="sf-btn" id="sf-key-go" style="padding:6px 12px;font-size:13px">Switch on</button></span><span id="sf-key-msg" style="margin-left:8px"></span>';
+      chat.insertBefore(box, chat.firstChild);
+      $('#sf-key-go').onclick=function(){ var k=$('#sf-key').value.trim(); if(!k)return; $('#sf-key-go').disabled=true; $('#sf-key-msg').innerHTML='<span class="sf-spin"></span>trying it';
+        call('set_key',{key:k}).then(function(r){ $('#sf-key-go').disabled=false;
+          if(r.err){$('#sf-key-msg').innerHTML='<span class="sf-err">'+esc(r.err)+'</span>';return}
+          box.innerHTML='<b>Assistant on</b> (Gemini via Google AI Studio). Ask away.'; var nm=document.querySelector('#sf-model-name'); if(nm)nm.textContent='Gemini (Google AI Studio)';
+        }).catch(function(e){$('#sf-key-go').disabled=false;$('#sf-key-msg').innerHTML='<span class="sf-err">'+esc(e.message||e)+'</span>'}); };
+    } else {
+      box.innerHTML='<b>The assistant is off.</b> OCI Generative AI is not part of Always Free; a factory administrator can switch it on with a free Google AI Studio key. The starters and the form work without it.';
+      chat.insertBefore(box, chat.firstChild);
+    }
+  }
   // Free Tier edition: only starters that Always Free can build are offered
   function freeOk(r){ var p=recipePayload(r);
-    return !(p.enable_app||p.enable_kafka||p.enable_catalog||p.enable_aidp||p.functions||p.dataflow_jobs||p.queues||p.databases||p.app_instances) }
+    if(p.enable_kafka||p.enable_catalog||p.enable_aidp||p.functions||p.dataflow_jobs||p.queues||p.databases||p.app_instances)return false;
+    return window.__sfFreeApps||!p.enable_app }
   function drawRecipes(){
     var el=$('#sf-recs'); if(!el)return;
     var list=RECIPES.filter(function(r){return OCIR||!needsRegistry(r)});
@@ -663,7 +685,8 @@ function sfInit(){
     if(a.enable_nosql)L.push('<li><b>OCI NoSQL</b> &mdash; serverless JSON tables with on-demand capacity. You get the table names and the compartment; no cluster to size and nothing running when idle.</li>');
     if(a.enable_kafka)L.push('<li><b>Kafka</b> &mdash; Streaming with Apache Kafka, 1 broker, 50 GB, topic <code>events</code>, a public bootstrap endpoint with a SASL/SCRAM superuser (username + password on the card), and a private one for containers in the sandbox.</li>');
     var cs=(a.containers&&a.containers.length)?a.containers:((a.enable_app||a.git_url||a.app_image)?[{name:'web',image:a.git_url||a.app_image||'nginx:alpine',port:a.app_port||80}]:[]);
-    if(cs.length)L.push('<li><b>'+(cs.length>1?cs.length+' containers in one instance':'1 container')+'</b> on CI.Standard.A1.Flex (Arm)'
+    if(cs.length&&window.__sfEdition==='free')L.push('<li><b>'+(cs.length>1?cs.length+' containers in one pod':'1 container')+'</b> on the Free Tier worker VM (Arm, shared host, containers reach each other on localhost), at <code>http://&lt;vm ip&gt;:&lt;port&gt;</code> (HTTP): '+cs.map(function(c){return '<code>'+esc(c.name||'web')+'</code> &rarr; '+esc(c.image)+':'+esc(c.port||80)}).join(', ')+'.</li>');
+    else if(cs.length)L.push('<li><b>'+(cs.length>1?cs.length+' containers in one instance':'1 container')+'</b> on CI.Standard.A1.Flex (Arm)'
       +(cs.length>1?' &mdash; they share a host and reach each other on localhost':'')+', behind a public HTTPS URL: '+cs.map(function(c){return '<code>'+esc(c.name||'web')+'</code> &rarr; '+esc(c.image)+':'+esc(c.port||80)}).join(', ')+'.</li>');
     if(a.app_files){var n=Object.keys(typeof a.app_files==='string'?JSON.parse(a.app_files):a.app_files).length;
       L.push('<li><b>Your app, built here</b> &mdash; '+n+' source files are sent with the request, built into an image in OCI and deployed. Nothing to push to a registry.</li>')}
@@ -1225,11 +1248,12 @@ function sfInit(){
       w.textContent='Signed in as '+c.user+' · '+(c.live||0)+' of '+(c.cap||3)+' sandboxes'+(c.edition==='free'?' · Free Tier edition':'');
       w.classList.remove('sf-hide');}
     // Free Tier edition: what Always Free does not include is shown, not offered
-    window.__sfEdition=c.edition||'standard';
+    window.__sfEdition=c.edition||'standard'; window.__sfFreeApps=!!c.free_apps;
     if(c.edition==='free'){
-      $$('.sf-toggle').forEach(function(t){ if(t.dataset.k==='enable_kafka'||t.dataset.k==='enable_app'){
+      $$('.sf-toggle').forEach(function(t){ if(t.dataset.k==='enable_kafka'||(t.dataset.k==='enable_app'&&!c.free_apps)){
         t.classList.add('sf-off'); t.title='Not available on an Oracle Cloud Free Tier account'; t.onclick=function(){alert('Not available on an Oracle Cloud Free Tier account. Free Tier builds an Always Free Autonomous Database, NoSQL tables and Object Storage buckets.')}; } });
-      if(!c.models||!c.models.length){ var nm=document.querySelector('#sf-model-name'); if(nm)nm.textContent=c.provider==='google'?'Gemini (Google AI Studio)':'assistant off: add a Gemini key to the install'; }
+      if(!c.models||!c.models.length){ var nm=document.querySelector('#sf-model-name'); if(nm)nm.textContent=c.provider==='google'?'Gemini (Google AI Studio)':'assistant off: add a Gemini key'; }
+      keyBox(c);
     }
   })
     .catch(function(){}).then(function(){drawRecipes(); buildTabs(); addClear(); restoreChat()});

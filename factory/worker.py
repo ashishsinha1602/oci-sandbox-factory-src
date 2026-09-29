@@ -183,6 +183,76 @@ def rag_buckets(req: dict) -> list | None:
 
 
 EDITION = os.environ.get("SBX_EDITION", "standard")
+# Free Tier edition on the Arm VM: applications run on the worker VM itself (host_apps.py)
+FREE_APPS = EDITION == "free" and os.environ.get("SBX_FREE_APPS") == "1"
+
+
+def wants_app(req: dict) -> bool:
+    return req.get("enable_app") == "Y" or any(req.get(k) for k in ("git_url", "app_image", "app_files", "app_containers", "app_template"))
+
+
+def free_injected_env(req: dict, outputs: dict, expires: str) -> dict:
+    """What the sandbox stack injects into every container, rebuilt from the outputs (same names)."""
+    fnd = sf.foundation(); cfg = sf.config()
+    env = {"SANDBOX_ID": req["sandbox_id"], "SANDBOX_EXPIRES": expires,
+           "SANDBOX_COMPARTMENT_OCID": fnd["compartments"]["sandboxes"], "OCI_REGION": cfg["region"]}
+    adb = outputs.get("adb") or {}
+    if adb.get("connect_string"):
+        env.update({"ADB_DB_NAME": adb.get("db_name", ""), "ADB_CONNECT_STRING": adb["connect_string"], "ADB_ADMIN_PASSWORD": adb.get("admin_password", "")})
+    buckets = outputs.get("buckets") or []
+    if buckets:
+        env["OBJECT_NAMESPACE"] = buckets[0].get("namespace", ""); env["DATA_BUCKET"] = buckets[0]["name"]
+        for b in buckets:
+            env["BUCKET_" + b["name"].replace("-", "_").upper()] = b["name"]
+    nosql = outputs.get("nosql") or {}
+    if nosql.get("tables"):
+        env.update({"NOSQL_COMPARTMENT_OCID": nosql.get("compartment_id", ""), "NOSQL_TABLES": ",".join(nosql["tables"]), "NOSQL_REGION": cfg["region"]})
+    if req.get("user_env"):
+        env.update({str(k): str(v) for k, v in (json.loads(req["user_env"]) or {}).items()})
+    return env
+
+
+def free_app_deploy(req: dict, args) -> dict:
+    """Free Tier: the non-app pieces through Resource Manager as usual, the containers on this VM."""
+    import host_apps
+    if not host_apps.available():
+        raise RuntimeError("the worker VM's podman socket is not reachable; applications cannot run on this Free Tier install (reinstall, or pick the Arm VM)")
+    containers = containers_for(req) or [{"name": "web", "image": req.get("app_image") or "", "port": int(req.get("app_port") or 80), "env": {}}]
+    src = None
+    built = materialise_app(req)                          # app_files / a template -> a folder with a Dockerfile
+    if built:
+        src = built
+    elif req.get("git_url") and str(req["git_url"]).lower().startswith(("http://", "https://", "git@", "ssh://", "git://")):
+        import oci_build
+        repo, sub = oci_build.split_tree_url(req["git_url"].strip())
+        repo, _, ref = repo.partition("#")
+        tmp = pathlib.Path(tempfile.mkdtemp(prefix="sbx-src-"))
+        subprocess.run(["git", "clone", "--depth", "1"] + (["--branch", ref] if ref else []) + [repo, str(tmp)], check=True)
+        src = tmp / sub if sub else tmp
+    try:
+        if src is not None:
+            if not (pathlib.Path(src) / "Dockerfile").exists():
+                raise ValueError(f"no Dockerfile in {src}")
+            tag = f"localhost/sbx-{req['sandbox_id']}-{containers[0]['name']}:latest"
+            print(f"building {tag} on the worker VM from {src}", flush=True)
+            host_apps.build(str(src), tag)
+            containers[0] = {**containers[0], "image": tag}
+        elif not containers[0].get("image"):
+            raise ValueError("an application needs an image, a Git repository or files with a Dockerfile")
+        expires = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=args.ttl)).strftime("%Y-%m-%dT%H:%MZ")
+        others = args.adb or args.nosql or args.buckets or getattr(args, "enable_rag", False)
+        if others:
+            args.app = False
+            outputs = sf.cmd_create(args)
+        else:
+            outputs = {"sandbox": {"id": req["sandbox_id"], "owner": req["requester"], "expires": expires, "ttl_days": args.ttl}}
+        env = free_injected_env(req, outputs, expires)
+        outputs["app"] = host_apps.deploy(req["sandbox_id"], containers, env, req["requester"], expires)
+        return outputs
+    finally:
+        if built:
+            shutil.rmtree(built, ignore_errors=True)
+
 
 # What an Oracle Cloud Free Tier account cannot have (not in Always Free). A
 # request for any of it is declined up front with the free alternative, instead
@@ -198,7 +268,10 @@ def free_edition_check(req: dict) -> None:
     wanted = []
     if req.get("enable_kafka") == "Y":
         wanted.append("Kafka")
-    if any(req.get(k) for k in ("git_url", "app_image", "app_files", "app_containers", "app_instances")) or req.get("enable_app") == "Y":
+    if FREE_APPS:
+        if req.get("app_instances"):
+            wanted.append("extra container instances (on Free Tier every container of a sandbox runs on the worker VM)")
+    elif any(req.get(k) for k in ("git_url", "app_image", "app_files", "app_containers", "app_instances", "app_template")) or req.get("enable_app") == "Y":
         wanted.append("containerised apps (Container Instances)")
     if req.get("functions"):
         wanted.append("Functions")
@@ -789,7 +862,16 @@ def handle(req: dict, conn=None) -> dict:
         args.os_namespace = recorded_namespace(conn, req["sandbox_id"])
     if req["action"] == "DESTROY":
         sf.cmd_destroy(args)
+        if FREE_APPS:
+            import host_apps
+            try:
+                if host_apps.remove(req["sandbox_id"]):
+                    print(f"removed {req['sandbox_id']}'s containers from the worker VM", flush=True)
+            except Exception as e:  # noqa: BLE001
+                print(f"host containers not removed ({type(e).__name__}: {e})", flush=True)
         return {"destroyed": req["sandbox_id"]}
+    if FREE_APPS and wants_app(req):
+        return free_app_deploy(req, args)
     built = materialise_app(req)
     if built:
         try:
@@ -949,6 +1031,9 @@ def reconcile(conn):
     rm = sf.client(oci.resource_manager.ResourceManagerClient)
     live = {s.freeform_tags.get("sandbox_id") for s in rm.list_stacks(compartment_id=fnd["compartments"]["control"], lifecycle_state="ACTIVE").data
             if s.freeform_tags.get("managed_by") == "sandbox-factory"}
+    if FREE_APPS:
+        import host_apps
+        live |= host_apps.alive_ids()
     cur = conn.cursor()
     cur.execute("""
         select sandbox_id, requester from (
@@ -1005,6 +1090,9 @@ def main():
             try:
                 print(f"[{dt.datetime.now():%H:%M:%S}] reaper: checking for expired sandboxes")
                 sf.cmd_reap(argparse.Namespace(dry_run=False))
+                if FREE_APPS:
+                    import host_apps
+                    host_apps.reap(time.strftime("%Y-%m-%dT%H:%MZ", time.gmtime()))
                 reconcile(conn)
                 if time.time() - last_prices > 86400:          # Oracle's price list, daily
                     last_prices = time.time()

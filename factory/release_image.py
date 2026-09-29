@@ -2,10 +2,11 @@
 
     python release_image.py [git-ref]      # default: main
 
-Builds factory/Dockerfile from the public repository inside OCI (kaniko,
-linux/amd64 for the E4 workers) and pushes it to a PUBLIC repository in the
-tenancy root, as <key>.ocir.io/<namespace>/sandbox-factory/worker:release and
-:<date>. The root is deliberate: the repository must outlive any install, and
+Builds factory/Dockerfile inside OCI (kaniko) twice, for linux/amd64 (the E4
+Container Instance workers) and linux/arm64 (the Free Tier edition's Always
+Free Arm VM), and publishes them as ONE multi-architecture tag in a PUBLIC
+repository in the tenancy root: <key>.ocir.io/<namespace>/sandbox-factory/worker:release
+and :<date>. The root is deliberate: the repository must outlive any install, and
 foundation/worker.tf's default worker_image points at it.
 """
 import datetime as dt
@@ -45,17 +46,25 @@ def starters(ref: str = "main") -> None:
 
 
 def main(ref: str = "main") -> None:
+    """Build the worker for x86 (Container Instances) and Arm (the Free Tier VM),
+    then publish :release and :<stamp> as one multi-architecture tag."""
+    import registry_manifest
     cfg = sf.config()
     ns = sf.client(oci.object_storage.ObjectStorageClient).get_namespace().data
     key = next(r.key.lower() for r in sf.client(oci.identity.IdentityClient).list_regions().data if r.name == cfg["region"])
     registry = f"{key}.ocir.io"
     stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d%H%M")
-    image = f"{registry}/{ns}/sandbox-factory/worker:release"
-    print(f"building {REPO_URL}#{ref} -> {image} (+ :{stamp})", flush=True)
-    oci_build.build_in_oci(git_url=f"{REPO_URL}#{ref}", image=image, registry=registry, namespace=ns,
-                           sandbox_id="release", platform="linux/amd64", dockerfile="factory/Dockerfile",
-                           repo_compartment=cfg["tenancy"], also_tags=[stamp])
-    print(f"published {image} and :{stamp}", flush=True)
+    repo = f"{ns}/sandbox-factory/worker"
+    arch_tags = {}
+    for platform, arch in (("linux/amd64", "amd64"), ("linux/arm64", "arm64")):
+        image = f"{registry}/{repo}:{stamp}-{arch}"
+        print(f"building {REPO_URL}#{ref} -> {image}", flush=True)
+        oci_build.build_in_oci(git_url=f"{REPO_URL}#{ref}", image=image, registry=registry, namespace=ns,
+                               sandbox_id=f"release-{arch}", platform=platform, dockerfile="factory/Dockerfile",
+                               repo_compartment=cfg["tenancy"])
+        arch_tags[arch] = f"{stamp}-{arch}"
+    registry_manifest.publish(registry, ns, repo, arch_tags, ["release", stamp])
+    print(f"published {registry}/{repo}:release and :{stamp} (amd64 + arm64)", flush=True)
 
 
 if __name__ == "__main__":

@@ -99,10 +99,26 @@ def build(context_dir: str, tag: str) -> None:
                 tar.add(p, arcname=p.relative_to(root).as_posix())
     q = urllib.parse.urlencode({"t": tag, "dockerfile": "Dockerfile", "pull": "true", "rm": "true"})
     st, raw = _call("POST", "/build?" + q, body=buf.getvalue(), content_type="application/x-tar", timeout=3600)
+    text = raw.decode(errors="replace")
     err = _stream_error(raw)
+    # the stream is JSON lines {"stream": "..."}; the build's own words go to the request log
+    steps = []
+    for line in text.splitlines():
+        try:
+            j = json.loads(line)
+        except ValueError:
+            continue
+        if j.get("stream"):
+            steps.append(str(j["stream"]).rstrip())
+    for line in steps[-12:]:
+        print("  " + line[:160], flush=True)
     if st >= 300 or err:
-        tail = "\n".join(raw.decode(errors="replace").splitlines()[-15:])
-        raise RuntimeError(f"build {tag}: HTTP {st} {err or ''}\n{tail}")
+        raise RuntimeError(f"build {tag}: HTTP {st} {err or ''}\n" + "\n".join(steps[-10:]))
+    # a build can answer 200 and still leave no image (a refused tag, a silent failure): check the store
+    st2, _ = _call("GET", "/images/" + urllib.parse.quote(tag, safe="") + "/exists", timeout=60)
+    if st2 != 204:
+        raise RuntimeError(f"build {tag} finished (HTTP {st}) but the image is not in the store (exists -> HTTP {st2}). Build output:\n"
+                           + "\n".join(steps[-15:]) + "\nraw tail: " + text[-800:])
 
 
 def pods() -> list[dict]:

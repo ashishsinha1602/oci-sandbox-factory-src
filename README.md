@@ -1,5 +1,11 @@
 # OCI Sandbox Factory
 
+Source of Sandbox Factory: the worker, the application, the Terraform and the tests. Apache-2.0.
+**To install it, use the Deploy button at https://github.com/ashishsinha1602/oci-sandbox-factory** (the
+release repository: docs, examples, zips). This repository is what those releases are built from.
+Two-minute demo: https://www.youtube.com/watch?v=nuHfzOqG4io
+
+
 Self-service, auto-expiring sandboxes on Oracle Cloud. A user picks what they
 need (Autonomous Database, Kafka, a containerised app), gets those pieces in
 the shared `sbx-sandboxes` compartment (or a compartment of their own with

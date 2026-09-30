@@ -567,13 +567,13 @@ def kafka_public_addon(outputs: dict, sandbox_id: str) -> None:
         outputs.setdefault("warnings", []).append(f"The Kafka public endpoint could not be installed ({type(e).__name__}); the private bootstrap works from inside the sandbox network.")
 
 
-def build_variables(args, fnd: dict, cfg: dict, app_containers: list | None) -> dict:
+def build_variables(args, fnd: dict, cfg: dict, app_containers: list | None, has_gateway: bool = False) -> dict:
     """Resource Manager variables are strings; lists/objects go as JSON."""
     # A gateway is the one door to a private database, so a sandbox with a database WAITS for
     # one (never built without it, never public). An app-only sandbox does not wait: with no
     # gateway left its app goes on a public IP and the card says so.
     db_needs_door = bool(args.adb) and args.adb_tier == "paid"
-    gw = gateway_available(cfg, wait=db_needs_door)
+    gw = True if has_gateway else gateway_available(cfg, wait=db_needs_door)
     if db_needs_door and not gw:
         raise SystemExit("No API Gateway is free in this region (gateway-count limit) and none was freed in time; a private "
                          "database needs one. Destroy a sandbox that has a gateway, or ask Oracle to raise the limit, then build again.")
@@ -840,14 +840,18 @@ def cmd_create(args, app_containers: list | None = None) -> dict:
     if args.app and app_containers is None:
         app_containers = [{"name": "web", "image": args.image, "port": args.port, "env": {}}]
 
-    variables = build_variables(args, fnd, cfg, app_containers)
+    # A re-apply of a sandbox that already has its gateway keeps it: nothing new is created,
+    # so the region's limit is not asked (a Retry setup once waited for a "free" gateway while
+    # the sandbox's own gateway stood there, 2026-09-30).
+    existing = find_stack(rm, control, args.sandbox_id)
+    has_gw = bool(existing) and (rm.get_stack(existing.id).data.variables or {}).get("app_gateway") == "true"
+    variables = build_variables(args, fnd, cfg, app_containers, has_gateway=has_gw)
     # A full timestamp, not a date. Comparing dates made a 3-day sandbox built
     # just after midnight live until the start of the fourth day after - close to
     # four days. ISO strings sort correctly, so the reaper compares them as-is.
     expires = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=args.ttl)).strftime("%Y-%m-%dT%H:%MZ")
     tags = {"sandbox_id": args.sandbox_id, "owner": args.owner, "expires": expires, "managed_by": "sandbox-factory"}
 
-    existing = find_stack(rm, control, args.sandbox_id)
     assert_owner(existing, getattr(args, "owner", None), "update")
     if existing:
         print(f"Updating stack {existing.display_name}")

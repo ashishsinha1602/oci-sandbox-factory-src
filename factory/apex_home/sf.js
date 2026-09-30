@@ -109,7 +109,11 @@ function sfInit(){
           var pu=primaryUrl(o);
           if(pu){h+='<a class="sf-open" href="'+esc(pu)+'" target="_blank" rel="noopener">Open '+esc(r.sandbox_id)+' &rarr;</a><br>'}
           else{h+='<button type="button" class="sf-open" style="border:0;cursor:pointer" '+(o.adb&&dbPrivate(o)?'data-dbpanel':'data-open')+'="'+esc(r.sandbox_id)+'">Open '+esc(r.sandbox_id)+' &rarr;</button><br>'}
-          if(o.app&&o.app.urls){var us=o.app.urls.filter(function(u){return u.indexOf('https://')===0}); if(!us.length)us=o.app.urls; us.forEach(function(u){h+='<a href="'+esc(u)+'" target="_blank">'+esc(u)+'</a>'});
+          if(o.app&&o.app.urls){var us=o.app.urls.filter(function(u){return u.indexOf('https://')===0}); if(!us.length)us=o.app.urls;
+            var names=(o.app.containers||[]).map(function(c){return typeof c==='string'?c:(c&&c.name)||''});
+            us.forEach(function(u,i){ var nm=us.length>1?names[i]:''; 
+              if(nm==='mcp'){h+='<div style="margin-top:4px">MCP endpoint (connect Claude or an agent; not a web page): <code>'+esc(u)+'/mcp</code></div>'}
+              else{h+='<a href="'+esc(u)+'" target="_blank">'+esc(u)+'</a>'} });
             if(o.app.containers&&o.app.containers.length>1&&us.length){o.app.containers.slice(1).forEach(function(n){h+='<a href="'+esc(us[0])+'/'+esc(n)+'" target="_blank">'+esc(us[0])+'/'+esc(n)+'</a>'})}}
           (o.logins||[]).forEach(function(l){
             h+='<div style="margin-top:6px">'+esc(l.service)+' &middot; user <code>'+esc(l.user)+'</code> &middot; password <code>'+esc(l.password)+'</code></div>';

@@ -409,34 +409,20 @@ def catalog_available(cfg: dict, fnd: dict) -> bool:
         return True
 
 
-GATEWAY_WAIT_SECONDS = int(os.environ.get("SBX_GATEWAY_WAIT_SECONDS", str(6 * 3600)))
-
-
-def gateway_available(cfg: dict, wait: bool = False) -> bool:
-    """Is there an API Gateway left in this region's limit (gateway-count)?
-
-    Every sandbox with an app or a database gets a gateway: the one HTTPS door
-    to it. Nothing is ever put on a public IP over plain HTTP instead (the old
-    fallback: "Not secure" in the browser, and no way to the private database).
-    With wait=True a build waits for a gateway to be freed, up to
-    GATEWAY_WAIT_SECONDS, telling the card why. Unknown (no permission, API
-    error) counts as available: the apply, not this check, has the last word.
-    """
-    global _GATEWAY_OK
-    started = time.time()
-    while True:
-        try:
-            lim = client(oci.limits.LimitsClient)
-            av = lim.get_resource_availability("api-gateway", "gateway-count", cfg["tenancy"]).data
-            _GATEWAY_OK = (av.available or 0) > 0
-        except Exception as e:  # noqa: BLE001
-            print(f"gateway limit check skipped ({type(e).__name__}); assuming one is available", flush=True)
-            _GATEWAY_OK = True
-        if _GATEWAY_OK or not wait or time.time() - started > GATEWAY_WAIT_SECONDS:
-            return _GATEWAY_OK
-        print(f"waiting for an API Gateway: this region's limit ({getattr(av, 'used', '?')} in use) is full; "
-              "the sandbox builds as soon as one is freed, or ask Oracle to raise gateway-count", flush=True)
-        time.sleep(60)
+def gateway_available(cfg: dict) -> bool:
+    """Is there an API Gateway left in this region's limit (gateway-count)? Checked
+    fresh for every build (a cached answer once told a whole worker's life "no").
+    Unknown (no permission, API error) counts as available: the apply has the last word."""
+    try:
+        lim = client(oci.limits.LimitsClient)
+        av = lim.get_resource_availability("api-gateway", "gateway-count", cfg["tenancy"]).data
+        ok = (av.available or 0) > 0
+        if not ok:
+            print(f"no API Gateway left in this region's limit ({av.used} in use): the app gets a public IP and the database a public endpoint", flush=True)
+        return ok
+    except Exception as e:  # noqa: BLE001
+        print(f"gateway limit check skipped ({type(e).__name__}); assuming one is available", flush=True)
+        return True
 
 
 def kafka_addon_reset(fnd: dict, sandbox_id: str) -> bool:
@@ -569,11 +555,11 @@ def kafka_public_addon(outputs: dict, sandbox_id: str) -> None:
 
 def build_variables(args, fnd: dict, cfg: dict, app_containers: list | None) -> dict:
     """Resource Manager variables are strings; lists/objects go as JSON."""
-    needs_gw = app_containers is not None or (bool(args.adb) and args.adb_tier == "paid")
-    gw = gateway_available(cfg, wait=needs_gw)
-    if needs_gw and not gw:
-        raise SystemExit("No API Gateway is free in this region (gateway-count limit) and none was freed in time. "
-                         "Destroy a sandbox that has one, or ask Oracle to raise the limit, then build again.")
+    # A gateway when the region has one left (the one HTTPS door to a private app and database).
+    # When none is left the sandbox is still built, and every link on its card still opens: the
+    # app on a public IP, the database on a public endpoint behind its allow-list and password.
+    gw = gateway_available(cfg)
+    db_needs_door = bool(args.adb) and args.adb_tier == "paid"
     v = {
         "tenancy_ocid": cfg["tenancy"],
         "region": cfg["region"],
@@ -603,8 +589,9 @@ def build_variables(args, fnd: dict, cfg: dict, app_containers: list | None) -> 
         # still gives the sandbox a public HTTPS URL, so nothing is lost.
         # Behind a gateway the app can sit in the private subnet (it must, next
         # to a paid database). Without one it needs a public IP to be reachable.
-        # an app sits in the private subnet behind its gateway; never on a public IP
-        "app_public": json.dumps(False),
+        # behind a gateway the app sits in the private subnet next to its database; without one it needs a public IP
+        "app_public": json.dumps((not db_needs_door) or not gw),
+        "adb_public": json.dumps(db_needs_door and not gw),
         "app_gateway": json.dumps(gw),
         "functions_gateway": json.dumps(gw),
         "enable_app": json.dumps(app_containers is not None),
@@ -877,13 +864,9 @@ def cmd_create(args, app_containers: list | None = None) -> dict:
         log = rm.get_job_logs_content(last.id).data
         retry = {}
         if "gateway-count" in log and variables.get("app_gateway") != "false":
-            # the limit filled between the check and the apply: wait for a gateway and apply again
-            print("the API Gateway limit filled during the apply; waiting for one", flush=True)
-            if gateway_available(config(), wait=True):
-                retry.update(app_gateway="true")
-            else:
-                raise SystemExit("No API Gateway is free in this region (gateway-count limit) and none was freed in time. "
-                                 "Destroy a sandbox that has one, or ask Oracle to raise the limit, then build again.")
+            retry.update(app_gateway="false", functions_gateway="false", app_public="true", adb_public="true")
+            NOTES.append("No API Gateway was left in this region's limit, so the app is on a public IP (HTTP) and the database "
+                         "on a public endpoint (allow-list + password) instead of behind an Oracle HTTPS gateway.")
         if "catalog-count" in log and variables.get("enable_catalog") == "true":
             retry["enable_catalog"] = "false"
             NOTES.append("Built without a Data Catalog: this region's limit is used up. Ask for a catalog-count increase, or destroy a sandbox that has one.")

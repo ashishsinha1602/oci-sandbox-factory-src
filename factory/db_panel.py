@@ -194,12 +194,13 @@ def serve_forever(poll_seconds: float = 1.5) -> None:
                 text = text.read() if hasattr(text, "read") else text
                 try:
                     res = run_one(kind, text, _sandbox_db(conn, sid, who))
-                    cur.execute(f"update {SCHEMA}.db_runs set status = 'DONE', result = :2, finished_at = systimestamp where id = :1",
-                                [rid, json.dumps(res, default=str)])
+                    # named binds: with a positional list, :2 (first in the text) took the id and :1 the JSON -> ORA-01722
+                    cur.execute(f"update {SCHEMA}.db_runs set status = 'DONE', result = :res, finished_at = systimestamp where id = :rid",
+                                rid=rid, res=json.dumps(res, default=str))
                 except Exception as e:  # noqa: BLE001  the user sees the database's own message
                     msg = re.sub(r"\s+Help: https://\S+", "", str(e)).strip()[:3900]
-                    cur.execute(f"update {SCHEMA}.db_runs set status = 'FAILED', error = :2, finished_at = systimestamp where id = :1",
-                                [rid, msg or type(e).__name__])
+                    cur.execute(f"update {SCHEMA}.db_runs set status = 'FAILED', error = :err, finished_at = systimestamp where id = :rid",
+                                rid=rid, err=msg or type(e).__name__)
                 conn.commit()
         except Exception as e:  # noqa: BLE001  never let the panel thread die
             print(f"db panel [{name}]: {type(e).__name__}: {str(e)[:200]}", flush=True)

@@ -418,7 +418,7 @@ def gateway_available(cfg: dict) -> bool:
         av = lim.get_resource_availability("api-gateway", "gateway-count", cfg["tenancy"]).data
         ok = (av.available or 0) > 0
         if not ok:
-            print(f"no API Gateway left in this region's limit ({av.used} in use): the app gets a public IP and the database a public endpoint", flush=True)
+            print(f"no API Gateway left in this region's limit ({av.used} in use): the app gets a public IP; the database stays private", flush=True)
         return ok
     except Exception as e:  # noqa: BLE001
         print(f"gateway limit check skipped ({type(e).__name__}); assuming one is available", flush=True)
@@ -555,9 +555,10 @@ def kafka_public_addon(outputs: dict, sandbox_id: str) -> None:
 
 def build_variables(args, fnd: dict, cfg: dict, app_containers: list | None) -> dict:
     """Resource Manager variables are strings; lists/objects go as JSON."""
-    # A gateway when the region has one left (the one HTTPS door to a private app and database).
-    # When none is left the sandbox is still built, and every link on its card still opens: the
-    # app on a public IP, the database on a public endpoint behind its allow-list and password.
+    # A gateway when the region has one left: the one door to a private app and database. When
+    # none is left the sandbox is still built and only the APP goes on a public IP; the database
+    # is never public (its web tools then open through the page's database panel, and "Retry
+    # setup" adds the gateway once the limit allows).
     gw = gateway_available(cfg)
     db_needs_door = bool(args.adb) and args.adb_tier == "paid"
     v = {
@@ -591,7 +592,7 @@ def build_variables(args, fnd: dict, cfg: dict, app_containers: list | None) -> 
         # to a paid database). Without one it needs a public IP to be reachable.
         # behind a gateway the app sits in the private subnet next to its database; without one it needs a public IP
         "app_public": json.dumps((not db_needs_door) or not gw),
-        "adb_public": json.dumps(db_needs_door and not gw),
+        "adb_public": json.dumps(False),                                  # never
         "app_gateway": json.dumps(gw),
         "functions_gateway": json.dumps(gw),
         "enable_app": json.dumps(app_containers is not None),
@@ -864,9 +865,9 @@ def cmd_create(args, app_containers: list | None = None) -> dict:
         log = rm.get_job_logs_content(last.id).data
         retry = {}
         if "gateway-count" in log and variables.get("app_gateway") != "false":
-            retry.update(app_gateway="false", functions_gateway="false", app_public="true", adb_public="true")
-            NOTES.append("No API Gateway was left in this region's limit, so the app is on a public IP (HTTP) and the database "
-                         "on a public endpoint (allow-list + password) instead of behind an Oracle HTTPS gateway.")
+            retry.update(app_gateway="false", functions_gateway="false", app_public="true")
+            NOTES.append("No API Gateway was left in this region's limit, so the app is on a public IP (HTTP). The database stays "
+                         "private: use Open database on the card, and Retry setup once a gateway is free to get the HTTPS links.")
         if "catalog-count" in log and variables.get("enable_catalog") == "true":
             retry["enable_catalog"] = "false"
             NOTES.append("Built without a Data Catalog: this region's limit is used up. Ask for a catalog-count increase, or destroy a sandbox that has one.")

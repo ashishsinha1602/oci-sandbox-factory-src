@@ -238,6 +238,45 @@ resource "oci_apigateway_deployment" "app" {
         }
       }
     }
+    # APEX signs in through the database's own /adb/auth pages
+    dynamic "routes" {
+      for_each = var.adb_private_fqdn == "" ? [] : [var.adb_private_fqdn]
+      content {
+        path    = "/adb/{p*}"
+        methods = ["ANY"]
+        # ORDS answers APEX with redirects to the host it was asked for. Behind the gateway that
+        # was the database's private hostname, which no browser reaches (verified 2026-09-30);
+        # told the gateway's hostname, every redirect comes back through the gateway.
+        request_policies {
+          header_transformations {
+            set_headers {
+              items {
+                name      = "X-Forwarded-Host"
+                values    = [oci_apigateway_gateway.app[0].hostname]
+                if_exists = "OVERWRITE"
+              }
+              items {
+                name      = "X-Forwarded-Proto"
+                values    = ["https"]
+                if_exists = "OVERWRITE"
+              }
+              items {
+                name      = "Forwarded"
+                values    = ["host=${oci_apigateway_gateway.app[0].hostname};proto=https"]
+                if_exists = "OVERWRITE"
+              }
+            }
+          }
+        }
+        backend {
+          type                       = "HTTP_BACKEND"
+          url                        = "https://${routes.value}/adb/$${request.path[p]}"
+          connect_timeout_in_seconds = 10
+          read_timeout_in_seconds    = 300
+          send_timeout_in_seconds    = 300
+        }
+      }
+    }
     routes {
       path    = "/{p*}"
       methods = ["ANY"]

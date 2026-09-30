@@ -62,6 +62,39 @@ resource "oci_apigateway_deployment" "db" {
         send_timeout_in_seconds    = 300
       }
     }
+    # APEX signs in through the database's own /adb/auth pages (verified 2026-09-30)
+    routes {
+      path    = "/adb/{p*}"
+      methods = ["ANY"]
+      request_policies {
+        header_transformations {
+          set_headers {
+            items {
+              name      = "X-Forwarded-Host"
+              values    = [oci_apigateway_gateway.db[0].hostname]
+              if_exists = "OVERWRITE"
+            }
+            items {
+              name      = "X-Forwarded-Proto"
+              values    = ["https"]
+              if_exists = "OVERWRITE"
+            }
+            items {
+              name      = "Forwarded"
+              values    = ["host=${oci_apigateway_gateway.db[0].hostname};proto=https"]
+              if_exists = "OVERWRITE"
+            }
+          }
+        }
+      }
+      backend {
+        type                       = "HTTP_BACKEND"
+        url                        = "https://${module.adb[0].private_fqdn}/adb/$${request.path[p]}"
+        connect_timeout_in_seconds = 10
+        read_timeout_in_seconds    = 300
+        send_timeout_in_seconds    = 300
+      }
+    }
     routes {
       # the gateway's root: straight to Database Actions
       path    = "/"

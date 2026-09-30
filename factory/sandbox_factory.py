@@ -844,7 +844,10 @@ def cmd_create(args, app_containers: list | None = None) -> dict:
     # so the region's limit is not asked (a Retry setup once waited for a "free" gateway while
     # the sandbox's own gateway stood there, 2026-09-30).
     existing = find_stack(rm, control, args.sandbox_id)
-    has_gw = bool(existing) and (rm.get_stack(existing.id).data.variables or {}).get("app_gateway") == "true"
+    has_gw = False
+    if existing and (rm.get_stack(existing.id).data.variables or {}).get("app_gateway") == "true":
+        last_apply = next((j for j in rm.list_jobs(stack_id=existing.id, sort_by="TIMECREATED", sort_order="DESC").data if j.operation == "APPLY"), None)
+        has_gw = last_apply is not None and last_apply.lifecycle_state == "SUCCEEDED"
     variables = build_variables(args, fnd, cfg, app_containers, has_gateway=has_gw)
     # A full timestamp, not a date. Comparing dates made a 3-day sandbox built
     # just after midnight live until the start of the fourth day after - close to

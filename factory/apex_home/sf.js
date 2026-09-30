@@ -739,7 +739,7 @@ function sfInit(){
   // What a plan or a chat action will actually build in OCI, in plain words.
   function infraHtml(a){
     var L=[];
-    if(a.enable_adb&&!a.adb_dedicated&&!a.enable_rag)L.push('<li><b>Database schema</b> &mdash; a schema of its own (user, password, quota) in the install\'s shared Autonomous Database: nothing idle to pay for. Every table is published as a REST endpoint through ORDS, an APEX workspace is waiting, and you get SQL Developer Web and APEX URLs.'+(window.__sfEdition==='free'?' Select AI is not available on Free Tier.':' Select AI (plain-English queries) is switched on over your tables.')+' Want a whole database instead? Switch on <b>Own database</b>.</li>');
+    if(a.enable_adb&&!a.adb_dedicated&&!a.enable_rag&&a.seed_key!=='rag'&&a.app_template!=='rag')L.push('<li><b>Database schema</b> &mdash; a schema of its own (user, password, quota) in the install\'s shared Autonomous Database: nothing idle to pay for. Every table is published as a REST endpoint through ORDS, an APEX workspace is waiting, and you get SQL Developer Web and APEX URLs.'+(window.__sfEdition==='free'?' Select AI is not available on Free Tier.':' Select AI (plain-English queries) is switched on over your tables.')+' Want a whole database instead? Switch on <b>Own database</b>.</li>');
     else if(a.enable_adb)L.push(window.__sfEdition==='free'?'<li><b>Autonomous Database</b> &mdash; Always Free (1 OCPU, 20 GB), Oracle 23ai, public endpoint. Every table is published as a REST endpoint through ORDS, in-database document search works, and an APEX workspace is waiting. You get SQL Developer Web and APEX URLs. Select AI is not available on Free Tier.</li>':'<li><b>Autonomous Database</b> &mdash; '+esc(a.adb_tier||'paid, 2 ECPU')+', Oracle 23ai, private subnet. Select AI (plain-English queries) and AI cataloguing are switched on for you. Every table is also published as a REST endpoint through ORDS, and an APEX workspace is waiting if you want to click a low-code app together. You get SQL Developer Web and APEX URLs.</li>');
     if(a.enable_nosql)L.push('<li><b>OCI NoSQL</b> &mdash; serverless JSON tables with on-demand capacity. You get the table names and the compartment; no cluster to size and nothing running when idle.</li>');
     if(a.enable_kafka)L.push('<li><b>Kafka</b> &mdash; Streaming with Apache Kafka, 1 broker, 50 GB, topic <code>events</code>, a public bootstrap endpoint with a SASL/SCRAM superuser (username + password on the card), and a private one for containers in the sandbox.</li>');
@@ -994,8 +994,8 @@ function sfInit(){
     var armEst=!P.a1_ocpu, cpu=P.a1_ocpu||P.e4_ocpu||0, mem=P.a1_memory||P.e4_memory||0;
     var add=function(name,detail,m){items.push({name:name,detail:detail,monthly_usd:m==null?null:Math.round(m*100)/100}); if(m!=null)total+=m;};
     var w=a.workload||null;
-    var own=!!(a.adb_dedicated||a.enable_rag||(a.databases||[]).length);
-    var dbs=((a.enable_rag||(a.enable_adb&&a.adb_dedicated)||(w&&w.oracle&&a.adb_dedicated))?1:0)+((a.databases||[]).length);
+    var own=!!(a.adb_dedicated||a.enable_rag||a.seed_key==='rag'||a.app_template==='rag'||(a.databases||[]).length);
+    var dbs=((a.enable_rag||a.seed_key==='rag'||a.app_template==='rag'||(a.enable_adb&&a.adb_dedicated)||(w&&w.oracle&&a.adb_dedicated))?1:0)+((a.databases||[]).length);
     if((a.enable_adb||(w&&w.oracle))&&!own) add('Database schema','a schema of its own in the shared Autonomous Database of this install, which every sandbox pays for together (2 ECPU while any sandbox uses it, stopped otherwise)',0);
     if(dbs&&P.adb_ecpu){ var m=2*P.adb_ecpu*H+20*(P.adb_storage||0);
       add('Autonomous Database'+(dbs>1?' x'+dbs:''),'Transaction Processing, 2 ECPU + 20 GB, license included, per ECPU-hour while it exists',m*dbs); }

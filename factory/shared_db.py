@@ -75,6 +75,11 @@ def wanted(req: dict) -> bool:
         return False               # a database of its own (RAG needs 23ai and its vector store)
     if req.get("adb_databases"):
         return False               # extra databases: the stack builds them all
+    if req.get("seed_key") == "rag" or req.get("app_template") == "rag":
+        return False               # the Knowledge base starter: its own 23ai database (the page sets no rag flag)
+    seed = (req.get("seed_sql") or "").lower()
+    if re.search(r"\bvector\b|dbms_vector|onnx", seed):
+        return False               # AI Vector Search needs 23ai and a database of its own
     return True
 
 

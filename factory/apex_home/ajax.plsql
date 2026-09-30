@@ -561,6 +561,10 @@ begin
       l_out.put('err', substr(sqlerrm, 1, 300));
     end;
 
+  elsif l_action in ('dbrun','dbres') then
+    out_clob(db_panel(l_action, apex_application.g_x02, :APP_USER));
+    return;
+
   elsif l_action = 'status' then
     out_clob(my_sandboxes());
     return;

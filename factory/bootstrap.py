@@ -49,6 +49,13 @@ def bootstrap() -> None:
         for col in controldb.migrate(cur):
             print(f"bootstrap: column {col} added", flush=True)
         conn.commit()
+    # the database panel (db_panel.py): its table and the function the page calls, on every start
+    try:
+        import db_panel
+        db_panel.ensure(cur)
+        conn.commit()
+    except Exception as e:  # noqa: BLE001  the rest of the factory works without it
+        print(f"bootstrap: database panel not set up ({type(e).__name__}: {str(e)[:200]})", flush=True)
     cur.execute("select application_id from apex_applications where workspace = :1 and application_name = :2",
                 [controldb.WORKSPACE, "Sandbox Factory"])
     row = cur.fetchone()

@@ -1167,6 +1167,12 @@ def main():
         print(f"bootstrap skipped ({type(e).__name__}: {e})", flush=True)
     conn = controldb.connect("ADMIN")
     print(f"worker {WORKER_NAME} connected to control DB; polling sbx.sandbox_requests")
+    # the page's database panel (SQL, tables, Select AI on a private database), beside the build loop
+    try:
+        import db_panel
+        db_panel.start()
+    except Exception as e:  # noqa: BLE001
+        print(f"db panel not started ({type(e).__name__}: {e})", flush=True)
     recover_own_claims(conn)
     last_reap = 0.0
     last_prices = time.time()      # bootstrap has just refreshed them

@@ -108,17 +108,19 @@ function sfInit(){
         if(o&&r.status==='DONE'){ h+='<div class="sf-links">';
           var pu=primaryUrl(o);
           if(pu){h+='<a class="sf-open" href="'+esc(pu)+'" target="_blank" rel="noopener">Open '+esc(r.sandbox_id)+' &rarr;</a><br>'}
-          else{h+='<button type="button" class="sf-open" style="border:0;cursor:pointer" data-open="'+esc(r.sandbox_id)+'">Open '+esc(r.sandbox_id)+' &rarr;</button><br>'}
+          else{h+='<button type="button" class="sf-open" style="border:0;cursor:pointer" '+(o.adb&&dbPrivate(o)?'data-dbpanel':'data-open')+'="'+esc(r.sandbox_id)+'">Open '+esc(r.sandbox_id)+' &rarr;</button><br>'}
           if(o.app&&o.app.urls){var us=o.app.urls.filter(function(u){return u.indexOf('https://')===0}); if(!us.length)us=o.app.urls; us.forEach(function(u){h+='<a href="'+esc(u)+'" target="_blank">'+esc(u)+'</a>'});
             if(o.app.containers&&o.app.containers.length>1&&us.length){o.app.containers.slice(1).forEach(function(n){h+='<a href="'+esc(us[0])+'/'+esc(n)+'" target="_blank">'+esc(us[0])+'/'+esc(n)+'</a>'})}}
           (o.logins||[]).forEach(function(l){
             h+='<div style="margin-top:6px">'+esc(l.service)+' &middot; user <code>'+esc(l.user)+'</code> &middot; password <code>'+esc(l.password)+'</code></div>';
           });
-          if(o.adb){h+='<div style="margin-top:6px"><a href="'+esc(o.adb.sql_web_url)+'" target="_blank">SQL Developer Web</a> &middot; user <code>'+esc(o.adb.admin_user||'ADMIN')+'</code>'
+          if(o.adb){h+='<div style="margin-top:6px"><button type="button" class="sf-btn" style="padding:3px 10px;font-size:12px" data-dbpanel="'+esc(r.sandbox_id)+'">Open database</button> '
+              +(dbPrivate(o)?'<span style="font-size:12px;color:#6b7280">private database: SQL, tables and Select AI open here, in the factory</span>':'<a href="'+esc(o.adb.sql_web_url)+'" target="_blank">SQL Developer Web</a>')
+              +' &middot; user <code>'+esc(o.adb.admin_user||'ADMIN')+'</code>'
               +(o.adb.admin_password?' &middot; password <code>'+esc(o.adb.admin_password)+'</code> <button type="button" class="sf-btn sec" style="padding:2px 8px;font-size:12px" onclick="navigator.clipboard.writeText(this.previousElementSibling.textContent)">copy</button>':'')
               +'<br>connect string <code>'+esc(o.adb.connect_string)+'</code></div>'}
 
-          if(o.low_code&&o.low_code.rest_base)h+='<code>REST: '+esc(o.low_code.rest_base)+'</code>';
+          if(o.low_code&&o.low_code.rest_base)h+='<code>REST: '+esc(o.low_code.rest_base)+'</code>'+(dbPrivate(o)?' <span style="font-size:12px;color:#6b7280">(for apps inside the sandbox network)</span>':'');
           if(o.rag){ h+=o.rag.error?'<div class="sf-err" style="margin-top:6px">RAG was not set up: '+esc(o.rag.error)+'</div>'
             :'<div style="margin-top:6px"><b>Documents</b>: drop files into <code>'+esc(o.rag.bucket)+'/docs/</code> (PDF, Word, HTML, text, images). Oracle indexes them every '+esc(o.rag.refresh_minutes)+' min; images are described as text first.<br>Ask: <code>POST '+esc(o.rag.ask_url||'')+'</code> with <code>{"question": "..."}</code> as ADMIN, or <code>select ai narrate ...</code> in SQL.</div>'; }
           if(o.kafka)h+='<div style="margin-top:6px">kafka <code>'+esc(o.kafka.public_bootstrap||o.kafka.bootstrap_servers)+'</code>'
@@ -250,7 +252,7 @@ function sfInit(){
       var https=o.app.urls.filter(function(u){return u.indexOf('https://')===0});
       return https[0]||o.app.urls[0];
     }
-    if(o.adb)return o.adb.apex_url||o.adb.sql_web_url;
+    if(o.adb)return dbPrivate(o)?null:(o.adb.apex_url||o.adb.sql_web_url);
     var fu=(o.functions||[]).filter(function(f){return f.url})[0]; if(fu)return fu.url;
     // a Spark-only sandbox: Open goes to its Data Flow application
     var df=(o.dataflow_jobs||[])[0]; if(df)return resourceUrls(o)['spark:'+df.name];
@@ -391,6 +393,48 @@ function sfInit(){
       databases:list(p.databases), buckets:list(p.buckets), queues:list(p.queues),
       functions:list(p.functions), dataflow_jobs:list(p.dataflow_jobs)};
   }
+  // ---- Database panel: a sandbox's database, inside the factory ---------
+  // A paid database is on a private endpoint: its SQL Developer Web, APEX and REST do not open
+  // from a browser, and nothing is made public for them. The worker (inside the network) runs
+  // what is asked here and the answer comes back to this page (db_panel.py).
+  function dbPrivate(o){ var a=o&&o.adb; return !!(a&&a.tier==='paid'&&String(a.sql_web_url||'').indexOf('apigateway')<0); }
+  function dbTable(res){
+    if(!res.columns)return '<div>'+esc(res.message||'done')+'</div>';
+    var h='<div style="font-size:12px;color:#6b7280;margin:4px 0">'+res.rowcount+' row(s)'+(res.truncated?' (first 200)':'')+'</div><div style="overflow:auto;max-height:52vh"><table class="sf-dbt"><tr>'
+      +res.columns.map(function(c){return '<th>'+esc(c)+'</th>'}).join('')+'</tr>';
+    res.rows.forEach(function(r){ h+='<tr>'+r.map(function(v){return '<td>'+esc(v===null?'':String(v))+'</td>'}).join('')+'</tr>' });
+    return h+'</table></div>';
+  }
+  function openDbPanel(sid){
+    var old=document.getElementById('sf-dbp'); if(old)old.remove();
+    var d=document.createElement('div'); d.id='sf-dbp';
+    d.innerHTML='<div class="box"><div class="hd"><b>Database &middot; '+esc(sid)+'</b><button type="button" class="sf-btn sec x">Close</button></div>'
+      +'<div class="sf-tabs"><button type="button" data-k="sql" class="on">SQL</button><button type="button" data-k="tables">Tables</button><button type="button" data-k="ask">Ask Select AI</button></div>'
+      +'<textarea id="sf-dbq" placeholder="select * from customers"></textarea>'
+      +'<div class="sf-act"><button type="button" class="sf-btn run">Run</button></div><div id="sf-dbr"></div></div>';
+    document.body.appendChild(d);
+    var kind='sql', q=d.querySelector('#sf-dbq'), out=d.querySelector('#sf-dbr');
+    var hints={sql:'select * from customers',tables:'',ask:'Which country had the most orders?'};
+    d.querySelector('.x').onclick=function(){d.remove()};
+    d.querySelectorAll('.sf-tabs button').forEach(function(b){ b.onclick=function(){
+      kind=b.getAttribute('data-k'); d.querySelectorAll('.sf-tabs button').forEach(function(x){x.classList.toggle('on',x===b)});
+      q.style.display=kind==='tables'?'none':''; q.placeholder=hints[kind]; if(kind==='tables')run(); } });
+    function run(){
+      out.innerHTML='<span class="sf-spin"></span>Running inside the private network...';
+      call('dbrun',{sandbox_id:sid,kind:kind,text:q.value}).then(function(s){
+        if(s.err){out.innerHTML='<span class="sf-err">'+esc(s.err)+'</span>';return}
+        var t0=Date.now();
+        (function poll(){ call('dbres',{id:s.id}).then(function(r){
+          if(r.status==='DONE'){ var x=r.result||{};
+            out.innerHTML=kind==='ask'?'<div style="white-space:pre-wrap">'+esc(x.answer||'')+'</div>'+(x.sql?'<details style="margin-top:6px"><summary>SQL</summary><pre>'+esc(x.sql)+'</pre></details>':''):dbTable(x); return }
+          if(r.status==='FAILED'||r.err&&r.status!=='QUEUED'&&r.status!=='RUNNING'){ out.innerHTML='<span class="sf-err">'+esc(r.err||'failed')+'</span>'; return }
+          if(Date.now()-t0>150000){ out.innerHTML='<span class="sf-err">No answer after 2.5 minutes (the workers may be busy); try again.</span>'; return }
+          setTimeout(poll,1500); }); })();
+      });
+    }
+    d.querySelector('.run').onclick=run;
+  }
+
   // ---- Per-sandbox landing page --------------------------------------
   // Everything a sandbox produced, in one place, clickable and copyable, with
   // a command for each so it can be tried rather than just looked at.
@@ -420,9 +464,11 @@ function sfInit(){
       t += row('Test it', 'curl -s ' + app + ' | head', {});
     }
     if(o.adb){
-      if(o.adb.sql_web_url) t += row('SQL Developer Web', o.adb.sql_web_url, {link:true, hint:'Sign in as ADMIN with the password below.'});
+      t += '<tr><td style="padding:5px 12px 5px 0;color:#6b7280">Database</td><td style="padding:5px 0"><button type="button" class="sf-btn" style="padding:3px 10px;font-size:12px" data-dbpanel="'+esc(sid)+'">Open database</button>'
+        + '<div style="font-size:11.5px;color:#6b7280;margin-top:2px">SQL, tables and Select AI, run inside the private network'+(dbPrivate(o)?'; this database is private, so its own web tools do not open from a browser.':'.')+'</div></td></tr>';
+      if(o.adb.sql_web_url&&!dbPrivate(o)) t += row('SQL Developer Web', o.adb.sql_web_url, {link:true, hint:'Sign in as ADMIN with the password below.'});
       if(o.adb.console_url) t += row('Database console', o.adb.console_url, {link:true});
-      if(o.adb.apex_url)    t += row('APEX', o.adb.apex_url, {link:true});
+      if(o.adb.apex_url&&!dbPrivate(o))    t += row('APEX', o.adb.apex_url, {link:true});
       t += row('Database', o.adb.db_name || '', {});
       t += row('User', o.adb.admin_user || 'ADMIN', {});
       if(o.adb.admin_password) t += row('Password', o.adb.admin_password, {});
@@ -520,6 +566,8 @@ function sfInit(){
   document.addEventListener('click', function(e){
     var tb = e.target.closest && e.target.closest('[data-tab]');
     if(tb){ window.__sfTab = tb.getAttribute('data-tab'); refresh(); return; }
+    var dp = e.target.closest && e.target.closest('[data-dbpanel]');
+    if(dp){ openDbPanel(dp.getAttribute('data-dbpanel')); return; }
     var op = e.target.closest && e.target.closest('[data-open]');
     if(op){ showLanding(op.getAttribute('data-open')); return; }
     // Destroy from the card: the first click asks, the second (within 6 s) destroys
@@ -1129,6 +1177,11 @@ function sfInit(){
       '.sf-composer #sf-chat-send.ready{background:#1a73e8}.sf-composer #sf-chat-send.ready:hover{background:#1557b0}',
       '.sf-composer #sf-chat-send:active{transform:scale(.94)}',
       '@media (max-width:640px){.sf-composer{flex-wrap:wrap !important}.sf-composer .sf-field:first-child{flex:1 1 100% !important}}',
+      '#sf-dbp{position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:4vh 16px}',
+      '#sf-dbp .box{background:#fff;color:#111827;border-radius:10px;width:min(1100px,100%);max-height:92vh;overflow:auto;padding:16px 18px;box-shadow:0 20px 50px rgba(0,0,0,.25)}',
+      '#sf-dbp .hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}',
+      '#sf-dbp textarea{width:100%;min-height:110px;font-family:ui-monospace,Consolas,monospace;font-size:13px;margin:8px 0}',
+      '.sf-dbt{border-collapse:collapse;font-size:12px;width:100%}','.sf-dbt th,.sf-dbt td{border:1px solid #e5e7eb;padding:4px 8px;text-align:left;vertical-align:top}','.sf-dbt th{background:#f3f4f6;position:sticky;top:0}',
       '.sf-open{display:inline-block;background:#2563eb;color:#fff !important;padding:7px 15px;border-radius:6px;font-weight:600;text-decoration:none;margin:0 0 8px}',
       '.sf-open:hover{background:#1d4fd7}',
       '.sf-nourl{display:inline-block;color:#8a90a0;font-size:12px;margin:0 0 8px}',

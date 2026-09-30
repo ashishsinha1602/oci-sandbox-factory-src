@@ -341,8 +341,8 @@ def containers_for(req: dict) -> list | None:
                 if v == "{{GENERATE_PASSWORD}}":
                     pw = secrets.token_urlsafe(14)
                     cenv[k] = pw
-                    req.setdefault("_logins", []).append(
-                        {"service": c.get("name") or f"app{i}", "user": "admin", "password": pw})
+                    req.setdefault("_logins", []).append(   # a *_TOKEN (Jupyter) is a token, not a user's password
+                        {"service": c.get("name") or f"app{i}", "user": "(token)" if "TOKEN" in k.upper() else "admin", "password": pw})
             item = {"name": c.get("name") or f"app{i}", "image": c["image"],
                     "port": c.get("port"), "env": cenv}
             # command/args were dropped here before, so anything that needs a

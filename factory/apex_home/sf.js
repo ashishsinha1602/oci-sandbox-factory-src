@@ -463,6 +463,8 @@ function sfInit(){
       t += row('App URL', app, {link:true});
       t += row('Test it', 'curl -s ' + app + ' | head', {});
     }
+    (o.logins||[]).forEach(function(l){ t += row(l.service+' login', l.user==='(token)'?l.password:(l.user+' / '+l.password),
+      {hint: l.user==='(token)'?'Paste this token on the sign-in page.':'Sign in to '+l.service+' with this user and password.'}); });
     if(o.adb){
       t += '<tr><td style="padding:5px 12px 5px 0;color:#6b7280">Database</td><td style="padding:5px 0"><button type="button" class="sf-btn" style="padding:3px 10px;font-size:12px" data-dbpanel="'+esc(sid)+'">Open database</button>'
         + '<div style="font-size:11.5px;color:#6b7280;margin-top:2px">SQL, tables and Select AI, run inside the private network'+(dbPrivate(o)?'; this database is private, so its own web tools do not open from a browser.':'.')+'</div></td></tr>';

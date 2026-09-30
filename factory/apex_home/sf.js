@@ -114,7 +114,7 @@ function sfInit(){
             us.forEach(function(u,i){ var nm=us.length>1?names[i]:''; 
               if(nm==='mcp'){h+='<div style="margin-top:4px">MCP endpoint (connect Claude or an agent; not a web page): <code>'+esc(u)+'/mcp</code></div>'}
               else{h+='<a href="'+esc(u)+'" target="_blank">'+esc(u)+'</a>'} });
-            if(o.app.containers&&o.app.containers.length>1&&us.length){o.app.containers.slice(1).forEach(function(n){h+='<a href="'+esc(us[0])+'/'+esc(n)+'" target="_blank">'+esc(us[0])+'/'+esc(n)+'</a>'})}}
+            if(names.length>1&&us.length===1){names.slice(1).forEach(function(n){if(n)h+='<a href="'+esc(us[0])+'/'+esc(n)+'" target="_blank">'+esc(us[0])+'/'+esc(n)+'</a>'})}}
           (o.logins||[]).forEach(function(l){
             h+='<div style="margin-top:6px">'+esc(l.service)+' &middot; user <code>'+esc(l.user)+'</code> &middot; password <code>'+esc(l.password)+'</code></div>';
           });

@@ -217,7 +217,16 @@ def free_app_deploy(req: dict, args) -> dict:
     import host_apps
     if not host_apps.available():
         raise RuntimeError("the worker VM's podman socket is not reachable; applications cannot run on this Free Tier install (reinstall, or pick the Arm VM)")
-    containers = containers_for(req) or [{"name": "web", "image": req.get("app_image") or "", "port": int(req.get("app_port") or 80), "env": {}}]
+    # A starter (app_template / app_files) is built below from its own files, so it has no image
+    # yet: containers_for() would refuse it ("seed data but no image") - every starter with sample
+    # data failed on the Free Tier (React + sales, 2026-09-30). Only an explicit container list goes
+    # through containers_for(); otherwise one "web" container carries the seed, image filled by the build.
+    if req.get("app_containers"):
+        containers = containers_for(req)
+    else:
+        seed = (req.get("seed_sql") or "").strip()
+        containers = [{"name": "web", "image": req.get("app_image") or "", "port": int(req.get("app_port") or 80),
+                       "env": {"SEED_SQL": base64.b64encode(seed.encode()).decode()} if seed else {}}]
     src = None
     built = materialise_app(req)                          # app_files / a template -> a folder with a Dockerfile
     if built:

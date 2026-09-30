@@ -110,8 +110,8 @@ function sfInit(){
           if(pu){h+='<a class="sf-open" href="'+esc(pu)+'" target="_blank" rel="noopener">Open '+esc(r.sandbox_id)+' &rarr;</a><br>'}
           else{h+='<button type="button" class="sf-open" style="border:0;cursor:pointer" '+(o.adb&&dbPrivate(o)?'data-dbpanel':'data-open')+'="'+esc(r.sandbox_id)+'">Open '+esc(r.sandbox_id)+' &rarr;</button><br>'}
           if(o.app&&o.app.urls){var us=o.app.urls.filter(function(u){return u.indexOf('https://')===0}); if(!us.length)us=o.app.urls;
-            var names=(o.app.containers||[]).map(function(c){return typeof c==='string'?c:(c&&c.name)||''});
-            us.forEach(function(u,i){ var nm=us.length>1?names[i]:''; 
+            var names=appNames(o);
+            us.forEach(function(u,i){ var nm=names[i]||''; 
               if(nm==='mcp'){h+='<div style="margin-top:4px">MCP endpoint (connect Claude or an agent; not a web page): <code>'+esc(u)+'/mcp</code></div>'}
               else{h+='<a href="'+esc(u)+'" target="_blank">'+esc(u)+'</a>'} });
             if(names.length>1&&us.length===1){names.slice(1).forEach(function(n){if(n)h+='<a href="'+esc(us[0])+'/'+esc(n)+'" target="_blank">'+esc(us[0])+'/'+esc(n)+'</a>'})}}
@@ -249,13 +249,19 @@ function sfInit(){
     if(o.aidp)L.push(['AI Data Platform '+(o.aidp.display_name||''),o.aidp.console_url]);
     return L;
   }
+  function appNames(o){ return ((o&&o.app&&o.app.containers)||[]).map(function(c){return typeof c==='string'?c:(c&&c.name)||''}); }
+  function webUrls(o){ // an MCP endpoint is for agents, not a browser: never offered as the page to open
+    var us=(o&&o.app&&o.app.urls)||[], names=appNames(o);
+    return us.filter(function(u,i){ return !(names[i]==='mcp' || (us.length===1 && names.length===1 && names[0]==='mcp')); });
+  }
   function primaryUrl(o){
     if(!o)return null;
     if(o.url)return o.url;
-    if(o.app&&o.app.url)return o.app.url;
-    if(o.app&&o.app.urls&&o.app.urls.length){
-      var https=o.app.urls.filter(function(u){return u.indexOf('https://')===0});
-      return https[0]||o.app.urls[0];
+    var wu=webUrls(o);
+    if(o.app&&o.app.url&&wu.indexOf(o.app.url)>=0)return o.app.url;
+    if(wu.length){
+      var https=wu.filter(function(u){return u.indexOf('https://')===0});
+      return https[0]||wu[0];
     }
     if(o.adb)return dbPrivate(o)?null:(o.adb.apex_url||o.adb.sql_web_url);
     var fu=(o.functions||[]).filter(function(f){return f.url})[0]; if(fu)return fu.url;
@@ -463,11 +469,12 @@ function sfInit(){
       + '<p class="sf-sub" style="color:#6b7280;margin:0 0 12px;font-size:13px">'
       + 'Everything this sandbox created. Links open directly; the rest is here to copy.</p>';
     var t = '<table style="width:100%;border-collapse:collapse;font-size:13.5px">';
-    var app = o.app && (o.app.urls||[]).filter(function(u){return u.indexOf('https://')===0})[0];
+    var wu=webUrls(o), app = wu.filter(function(u){return u.indexOf('https://')===0})[0]||wu[0];
     if(app){
       t += row('App URL', app, {link:true});
       t += row('Test it', 'curl -s ' + app + ' | head', {});
     }
+    (o.app&&o.app.urls||[]).forEach(function(u,i){ if(appNames(o)[i]==='mcp') t += row('MCP endpoint', u+'/mcp', {hint:'Connect Claude or an agent to it; it is not a web page.'}); });
     (o.logins||[]).forEach(function(l){ t += row(l.service+' login', l.user==='(token)'?l.password:(l.user+' / '+l.password),
       {hint: l.user==='(token)'?'Paste this token on the sign-in page.':'Sign in to '+l.service+' with this user and password.'}); });
     if(o.adb){

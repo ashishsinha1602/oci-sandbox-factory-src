@@ -132,13 +132,28 @@ terraform plan -var-file=demo1.tfvars    # see demo1.tfvars pattern in the repo 
 
 | Switch | Default | Notes |
 |---|---|---|
-| `--adb` | Always Free ATP, public endpoint, IP allow-list, mTLS off | `--adb-tier paid` = ECPU with a private endpoint in the private subnet |
+| `--adb` | From the worker: a schema of its own in the install's shared database (`factory/shared_db.py`); from the CLI: Always Free ATP, public endpoint, IP allow-list, mTLS off | `--adb-tier paid` = ECPU with a private endpoint in the private subnet; `adb_dedicated` on a request = a database of its own |
 | `--kafka` | OCI Streaming pool with the Kafka-compatible endpoint | `--kafka-mode cluster` = managed Kafka DEVELOPMENT cluster (billed hourly) |
 | `--app` | One `nginx:alpine` container, public IP, port 80 opened to `--allowed-cidr` | Ports are opened per container; all containers share one network namespace |
 
 Every container gets `SANDBOX_ID`, `SANDBOX_EXPIRES`, and when present
-`ADB_DB_NAME`, `ADB_CONNECT_STRING`, `ADB_ADMIN_PASSWORD`,
-`KAFKA_BOOTSTRAP_SERVERS` as environment variables.
+`ADB_DB_NAME`, `ADB_CONNECT_STRING`, `ADB_USER`, `ADB_ADMIN_PASSWORD`,
+`KAFKA_BOOTSTRAP_SERVERS` as environment variables. `ADB_USER` is the
+sandbox's own schema in the shared database (`SBX_<ID>`), or `ADMIN` on a
+database of its own; the starters connect as `ADB_USER`.
+
+**Shared database (1.2).** The foundation's standard edition creates one paid,
+private Autonomous Database (`foundation/shared_db.tf`, 2 ECPU auto-scaling,
+behind one API Gateway for ORDS) and the worker gives each database sandbox a
+schema in it: user, quota, resource principal, ORDS alias (`/ords/<sandbox>/`),
+REST for every table, an APEX workspace signed in with the same user, and a
+Select AI profile over that schema only. The worker stops the database when the
+last schema is dropped and starts it on the next request. `ADMIN.SBX_SCHEMAS`
+records which sandbox owns which schema and when it expires; the reaper drops
+expired schemas and reconcile counts them as live. The Free Tier edition uses
+the control database as the shared one (nothing new to create). A request with
+`adb_dedicated = Y`, a RAG starter or extra databases still gets a database of
+its own through the stack.
 
 ## 3. Deploy a local app from a prompt
 

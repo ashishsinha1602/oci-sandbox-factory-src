@@ -1,6 +1,6 @@
 
 function sfInit(){
-  var mode=null, plan=null, cfg={enable_adb:false,enable_kafka:false,enable_nosql:false,enable_app:false}, timer=null;
+  var mode=null, plan=null, cfg={enable_adb:false,adb_dedicated:false,enable_kafka:false,enable_nosql:false,enable_app:false}, timer=null;
   var $=function(s){return document.querySelector(s)}, $$=function(s){return Array.prototype.slice.call(document.querySelectorAll(s))};
   // x02 is a VARCHAR2(32767): anything big (attached code) rides in p_clob_01.
   function call(action,payload){payload=payload||{}; var m=document.querySelector('#sf-model'); if(m&&!payload.model)payload.model=m.value;
@@ -26,7 +26,7 @@ function sfInit(){
     $('#sf-id').focus();
   }});
 
-  function setCfg(c){for(var k in c){cfg[k]=c[k]} $$('.sf-toggle').forEach(function(t){t.classList.toggle('on',!!cfg[t.dataset.k])}); $('#sf-appfields').classList.toggle('sf-hide',!cfg.enable_app)}
+  function setCfg(c){for(var k in c){cfg[k]=c[k]} $$('.sf-toggle').forEach(function(t){t.classList.toggle('on',!!cfg[t.dataset.k])}); $('#sf-appfields').classList.toggle('sf-hide',!cfg.enable_app); var dd=$('#sf-ded'); if(dd)dd.classList.toggle('sf-hide',!cfg.enable_adb)}
   $$('.sf-toggle').forEach(function(t){t.onclick=function(){var k=t.dataset.k; var c={}; c[k]=!cfg[k]; setCfg(c)}});
 
   $('#sf-plan').onclick=function(){
@@ -66,7 +66,7 @@ function sfInit(){
     if(!/^[a-z][a-z0-9-]{1,19}$/.test(id)){err('Sandbox id: 2-20 chars, lowercase letters, digits, dashes, starting with a letter.');return}
     var planHas=mode==='describe'&&plan&&['buckets','queues','functions','dataflow_jobs','databases','app_instances'].some(function(k){return plan[k]&&plan[k].length})||(plan&&plan.enable_catalog);
     if(!cfg.enable_adb&&!cfg.enable_kafka&&!cfg.enable_nosql&&!cfg.enable_app&&!planHas){err('Pick at least one piece.');return}
-    var git=$('#sf-git').value.trim(), payload={sandbox_id:id, ttl_days:+$('#sf-ttl').value, enable_adb:cfg.enable_adb, enable_kafka:cfg.enable_kafka, enable_nosql:cfg.enable_nosql, enable_app:cfg.enable_app,
+    var git=$('#sf-git').value.trim(), payload={sandbox_id:id, ttl_days:+$('#sf-ttl').value, enable_adb:cfg.enable_adb, adb_dedicated:!!(cfg.enable_adb&&cfg.adb_dedicated), enable_kafka:cfg.enable_kafka, enable_nosql:cfg.enable_nosql, enable_app:cfg.enable_app,
       action:(cfg.enable_app&&git)?'DEPLOY':'CREATE', git_url:git||null, app_image:$('#sf-image').value.trim()||null, app_port:+$('#sf-port').value||80, text:mode==='describe'?$('#sf-text').value.trim():null, env:envFrom(document.querySelector('#sf-form-env'))};
     if(mode==='describe'&&plan){ if(plan.containers&&plan.containers.length)payload.containers=plan.containers; if(plan.seed_sql)payload.seed_sql=plan.seed_sql;
       payload.buckets=nz(plan.buckets); payload.queues=nz(plan.queues); payload.functions=nz(plan.functions); payload.dataflow_jobs=nz(plan.dataflow_jobs);
@@ -120,7 +120,8 @@ function sfInit(){
           });
           if(o.adb){h+='<div style="margin-top:6px"><button type="button" class="sf-btn" style="padding:3px 10px;font-size:12px" data-dbpanel="'+esc(r.sandbox_id)+'">Open database</button> '
               +(dbPrivate(o)?'<span style="font-size:12px;color:#6b7280">private database: SQL, tables and Select AI open here, in the factory</span>':'<a href="'+esc(o.adb.sql_web_url)+'" target="_blank">SQL Developer Web</a>')
-              +' &middot; user <code>'+esc(o.adb.admin_user||'ADMIN')+'</code>'
+              +' &middot; user <code>'+esc(o.adb.admin_user||'ADMIN')+'</code>'+(o.adb.shared?' <span style="font-size:12px;color:#6b7280">(a schema of its own in the shared database)</span>':'')
+              +(o.adb.apex_workspace?' &middot; APEX workspace <code>'+esc(o.adb.apex_workspace)+'</code>':'')
               +(o.adb.admin_password?' &middot; password <code>'+esc(o.adb.admin_password)+'</code> <button type="button" class="sf-btn sec" style="padding:2px 8px;font-size:12px" onclick="navigator.clipboard.writeText(this.previousElementSibling.textContent)">copy</button>':'')
               +'<br>connect string <code>'+esc(o.adb.connect_string)+'</code></div>'}
 
@@ -386,7 +387,7 @@ function sfInit(){
     });
     function list(v){return (v&&v.length)?v:undefined}
     return {sandbox_id:newId(r.k), action:'CREATE', ttl_days:p.ttl_days||3,
-      enable_adb:!!p.enable_adb, enable_kafka:!!p.enable_kafka, enable_nosql:!!p.enable_nosql,
+      enable_adb:!!p.enable_adb, adb_dedicated:!!p.adb_dedicated, enable_kafka:!!p.enable_kafka, enable_nosql:!!p.enable_nosql,
       enable_catalog:!!p.enable_catalog, enable_aidp:!!p.enable_aidp,
       enable_app:!!p.enable_app||cs.length>0||!!p.app_template||!!p.app_files,
       app_image:p.app_image||null, git_url:null,
@@ -472,14 +473,14 @@ function sfInit(){
     if(o.adb){
       t += '<tr><td style="padding:5px 12px 5px 0;color:#6b7280">Database</td><td style="padding:5px 0"><button type="button" class="sf-btn" style="padding:3px 10px;font-size:12px" data-dbpanel="'+esc(sid)+'">Open database</button>'
         + '<div style="font-size:11.5px;color:#6b7280;margin-top:2px">SQL, tables and Select AI, run inside the private network'+(dbPrivate(o)?'; this database is private, so its own web tools do not open from a browser.':'.')+'</div></td></tr>';
-      if(o.adb.sql_web_url&&!dbPrivate(o)) t += row('SQL Developer Web', o.adb.sql_web_url, {link:true, hint:'Sign in as ADMIN with the password below.'});
+      if(o.adb.sql_web_url&&!dbPrivate(o)) t += row('SQL Developer Web', o.adb.sql_web_url, {link:true, hint:'Sign in as '+esc(o.adb.admin_user||'ADMIN')+' with the password below.'});
       if(o.adb.console_url) t += row('Database console', o.adb.console_url, {link:true});
-      if(o.adb.apex_url&&!dbPrivate(o))    t += row('APEX', o.adb.apex_url, {link:true});
+      if(o.adb.apex_url&&!dbPrivate(o))    t += row('APEX', o.adb.apex_url, {link:true, hint:o.adb.apex_workspace?'Workspace <b>'+esc(o.adb.apex_workspace)+'</b>, user <b>'+esc(o.adb.admin_user||'')+'</b>, the password below.':''});
       t += row('Database', o.adb.db_name || '', {});
-      t += row('User', o.adb.admin_user || 'ADMIN', {});
+      t += row('User', o.adb.admin_user || 'ADMIN', o.adb.shared?{hint:'A schema of its own in the install\'s shared database: nobody else sees its tables.'}:{});
       if(o.adb.admin_password) t += row('Password', o.adb.admin_password, {});
       if(o.adb.connect_string) t += row('Connect string', o.adb.connect_string,
-        {hint:'python: oracledb.connect(user="ADMIN", password=..., dsn="'+esc(o.adb.connect_string)+'")'});
+        {hint:'python: oracledb.connect(user="'+esc(o.adb.admin_user||'ADMIN')+'", password=..., dsn="'+esc(o.adb.connect_string)+'")'});
     }
     (o.databases||[]).filter(function(d){return d.name!=='primary'}).forEach(function(d){
       t += row('Database '+d.name, d.db_name, {open:d.sql_web_url||d.console_url, hint:'Open = SQL Developer Web. User <b>'+esc(d.admin_user||'ADMIN')+'</b>'+(d.admin_password?', password below.':'')});
@@ -520,7 +521,7 @@ function sfInit(){
     if(o.catalog) t += row('Data Catalog', o.catalog.display_name || '', {open:ru['catalog'], hint:'Open it to harvest the bucket and browse the tables it finds.'});
     if(o.aidp) t += row('AI Data Platform', o.aidp.display_name || '', {open:o.aidp.console_url, hint:'Open it: workspace <b>'+esc(o.aidp.workspace||'')+'</b>. Create a compute cluster inside (smallest size), attach the sandbox bucket, run the same Spark code.'+(o.aidp.web_socket_endpoint?'<br>endpoint '+esc(o.aidp.web_socket_endpoint):'')});
     if(o.low_code&&o.low_code.rest_base) t += row('REST (ORDS)', o.low_code.rest_base,
-      {hint:'authenticated as ADMIN with the password above'});
+      {hint:'authenticated as '+esc((o.adb&&o.adb.admin_user)||'ADMIN')+' with the password above'});
     t += '</table>';
     h += t;
     var rl=resourceLinks(o).filter(function(x){return x[1]});
@@ -738,7 +739,8 @@ function sfInit(){
   // What a plan or a chat action will actually build in OCI, in plain words.
   function infraHtml(a){
     var L=[];
-    if(a.enable_adb)L.push(window.__sfEdition==='free'?'<li><b>Autonomous Database</b> &mdash; Always Free (1 OCPU, 20 GB), Oracle 23ai, public endpoint. Every table is published as a REST endpoint through ORDS, in-database document search works, and an APEX workspace is waiting. You get SQL Developer Web and APEX URLs. Select AI is not available on Free Tier.</li>':'<li><b>Autonomous Database</b> &mdash; '+esc(a.adb_tier||'paid, 2 ECPU')+', Oracle 23ai, private subnet. Select AI (plain-English queries) and AI cataloguing are switched on for you. Every table is also published as a REST endpoint through ORDS, and an APEX workspace is waiting if you want to click a low-code app together. You get SQL Developer Web and APEX URLs.</li>');
+    if(a.enable_adb&&!a.adb_dedicated&&!a.enable_rag)L.push('<li><b>Database schema</b> &mdash; a schema of its own (user, password, quota) in the install\'s shared Autonomous Database: nothing idle to pay for. Every table is published as a REST endpoint through ORDS, an APEX workspace is waiting, and you get SQL Developer Web and APEX URLs.'+(window.__sfEdition==='free'?' Select AI is not available on Free Tier.':' Select AI (plain-English queries) is switched on over your tables.')+' Want a whole database instead? Switch on <b>Own database</b>.</li>');
+    else if(a.enable_adb)L.push(window.__sfEdition==='free'?'<li><b>Autonomous Database</b> &mdash; Always Free (1 OCPU, 20 GB), Oracle 23ai, public endpoint. Every table is published as a REST endpoint through ORDS, in-database document search works, and an APEX workspace is waiting. You get SQL Developer Web and APEX URLs. Select AI is not available on Free Tier.</li>':'<li><b>Autonomous Database</b> &mdash; '+esc(a.adb_tier||'paid, 2 ECPU')+', Oracle 23ai, private subnet. Select AI (plain-English queries) and AI cataloguing are switched on for you. Every table is also published as a REST endpoint through ORDS, and an APEX workspace is waiting if you want to click a low-code app together. You get SQL Developer Web and APEX URLs.</li>');
     if(a.enable_nosql)L.push('<li><b>OCI NoSQL</b> &mdash; serverless JSON tables with on-demand capacity. You get the table names and the compartment; no cluster to size and nothing running when idle.</li>');
     if(a.enable_kafka)L.push('<li><b>Kafka</b> &mdash; Streaming with Apache Kafka, 1 broker, 50 GB, topic <code>events</code>, a public bootstrap endpoint with a SASL/SCRAM superuser (username + password on the card), and a private one for containers in the sandbox.</li>');
     var cs=(a.containers&&a.containers.length)?a.containers:((a.enable_app||a.git_url||a.app_image)?[{name:'web',image:a.git_url||a.app_image||'nginx:alpine',port:a.app_port||80}]:[]);
@@ -992,7 +994,9 @@ function sfInit(){
     var armEst=!P.a1_ocpu, cpu=P.a1_ocpu||P.e4_ocpu||0, mem=P.a1_memory||P.e4_memory||0;
     var add=function(name,detail,m){items.push({name:name,detail:detail,monthly_usd:m==null?null:Math.round(m*100)/100}); if(m!=null)total+=m;};
     var w=a.workload||null;
-    var dbs=((a.enable_adb||a.enable_rag||(w&&w.oracle))?1:0)+((a.databases||[]).length);
+    var own=!!(a.adb_dedicated||a.enable_rag||(a.databases||[]).length);
+    var dbs=((a.enable_rag||(a.enable_adb&&a.adb_dedicated)||(w&&w.oracle&&a.adb_dedicated))?1:0)+((a.databases||[]).length);
+    if((a.enable_adb||(w&&w.oracle))&&!own) add('Database schema','a schema of its own in the shared Autonomous Database of this install, which every sandbox pays for together (2 ECPU while any sandbox uses it, stopped otherwise)',0);
     if(dbs&&P.adb_ecpu){ var m=2*P.adb_ecpu*H+20*(P.adb_storage||0);
       add('Autonomous Database'+(dbs>1?' x'+dbs:''),'Transaction Processing, 2 ECPU + 20 GB, license included, per ECPU-hour while it exists',m*dbs); }
     var apps=((a.enable_app||a.git_url||a.app_image||a.app_template||(a.containers&&a.containers.length)||w)?1:0)+((a.app_instances||[]).length);

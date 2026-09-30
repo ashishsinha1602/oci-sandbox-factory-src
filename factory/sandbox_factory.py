@@ -627,6 +627,8 @@ def build_variables(args, fnd: dict, cfg: dict, app_containers: list | None, has
         v["dataflow_jobs"] = json.dumps(args.dataflow_jobs)
     if getattr(args, "functions", None):
         v["functions"] = json.dumps(args.functions)
+    if getattr(args, "external_db", None):
+        v["external_db"] = json.dumps(args.external_db)        # the shared database's schema (shared_db.py)
     if getattr(args, "user_env", None):
         # names as the shell allows; values are never logged or output
         bad = [k for k in args.user_env if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,127}", k)]
@@ -1098,6 +1100,12 @@ def cmd_destroy(args):
     fnd = foundation()
     rm = client(oci.resource_manager.ResourceManagerClient)
     stack = find_stack(rm, fnd["compartments"]["control"], args.sandbox_id)
+    try:
+        import shared_db                       # v1.2: a schema in the install's shared database, if this sandbox had one
+        if shared_db.destroy(args.sandbox_id) and not stack:
+            print(f"{args.sandbox_id}: schema removed from the shared database", flush=True)
+    except Exception as e:  # noqa: BLE001
+        print(f"  shared database schema not removed ({type(e).__name__}: {str(e)[:120]})", flush=True)
     if not stack:
         # A build that failed before its stack existed (an image that would not
         # build, a refused name) has nothing in OCI, yet its card stayed FAILED

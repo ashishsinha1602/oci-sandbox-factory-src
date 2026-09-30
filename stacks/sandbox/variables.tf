@@ -112,6 +112,13 @@ variable "adb_public" {
   description = "Paid database on a public endpoint (allow-list + password). The worker sets it when no app gateway will proxy to the database."
 }
 
+variable "external_db" {
+  type        = map(string)
+  default     = {}
+  sensitive   = true
+  description = "A database this sandbox uses but does not create (the install's shared database, one schema per sandbox): ADB_DB_NAME, ADB_CONNECT_STRING, ADB_USER, ADB_ADMIN_PASSWORD. Injected into every container."
+}
+
 variable "adb_workload" {
   type        = string
   default     = "OLTP"

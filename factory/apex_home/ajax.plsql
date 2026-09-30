@@ -4,8 +4,7 @@ declare
   l_out    json_object_t := json_object_t();
   l_id     number;
 
-  -- Region and registry are tenancy-specific: they live in SBX.FACTORY_CONFIG so
-  -- this page works in any tenancy without being edited.
+  -- Region and registry come from SBX.FACTORY_CONFIG (tenancy-specific).
   l_region      varchar2(64);
   l_registry    varchar2(200);
   l_prices      varchar2(4000);
@@ -114,9 +113,7 @@ declare
 
   function msg(p_role varchar2, p_text clob) return json_object_t;   -- defined below
 
-  -- Free Tier edition: OCI Generative AI is not in Always Free, so the assistant
-  -- calls Google's Gemini API with the installer's own key (SBX.FACTORY_CONFIG
-  -- google_api_key). Same messages in, same text out as the OCI path below.
+  -- Free Tier: Gemini with the installer's key (SBX.FACTORY_CONFIG google_api_key); same in/out as the OCI path.
   function google_chat(p_messages json_array_t, p_retry boolean default true) return clob is
     l_req   json_object_t := json_object_t();
     l_cont  json_array_t  := json_array_t();
@@ -301,6 +298,7 @@ declare
     l_cat    varchar2(1)    := case when l_in.get_boolean('enable_catalog') then 'Y' else 'N' end;
     l_aidp   varchar2(1)    := case when l_in.get_boolean('enable_aidp') then 'Y' else 'N' end;
     l_rag    varchar2(1)    := case when l_in.get_boolean('enable_rag') then 'Y' else 'N' end;
+    l_ded    varchar2(1)    := case when l_in.get_boolean('adb_dedicated') then 'Y' else 'N' end;
     l_kmode  varchar2(9)    := case when l_in.get_string('kafka_mode') in ('streaming','cluster') then l_in.get_string('kafka_mode') else 'cluster' end;
     l_tier   varchar2(4)    := case when l_in.get_string('adb_tier') in ('free','paid') then l_in.get_string('adb_tier') else 'paid' end;
     l_casset clob           := case when l_in.has('catalog_assets') and l_in.get('catalog_assets').is_array
@@ -344,9 +342,7 @@ declare
       end;
     end if;
 
-    -- A sandbox belongs to whoever first asked for it. Without this check any
-    -- signed-in user could destroy someone else's sandbox, or reuse its name and
-    -- have Resource Manager update their stack instead of creating a new one.
+    -- A sandbox belongs to whoever first asked for it: nobody else may destroy it or reuse its name.
     select min(requester) into l_owner from sandbox_requests where sandbox_id = l_sid;
     if l_owner is not null and l_owner <> :APP_USER then
       l_out.put('err', 'Sandbox "' || l_sid || '" belongs to someone else. Pick another name.');
@@ -372,9 +368,9 @@ declare
     end if;
 
     insert into sandbox_requests
-      (requester, sandbox_id, action, ttl_days, enable_adb, adb_tier, enable_kafka, kafka_mode, enable_nosql, enable_app, app_image, git_url, app_port, request_text, seed_sql, app_containers, app_files, seed_key, app_template, adb_databases, functions, app_instances, buckets, queues, dataflow_jobs, enable_catalog, catalog_assets, enable_aidp, user_env, enable_rag)
+      (requester, sandbox_id, action, ttl_days, enable_adb, adb_tier, enable_kafka, kafka_mode, enable_nosql, enable_app, app_image, git_url, app_port, request_text, seed_sql, app_containers, app_files, seed_key, app_template, adb_databases, functions, app_instances, buckets, queues, dataflow_jobs, enable_catalog, catalog_assets, enable_aidp, user_env, enable_rag, adb_dedicated)
     values
-      (:APP_USER, l_sid, l_act, l_ttl, l_adb, l_tier, l_kafka, l_kmode, l_nosql, l_app, l_image, l_git, l_port, l_req, l_seed, l_cont, l_files, l_skey, l_atpl, l_dbs, l_fns, l_insts, l_bkts, l_qs, l_dfj, l_cat, l_casset, l_aidp, l_env, l_rag)
+      (:APP_USER, l_sid, l_act, l_ttl, l_adb, l_tier, l_kafka, l_kmode, l_nosql, l_app, l_image, l_git, l_port, l_req, l_seed, l_cont, l_files, l_skey, l_atpl, l_dbs, l_fns, l_insts, l_bkts, l_qs, l_dfj, l_cat, l_casset, l_aidp, l_env, l_rag, l_ded)
     returning id into l_id;
     l_out.put('id', l_id);
   end;
@@ -553,8 +549,8 @@ begin
         l_r.ttl_days := least(30, greatest(1, round(l_in.get_number('ttl_days'))));
         l_r.request_text := 'lifetime set to ' || l_r.ttl_days || ' day(s) from now';
       end if;
-      insert into sandbox_requests (requester, sandbox_id, action, ttl_days, enable_adb, adb_tier, enable_kafka, kafka_mode, enable_app, app_image, git_url, app_port, request_text, seed_sql, app_containers, app_files, seed_key, app_template, enable_nosql, adb_databases, functions, app_instances, buckets, queues, dataflow_jobs, enable_catalog, catalog_assets, enable_aidp, user_env, enable_rag)
-      values (l_r.requester, l_r.sandbox_id, l_r.action, l_r.ttl_days, l_r.enable_adb, l_r.adb_tier, l_r.enable_kafka, l_r.kafka_mode, l_r.enable_app, l_r.app_image, l_r.git_url, l_r.app_port, l_r.request_text, l_r.seed_sql, l_r.app_containers, l_r.app_files, l_r.seed_key, l_r.app_template, l_r.enable_nosql, l_r.adb_databases, l_r.functions, l_r.app_instances, l_r.buckets, l_r.queues, l_r.dataflow_jobs, l_r.enable_catalog, l_r.catalog_assets, l_r.enable_aidp, l_r.user_env, l_r.enable_rag);
+      insert into sandbox_requests (requester, sandbox_id, action, ttl_days, enable_adb, adb_tier, enable_kafka, kafka_mode, enable_app, app_image, git_url, app_port, request_text, seed_sql, app_containers, app_files, seed_key, app_template, enable_nosql, adb_databases, functions, app_instances, buckets, queues, dataflow_jobs, enable_catalog, catalog_assets, enable_aidp, user_env, enable_rag, adb_dedicated)
+      values (l_r.requester, l_r.sandbox_id, l_r.action, l_r.ttl_days, l_r.enable_adb, l_r.adb_tier, l_r.enable_kafka, l_r.kafka_mode, l_r.enable_app, l_r.app_image, l_r.git_url, l_r.app_port, l_r.request_text, l_r.seed_sql, l_r.app_containers, l_r.app_files, l_r.seed_key, l_r.app_template, l_r.enable_nosql, l_r.adb_databases, l_r.functions, l_r.app_instances, l_r.buckets, l_r.queues, l_r.dataflow_jobs, l_r.enable_catalog, l_r.catalog_assets, l_r.enable_aidp, l_r.user_env, l_r.enable_rag, l_r.adb_dedicated);
       select max(id) into l_id from sandbox_requests where sandbox_id = l_sid and requester = :APP_USER;
       l_out.put('id', l_id);
     exception when others then

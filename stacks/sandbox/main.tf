@@ -150,7 +150,10 @@ locals {
       ADB_DB_NAME        = module.adb[0].db_name
       ADB_CONNECT_STRING = module.adb[0].connect_string
       ADB_ADMIN_PASSWORD = module.adb[0].admin_password
+      ADB_USER           = "ADMIN"
     } : {},
+    # the install's shared database (a schema of this sandbox's own), provisioned by the worker
+    var.external_db,
     var.enable_kafka ? {
       KAFKA_BOOTSTRAP_SERVERS = module.kafka[0].bootstrap_servers
     } : {},

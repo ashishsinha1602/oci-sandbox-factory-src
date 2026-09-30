@@ -7,7 +7,7 @@ control database), the worker - already inside the private network - runs it aga
 sandbox database, and the page reads the result back:
 
     sql     one statement; a query returns up to MAX_ROWS rows with column names
-    tables  the ADMIN schema's tables and their row counts
+    tables  the sandbox schema's tables and their row counts
     ask     a plain-English question answered by Select AI over the sandbox's data
 
     ensure(cur)  table + function in the control schema (every worker start; idempotent)
@@ -133,7 +133,7 @@ def run_one(kind: str, text: str, adb: dict) -> dict:
     import oracledb
     cs = adb["connect_string"]
     dsn = cs if cs.lstrip().startswith("(") else controldb._dsn(cs)   # TLS, no wallet: as the worker's adb_dsn
-    with oracledb.connect(user="ADMIN", password=adb["admin_password"], dsn=dsn) as db:
+    with oracledb.connect(user=adb.get("admin_user") or "ADMIN", password=adb["admin_password"], dsn=dsn) as db:
         db.call_timeout = CALL_TIMEOUT_MS
         cur = db.cursor()
         if kind == "tables":

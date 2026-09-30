@@ -85,6 +85,7 @@ COLUMNS = (("seed_sql", "clob"), ("app_containers", "clob"), ("app_files", "clob
            ("catalog_assets", "clob"),
            ("user_env", "clob"),
            ("enable_rag", "varchar2(1) default 'N' not null"),
+           ("adb_dedicated", "varchar2(1) default 'N' not null"),
            ("worker_name", "varchar2(64)"))
 
 

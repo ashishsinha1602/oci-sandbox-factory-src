@@ -34,6 +34,7 @@ import oci
 import app_templates
 import controldb
 import sandbox_factory as sf
+import shared_db
 
 POLL_SECONDS = 10
 REAP_SECONDS = 1800  # destroy expired sandboxes every 30 minutes
@@ -198,7 +199,8 @@ def free_injected_env(req: dict, outputs: dict, expires: str) -> dict:
            "SANDBOX_COMPARTMENT_OCID": fnd["compartments"]["sandboxes"], "OCI_REGION": cfg["region"]}
     adb = outputs.get("adb") or {}
     if adb.get("connect_string"):
-        env.update({"ADB_DB_NAME": adb.get("db_name", ""), "ADB_CONNECT_STRING": adb["connect_string"], "ADB_ADMIN_PASSWORD": adb.get("admin_password", "")})
+        env.update({"ADB_DB_NAME": adb.get("db_name", ""), "ADB_CONNECT_STRING": adb["connect_string"],
+                    "ADB_ADMIN_PASSWORD": adb.get("admin_password", ""), "ADB_USER": adb.get("admin_user") or "ADMIN"})
     buckets = outputs.get("buckets") or []
     if buckets:
         env["OBJECT_NAMESPACE"] = buckets[0].get("namespace", ""); env["DATA_BUCKET"] = buckets[0]["name"]
@@ -255,6 +257,8 @@ def free_app_deploy(req: dict, args) -> dict:
             outputs = sf.cmd_create(args)
         else:
             outputs = {"sandbox": {"id": req["sandbox_id"], "owner": req["requester"], "expires": expires, "ttl_days": args.ttl}}
+        if req.get("_shared_adb"):
+            outputs["adb"] = req["_shared_adb"]                # a schema in the shared database (v1.2)
         env = free_injected_env(req, outputs, expires)
         outputs["app"] = host_apps.deploy(req["sandbox_id"], containers, env, req["requester"], expires)
         return outputs
@@ -877,6 +881,16 @@ def handle(req: dict, conn=None) -> dict:
     expand_templates(req)
     free_edition_check(req)
     args = factory_args(req)
+    if req["action"] != "DESTROY" and shared_db.wanted(req):
+        # v1.2: a schema in the install's shared database instead of a database per sandbox.
+        # Made first, so every container starts with its ADB_* already pointing at it.
+        cfg = sf.config()
+        expires = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=args.ttl)).strftime("%Y-%m-%dT%H:%MZ")
+        adb = shared_db.provision(req["sandbox_id"], cfg["region"], owner=req.get("requester") or "", expires=expires)
+        req["_shared_adb"] = adb
+        args.adb = False
+        args.external_db = {"ADB_DB_NAME": adb["db_name"], "ADB_CONNECT_STRING": adb["connect_string"],
+                            "ADB_USER": adb["admin_user"], "ADB_ADMIN_PASSWORD": adb["admin_password"]}
     if req["action"] == "DESTROY" and conn is not None:
         args.os_namespace = recorded_namespace(conn, req["sandbox_id"])
     if req["action"] == "DESTROY":
@@ -951,6 +965,8 @@ def process_one(conn) -> bool:
     try:
         with contextlib.redirect_stdout(log):
             outputs = handle(req, conn)
+            if isinstance(outputs, dict) and req.get("_shared_adb"):
+                outputs["adb"] = req["_shared_adb"]
             if req["action"] != "DESTROY" and isinstance(outputs, dict) and outputs.get("catalog"):
                 # every sandbox with a catalog, database or not: register, connect, harvest
                 try:
@@ -971,12 +987,16 @@ def process_one(conn) -> bool:
                         outputs.setdefault("warnings", []).append(
                             "Select AI is not available on a Free Tier account (OCI Generative AI is not part of Always Free). "
                             "REST and in-database document search work.")
-                    else:
-                        enable_select_ai(outputs, cfg["region"], cfg)
                     seed = (req.get("seed_sql") or "").strip()
-                    if seed:
-                        seed_database(outputs, seed)
-                    enable_low_code(outputs)
+                    if outputs["adb"].get("shared"):
+                        # the schema's own sample data, Select AI (its tables only) and REST, as its own user
+                        shared_db.finish(outputs, seed, cfg["region"], select_ai_model(), sf.foundation()["compartments"]["sandboxes"])
+                    else:
+                        if EDITION != "free":
+                            enable_select_ai(outputs, cfg["region"], cfg)
+                        if seed:
+                            seed_database(outputs, seed)
+                        enable_low_code(outputs)
                     if req.get("enable_rag") == "Y":
                         import oracle_rag
                         docs = next((b for b in (outputs.get("buckets") or []) if str(b.get("name", "")).endswith("-docs")), None)
@@ -1061,6 +1081,10 @@ def reconcile(conn):
     if FREE_APPS:
         import host_apps
         live |= host_apps.alive_ids()
+    schemas = shared_db.alive_ids()
+    if schemas is None:
+        return                      # the register could not be read: reconcile nothing rather than "destroy" the lot
+    live |= schemas
     cur = conn.cursor()
     cur.execute("""
         select sandbox_id, requester from (
@@ -1182,6 +1206,7 @@ def main():
             try:
                 print(f"[{dt.datetime.now():%H:%M:%S}] reaper: checking for expired sandboxes")
                 sf.cmd_reap(argparse.Namespace(dry_run=False))
+                shared_db.reap(time.strftime("%Y-%m-%dT%H:%MZ", time.gmtime()))
                 if FREE_APPS:
                     import host_apps
                     host_apps.reap(time.strftime("%Y-%m-%dT%H:%MZ", time.gmtime()))

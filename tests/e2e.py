@@ -278,7 +278,7 @@ def verify_docs(o, fnd):
     buf = _io.BytesIO(); img.save(buf, format="PNG")
     osc.put_object(ns, b, "docs/door.png", buf.getvalue())
     pw = (o.get("adb") or {}).get("admin_password")
-    auth = ("ADMIN", pw)
+    auth = ((o.get("adb") or {}).get("admin_user") or "ADMIN", pw)
     def ask(q):
         try:
             r = requests.post(rag["ask_url"], json={"question": q}, auth=auth, timeout=180)
@@ -440,10 +440,28 @@ def verify_db(o):
         time.sleep(20)
     record("db: Select AI answers a plain-English question", isinstance(ans, dict) and bool(ans.get("answer")), str(ans)[:200])
     adb = o.get("adb") or {}
-    record("db: ADMIN password on the card", bool(adb.get("admin_password")), adb.get("db_name"))
+    user = adb.get("admin_user") or "ADMIN"
+    record("db: user and password on the card", bool(adb.get("admin_password")), f"{adb.get('db_name')} as {user}")
+    if adb.get("shared"):
+        # v1.2: a schema of its own in the install's shared database
+        record("db: shared database schema is the sandbox's own", user.startswith("SBX_") and bool(adb.get("apex_workspace")), f"{user}, APEX workspace {adb.get('apex_workspace')}")
+        try:
+            import oracledb
+            dsn = adb["connect_string"]
+            if not dsn.lstrip().startswith("("):
+                import controldb
+                dsn = controldb._dsn(dsn)
+            with oracledb.connect(user=user, password=adb["admin_password"], dsn=dsn) as db:
+                cur = db.cursor()
+                cur.execute("select count(*) from all_tables where owner = 'SBX'")
+                record("db: the schema cannot see the factory's tables", cur.fetchone()[0] == 0)
+                cur.execute("select count(*) from user_tables")
+                record("db: the schema has its seeded tables", cur.fetchone()[0] > 0)
+        except Exception as e:  # noqa: BLE001
+            record("db: the schema can be connected to", False, f"{type(e).__name__}: {str(e)[:120]}")
     lc = o.get("low_code") or {}
     if lc.get("rest_base") and adb.get("admin_password"):
-        rr = requests.get(lc["rest_base"] + "customers/", auth=("ADMIN", adb["admin_password"]), timeout=60)
+        rr = requests.get(lc["rest_base"] + "customers/", auth=(user, adb["admin_password"]), timeout=60)
         record("db: ORDS REST endpoint (authenticated)", rr.status_code == 200 and "items" in rr.text, f"{lc['rest_base']}customers/ -> {rr.status_code}")
 
 

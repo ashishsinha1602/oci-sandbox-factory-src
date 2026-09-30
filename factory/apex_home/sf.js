@@ -347,7 +347,7 @@ function sfInit(){
     {k:'mcponly', t:'MCP endpoint only', d:'Just the MCP server over a seeded database, to point Claude or your own agent at.',
      p:{enable_adb:true,seed_key:'sales',containers:[{name:'mcp',image:'{R}schemagate:release',port:8765}]}, tags:['MCP','Autonomous DB']},
     {k:'api', t:'Orders REST API', d:'A small REST service on top of the orders schema, on a public HTTPS URL.',
-     p:{enable_adb:true,seed_key:'sales',containers:[{name:'api',image:'{R}orders-demo/app:latest',port:8080}]}, tags:['REST API','Autonomous DB']},
+     p:{enable_adb:true,seed_key:'sales',containers:[{name:'api',image:'{R}orders:release',port:8080}]}, tags:['REST API','Autonomous DB']},
     {k:'empty', t:'Empty 23ai database', d:'A clean Autonomous Database with Select AI and AI cataloguing already switched on.',
      p:{enable_adb:true}, tags:['Autonomous DB','Select AI']},
     {k:'nosql', t:'NoSQL event store', d:'Serverless OCI NoSQL JSON tables. Nothing to size, nothing running when idle.',

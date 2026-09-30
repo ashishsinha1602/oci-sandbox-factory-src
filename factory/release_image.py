@@ -25,6 +25,7 @@ REPO_URL = os.environ.get("SBX_SOURCE_REPO", "https://github.com/ashishsinha1602
 STARTERS = {   # shipped starter images: sandbox apps run on Arm (A1)
     "studio": "examples/schemagate-studio",
     "schemagate": "examples/schemagate-mcp",
+    "orders": "examples/orders-app",        # the "Orders REST API" starter (its image was never published: pull failed on every install)
 }
 
 

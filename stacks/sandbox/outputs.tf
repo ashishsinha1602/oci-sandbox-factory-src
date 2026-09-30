@@ -14,6 +14,7 @@ output "adb" {
     connect_string = module.adb[0].connect_string
     sql_web_url    = module.adb[0].sql_web_url
     apex_url       = module.adb[0].apex_url
+    private        = module.adb[0].private
     id             = module.adb[0].id
     console_url    = "https://cloud.oracle.com/db/adb/${module.adb[0].id}?region=${var.region}"
   } : null

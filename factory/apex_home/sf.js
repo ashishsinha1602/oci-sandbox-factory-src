@@ -397,7 +397,7 @@ function sfInit(){
   // A paid database is on a private endpoint: its SQL Developer Web, APEX and REST do not open
   // from a browser, and nothing is made public for them. The worker (inside the network) runs
   // what is asked here and the answer comes back to this page (db_panel.py).
-  function dbPrivate(o){ var a=o&&o.adb; return !!(a&&a.tier==='paid'&&String(a.sql_web_url||'').indexOf('apigateway')<0); }
+  function dbPrivate(o){ var a=o&&o.adb; return !!(a&&a.private===true&&String(a.sql_web_url||'').indexOf('apigateway')<0); }
   function dbTable(res){
     if(!res.columns)return '<div>'+esc(res.message||'done')+'</div>';
     var h='<div style="font-size:12px;color:#6b7280;margin:4px 0">'+res.rowcount+' row(s)'+(res.truncated?' (first 200)':'')+'</div><div style="overflow:auto;max-height:52vh"><table class="sf-dbt"><tr>'

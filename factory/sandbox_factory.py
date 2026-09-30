@@ -593,6 +593,12 @@ def build_variables(args, fnd: dict, cfg: dict, app_containers: list | None) -> 
         "app_gateway": json.dumps(gw),
         "functions_gateway": json.dumps(gw),
         "enable_app": json.dumps(app_containers is not None),
+        # A paid database's private endpoint is reachable from a browser only through the app
+        # gateway (/ords/*). With no app - or no gateway left - the database's APEX, SQL
+        # Developer Web and REST links would be dead (every database-only starter, until
+        # 2026-09-30), so such a database goes on a public endpoint behind its allow-list and
+        # password: what the factory's own control database has always been.
+        "adb_public": json.dumps(not (app_containers is not None and gw)),
     }
     if getattr(args, "enable_catalog", False) and catalog_available(cfg, fnd):
         v["enable_catalog"] = json.dumps(True)
@@ -862,7 +868,7 @@ def cmd_create(args, app_containers: list | None = None) -> dict:
         log = rm.get_job_logs_content(last.id).data
         retry = {}
         if "gateway-count" in log and variables.get("app_gateway") != "false":
-            retry.update(app_gateway="false", functions_gateway="false", app_public="true")
+            retry.update(app_gateway="false", functions_gateway="false", app_public="true", adb_public="true")
             NOTES.append("No API Gateway was left in this region's limit, so the app is on a public IP (HTTP) instead of an Oracle HTTPS hostname.")
         if "catalog-count" in log and variables.get("enable_catalog") == "true":
             retry["enable_catalog"] = "false"

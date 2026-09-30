@@ -205,6 +205,30 @@ resource "oci_apigateway_deployment" "app" {
       content {
         path    = "/ords/{p*}"
         methods = ["ANY"]
+        # ORDS answers APEX with redirects to the host it was asked for. Behind the gateway that
+        # was the database's private hostname, which no browser reaches (verified 2026-09-30);
+        # told the gateway's hostname, every redirect comes back through the gateway.
+        request_policies {
+          header_transformations {
+            set_headers {
+              items {
+                name      = "X-Forwarded-Host"
+                values    = [oci_apigateway_gateway.app[0].hostname]
+                if_exists = "OVERWRITE"
+              }
+              items {
+                name      = "X-Forwarded-Proto"
+                values    = ["https"]
+                if_exists = "OVERWRITE"
+              }
+              items {
+                name      = "Forwarded"
+                values    = ["host=${oci_apigateway_gateway.app[0].hostname};proto=https"]
+                if_exists = "OVERWRITE"
+              }
+            }
+          }
+        }
         backend {
           type                       = "HTTP_BACKEND"
           url                        = "https://${routes.value}/ords/$${request.path[p]}"

@@ -18,6 +18,7 @@ from __future__ import annotations
 import datetime as dt
 import decimal
 import json
+import os
 import re
 import threading
 import time
@@ -146,6 +147,9 @@ def run_one(kind: str, text: str, adb: dict) -> dict:
             q = (text or "").strip()
             if not q:
                 raise ValueError("ask a question")
+            if os.environ.get("SBX_EDITION", "standard") == "free":
+                raise ValueError("Select AI is not available on a Free Tier account (OCI Generative AI is not part of Always Free). "
+                                 "SQL and Tables work; REST and in-database document search work.")
             cur.execute("""select dbms_cloud_ai.generate(prompt => :q, profile_name => 'SANDBOX_AI', action => 'narrate') from dual""", q=q)
             ans = cur.fetchone()[0]
             ans = ans.read() if hasattr(ans, "read") else ans

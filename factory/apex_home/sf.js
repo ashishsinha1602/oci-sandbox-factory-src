@@ -414,7 +414,7 @@ function sfInit(){
     var old=document.getElementById('sf-dbp'); if(old)old.remove();
     var d=document.createElement('div'); d.id='sf-dbp';
     d.innerHTML='<div class="box"><div class="hd"><b>Database &middot; '+esc(sid)+'</b><button type="button" class="sf-btn sec x">Close</button></div>'
-      +'<div class="sf-tabs"><button type="button" data-k="sql" class="on">SQL</button><button type="button" data-k="tables">Tables</button><button type="button" data-k="ask">Ask Select AI</button></div>'
+      +'<div class="sf-tabs"><button type="button" data-k="sql" class="on">SQL</button><button type="button" data-k="tables">Tables</button>'+(window.__sfEdition==='free'?'':'<button type="button" data-k="ask">Ask Select AI</button>')+'</div>'
       +'<textarea id="sf-dbq" placeholder="select * from customers"></textarea>'
       +'<div class="sf-act"><button type="button" class="sf-btn run">Run</button></div><div id="sf-dbr"></div></div>';
     document.body.appendChild(d);

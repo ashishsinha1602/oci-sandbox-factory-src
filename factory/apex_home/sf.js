@@ -590,6 +590,9 @@ function sfInit(){
     var g=$('#sf-sugg'); if(g)g.classList.add('sf-hide'); var t=$('#sf-starters'); if(t)t.classList.remove('sf-hide') }
   function offerRecipe(r){
     var payload=recipePayload(r);
+    // A starter that needs YOUR image (no image, container, template or files of its own) opens the
+    // form that asks for it. It used to offer "Build it now" and queue an app with nothing to run.
+    if(payload.enable_app&&!payload.app_image&&!payload.containers&&!payload.app_template&&!payload.app_files){openForm('deploy');return}
     hideSugg();
     addMsg('me',esc(r.t));
     var d=addMsg('ai','<b>'+esc(r.t)+'</b> &mdash; '+esc(r.d));

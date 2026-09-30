@@ -362,7 +362,7 @@ function sfInit(){
     {k:'jupyter', t:'Jupyter on a database', d:'A notebook with the sales schema already there to poke at from Python.',
      p:{enable_adb:true,seed_key:'sales',containers:[{name:'lab',image:'docker.io/jupyter/minimal-notebook:latest',port:8888,env:{JUPYTER_TOKEN:'{{GENERATE_PASSWORD}}'}}]}, tags:['Jupyter','Autonomous DB']},
     {k:'n8n', t:'n8n automation', d:'Workflow automation with a database behind it to store runs.',
-     p:{enable_adb:true,containers:[{name:'n8n',image:'docker.io/n8nio/n8n:latest',port:5678}]}, tags:['n8n','Autonomous DB']},
+     p:{enable_adb:true,containers:[{name:'n8n',image:'docker.io/n8nio/n8n:latest',port:5678,env:{N8N_SECURE_COOKIE:'false',N8N_PROXY_HOPS:'1'}}]}, tags:['n8n','Autonomous DB']},
     {k:'anyimage', t:'Your own container image', d:'Run any public image with a public HTTPS URL. Pick this, then put your image and port in the form.',
      p:{enable_app:true,app_image:'',app_port:8080,ttl_days:3}, tags:['container','your image']}
   ];

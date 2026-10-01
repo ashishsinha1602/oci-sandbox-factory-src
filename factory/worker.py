@@ -361,6 +361,9 @@ def containers_for(req: dict) -> list | None:
                     cenv[k] = pw
                     req.setdefault("_logins", []).append(   # a *_TOKEN (Jupyter) is a token, not a user's password
                         {"service": c.get("name") or f"app{i}", "user": "(token)" if "TOKEN" in k.upper() else "admin", "password": pw})
+            if "n8n" in str(c.get("image") or "").lower():
+                # n8n refuses to sign in over plain HTTP unless told so; a sandbox serves it on HTTP (WebSockets)
+                cenv.setdefault("N8N_SECURE_COOKIE", "false"); cenv.setdefault("N8N_PROXY_HOPS", "1")
             item = {"name": c.get("name") or f"app{i}", "image": c["image"],
                     "port": c.get("port"), "env": cenv}
             # command/args were dropped here before, so anything that needs a
@@ -377,6 +380,8 @@ def containers_for(req: dict) -> list | None:
             raise ValueError(
                 "an app was requested with seed data but no image; name a container, "
                 "give app_image, or use an app_template")
+        if "n8n" in str(req["app_image"]).lower():
+            env = {**env, "N8N_SECURE_COOKIE": "false", "N8N_PROXY_HOPS": "1"}
         return [{"name": "web", "image": req["app_image"], "port": int(req["app_port"] or 80), "env": env}]
     return None
 

@@ -406,7 +406,7 @@ def ensure_sandbox_schema(cur, pw: str) -> None:
     if cur.fetchone()[0] == 0:
         cur.execute(f'create user sandbox identified by "{pw}" default tablespace data quota unlimited on data')
     else:
-        cur.execute(f'alter user sandbox identified by "{pw}" account unlock')
+        cur.execute("alter user sandbox account unlock")     # the password stays (ORA-28007 on re-setting the same one)
     for g in ("connect", "resource", "create view", "create job", "create materialized view", "create synonym"):
         try:
             cur.execute(f"grant {g} to sandbox")

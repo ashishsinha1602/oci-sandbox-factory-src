@@ -1009,6 +1009,18 @@ def destroy_stack(rm, stack, keep_stack: bool = False):
         empty_sandbox_buckets(label)
     except Exception as e:  # noqa: BLE001
         print(f"  bucket clean-up skipped ({type(e).__name__}: {e})", flush=True)
+    # A stack whose app never had an image cannot even be evaluated by Terraform ("Missing required
+    # argument" at image_url on the create AND on every destroy, anyimage-68wpe 2026-09-30): the app
+    # is switched off in the variables first, so the destroy sees a configuration it can read.
+    try:
+        v = dict(rm.get_stack(stack.id).data.variables or {})
+        conts = json.loads(v.get("app_containers") or "[]")
+        if v.get("enable_app") == "true" and (not conts or any(not (c or {}).get("image") for c in conts)):
+            v.update(enable_app="false", app_containers="[]")
+            rm.update_stack(stack.id, rmm.UpdateStackDetails(variables=v))
+            print("  the app never had an image: switched off in the stack so the destroy can run", flush=True)
+    except Exception as e:  # noqa: BLE001
+        print(f"  stack variables not checked ({type(e).__name__})", flush=True)
     for attempt in (1, 2, 3):
         try:
             run_job(rm, stack.id, "DESTROY", label)

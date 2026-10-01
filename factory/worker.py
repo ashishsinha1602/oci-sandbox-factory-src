@@ -969,6 +969,12 @@ def handle(req: dict, conn=None) -> dict:
     expand_templates(req)
     free_edition_check(req)
     args = factory_args(req)
+    if req["action"] != "DESTROY" and req.get("enable_app") == "Y" and not any(
+            req.get(k) for k in ("git_url", "app_image", "app_files", "app_containers", "app_template")):
+        # Refused here, not by Terraform: a stack created for an app without an image failed at
+        # image_url ("Missing required argument") and then could not even be destroyed (anyimage-68wpe).
+        raise ValueError("An application needs an image, a Git repository, files with a Dockerfile, or a starter template. "
+                         "Pick one on the form (or say which in the chat) and build again.")
     if req["action"] != "DESTROY" and shared_db.wanted(req):
         # v1.2: a schema in the install's shared database instead of a database per sandbox.
         # Made first, so every container starts with its ADB_* already pointing at it.

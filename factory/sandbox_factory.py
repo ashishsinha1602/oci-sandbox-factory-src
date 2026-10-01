@@ -610,6 +610,9 @@ def build_variables(args, fnd: dict, cfg: dict, app_containers: list | None, has
         "app_public": json.dumps((not db_needs_door) or not gw),
         "adb_public": json.dumps(False),                                  # never
         "app_gateway": json.dumps(gw),
+        # OCI API Gateway carries no WebSockets: Streamlit, Jupyter, n8n and the like get a public IP (HTTP),
+        # and the gateway, when the sandbox has one, is only the door to its private database
+        "app_websocket": json.dumps(bool(getattr(args, "app_websocket", False))),
         "functions_gateway": json.dumps(gw),
         "enable_app": json.dumps(app_containers is not None),
     }
@@ -919,6 +922,13 @@ def cmd_create(args, app_containers: list | None = None) -> dict:
             print("re-applying for the Kafka public add-on", flush=True)
         job = run_job(rm, stack_id, "APPLY", args.sandbox_id)
     outputs = job_outputs(rm, job.id)
+    if getattr(args, "app_websocket", False) and isinstance(outputs.get("app"), dict) and outputs["app"].get("gateway_url"):
+        # the sandbox's gateway serves the private database's web tools, not the app
+        if isinstance(outputs.get("adb"), dict) and outputs["adb"].get("tier") == "paid":
+            outputs["adb"]["gateway_url"] = outputs["app"]["gateway_url"]
+        outputs["app"]["url"] = next((u for u in outputs["app"].get("urls") or [] if u.startswith("http://")), outputs["app"].get("url"))
+        NOTES.append("This app uses WebSockets, which OCI API Gateway does not carry, so it is served on a public IP over HTTP. "
+                     "The database's SQL Developer Web, APEX and REST open through the sandbox's HTTPS gateway.")
     db_links_through_gateway(outputs)
     kafka_public_addon(outputs, args.sandbox_id)
     pws = adb_passwords_from_state(rm, stack_id)

@@ -9,6 +9,10 @@ variable "name" { type = string }
 variable "vcn_id" { type = string }
 variable "subnet_id" { type = string }
 variable "public" { type = bool }
+variable "websocket" {
+  type    = bool
+  default = false
+}
 variable "allowed_cidr" { type = string }
 variable "shape" { type = string }
 variable "ocpus" { type = number }
@@ -311,8 +315,10 @@ output "urls" {
   # in the containers' declared order (the first container is the one "Open" goes to):
   # a set of ports sorts numerically and once put an MCP endpoint (8765) before its
   # Studio (8770), so "Open" landed on a JSON-RPC endpoint that no browser can show
+  # A WebSocket app is reached on its public IP; its gateway (kept for the private database's /ords and
+  # /adb) cannot carry the app, so it is not listed as an app URL.
   value = concat(
-    var.gateway ? ["https://${oci_apigateway_gateway.app[0].hostname}"] : [],
+    (var.gateway && !var.websocket) ? ["https://${oci_apigateway_gateway.app[0].hostname}"] : [],
     [for c in var.containers : "http://${coalesce(data.oci_core_vnic.app.public_ip_address, data.oci_core_vnic.app.private_ip_address)}:${c.port}" if c.port != null],
   )
 }

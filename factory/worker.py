@@ -18,6 +18,7 @@ import contextlib
 import datetime as dt
 import io
 import json
+import re
 import os
 import pathlib
 import secrets
@@ -306,8 +307,21 @@ def free_edition_check(req: dict) -> None:
         req["adb_tier"] = "free"
 
 
+# Apps that need a WebSocket to work at all. OCI API Gateway only carries HTTP, so these are served on a
+# public IP (verified 2026-09-30: Streamlit behind the gateway showed its grey skeleton for ever).
+WEBSOCKET_APPS = re.compile(r"streamlit|jupyter|n8n|code-server|codercom|rstudio|theia|vscode|openvscode|marimo|gradio|voila|shiny", re.I)
+
+
+def needs_websocket(req: dict) -> bool:
+    if (req.get("app_template") or "") in ("streamlit",):
+        return True
+    text = " ".join(str(req.get(k) or "") for k in ("app_image", "app_containers", "app_template"))
+    return bool(WEBSOCKET_APPS.search(text))
+
+
 def factory_args(req: dict) -> argparse.Namespace:
     return argparse.Namespace(
+        app_websocket=needs_websocket(req),
         sandbox_id=req["sandbox_id"], owner=req["requester"], team="hackathon",
         ttl=int(req["ttl_days"] or 3), allowed_cidr="0.0.0.0/0",
         adb=req["enable_adb"] == "Y" or req.get("enable_rag") == "Y", adb_tier=req["adb_tier"] or "paid", adb_workload="OLTP",

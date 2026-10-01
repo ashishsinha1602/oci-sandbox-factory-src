@@ -365,8 +365,9 @@ module "app" {
   compartment_id   = local.compartment_id
   name             = local.name
   vcn_id           = var.vcn_id
-  subnet_id        = var.app_public ? var.public_subnet_id : var.private_subnet_id
-  public           = var.app_public
+  subnet_id        = (var.app_public || var.app_websocket) ? var.public_subnet_id : var.private_subnet_id
+  public           = var.app_public || var.app_websocket
+  websocket        = var.app_websocket
   allowed_cidr     = var.allowed_cidr
   containers       = local.app_containers
   shape            = var.app_shape

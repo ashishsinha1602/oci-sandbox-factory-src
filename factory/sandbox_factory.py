@@ -922,11 +922,13 @@ def cmd_create(args, app_containers: list | None = None) -> dict:
             print("re-applying for the Kafka public add-on", flush=True)
         job = run_job(rm, stack_id, "APPLY", args.sandbox_id)
     outputs = job_outputs(rm, job.id)
-    if getattr(args, "app_websocket", False) and isinstance(outputs.get("app"), dict) and outputs["app"].get("gateway_url"):
+    app_out = outputs.get("app") if isinstance(outputs.get("app"), dict) else None
+    gw_url = (app_out or {}).get("url") if "apigateway" in str((app_out or {}).get("url") or "") else None
+    if getattr(args, "app_websocket", False) and app_out:
         # the sandbox's gateway serves the private database's web tools, not the app
-        if isinstance(outputs.get("adb"), dict) and outputs["adb"].get("tier") == "paid":
-            outputs["adb"]["gateway_url"] = outputs["app"]["gateway_url"]
-        outputs["app"]["url"] = next((u for u in outputs["app"].get("urls") or [] if u.startswith("http://")), outputs["app"].get("url"))
+        if gw_url and isinstance(outputs.get("adb"), dict) and outputs["adb"].get("tier") == "paid":
+            outputs["adb"]["gateway_url"] = gw_url
+        app_out["url"] = next((u for u in app_out.get("urls") or [] if u.startswith("http://")), app_out.get("url"))
         NOTES.append("This app uses WebSockets, which OCI API Gateway does not carry, so it is served on a public IP over HTTP. "
                      "The database's SQL Developer Web, APEX and REST open through the sandbox's HTTPS gateway.")
     db_links_through_gateway(outputs)

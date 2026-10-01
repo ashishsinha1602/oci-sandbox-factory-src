@@ -111,7 +111,7 @@ function sfInit(){
           else{h+='<button type="button" class="sf-open" style="border:0;cursor:pointer" '+(o.adb&&dbPrivate(o)?'data-dbpanel':'data-open')+'="'+esc(r.sandbox_id)+'">Open '+esc(r.sandbox_id)+' &rarr;</button><br>'}
           if(o.app&&o.app.urls){var us=o.app.urls.filter(function(u){return u.indexOf('https://')===0}); if(!us.length)us=o.app.urls;
             var names=appNames(o);
-            us.forEach(function(u,i){ var nm=names[i]||''; 
+            us.forEach(function(u,i){ var nm=isMcpUrl(o,u,i)?'mcp':(names[i]||''); 
               if(nm==='mcp'){h+='<div style="margin-top:4px">MCP endpoint (connect Claude or an agent; not a web page): <code>'+esc(u)+'/mcp</code></div>'}
               else{h+='<a href="'+esc(u)+'" target="_blank">'+esc(u)+'</a>'} });
             if(names.length>1&&us.length===1){names.slice(1).forEach(function(n){if(n)h+='<a href="'+esc(us[0])+'/'+esc(n)+'" target="_blank">'+esc(us[0])+'/'+esc(n)+'</a>'})}}
@@ -250,9 +250,11 @@ function sfInit(){
     return L;
   }
   function appNames(o){ return ((o&&o.app&&o.app.containers)||[]).map(function(c){return typeof c==='string'?c:(c&&c.name)||''}); }
+  function isMcpUrl(o,u,i){ // by container name, or by the MCP server's port on cards built before the names were in URL order
+    var names=appNames(o); return names[i]==='mcp' || (names.length===1 && names[0]==='mcp') || /:8765(\/|$)/.test(u||''); }
   function webUrls(o){ // an MCP endpoint is for agents, not a browser: never offered as the page to open
-    var us=(o&&o.app&&o.app.urls)||[], names=appNames(o);
-    return us.filter(function(u,i){ return !(names[i]==='mcp' || (us.length===1 && names.length===1 && names[0]==='mcp')); });
+    var us=(o&&o.app&&o.app.urls)||[];
+    return us.filter(function(u,i){ return !isMcpUrl(o,u,i); });
   }
   function kafkaConsole(o){ var k=o&&o.kafka; if(!k||!k.console_url)return null; var rg=window.__sfRegion||(k.console_url.match(/region=([a-z0-9-]+)/)||[])[1]||'us-phoenix-1';
     if(k.console_url.indexOf('/kafka/clusters')>=0)return k.cluster_id?'https://cloud.oracle.com/osak/kafka-clusters/'+k.cluster_id+'?region='+rg:'https://cloud.oracle.com/osak/kafka-clusters?region='+rg;
@@ -477,7 +479,7 @@ function sfInit(){
       t += row('App URL', app, {link:true});
       t += row('Test it', 'curl -s ' + app + ' | head', {});
     }
-    (o.app&&o.app.urls||[]).forEach(function(u,i){ if(appNames(o)[i]==='mcp') t += row('MCP endpoint', u+'/mcp', {hint:'Connect Claude or an agent to it; it is not a web page.'}); });
+    (o.app&&o.app.urls||[]).forEach(function(u,i){ if(isMcpUrl(o,u,i)) t += row('MCP endpoint', u+'/mcp', {hint:'Connect Claude or an agent to it; it is not a web page.'}); });
     (o.logins||[]).forEach(function(l){ t += row(l.service+' login', l.user==='(token)'?l.password:(l.user+' / '+l.password),
       {hint: l.user==='(token)'?'Paste this token on the sign-in page.':'Sign in to '+l.service+' with this user and password.'}); });
     if(o.adb){

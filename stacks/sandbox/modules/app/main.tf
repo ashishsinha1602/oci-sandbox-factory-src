@@ -281,6 +281,21 @@ resource "oci_apigateway_deployment" "app" {
         }
       }
     }
+    # APEX's stylesheets, scripts and images: /i/ on the database host (without it APEX renders as raw HTML)
+    dynamic "routes" {
+      for_each = var.adb_private_fqdn == "" ? [] : [var.adb_private_fqdn]
+      content {
+        path    = "/i/{p*}"
+        methods = ["GET", "HEAD"]
+        backend {
+          type                       = "HTTP_BACKEND"
+          url                        = "https://${routes.value}/i/$${request.path[p]}"
+          connect_timeout_in_seconds = 10
+          read_timeout_in_seconds    = 300
+          send_timeout_in_seconds    = 300
+        }
+      }
+    }
     routes {
       path    = "/{p*}"
       methods = ["ANY"]

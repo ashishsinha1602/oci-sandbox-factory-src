@@ -138,7 +138,7 @@ function sfInit(){
           (o.databases||[]).filter(function(d){return d.name!=='primary'}).forEach(function(d){
             h+='<div style="margin-top:6px">'+(d.sql_web_url?'<a href="'+esc(d.sql_web_url)+'" target="_blank">'+esc(d.name)+' SQL Developer Web</a>':esc(d.name))
               +' &middot; user <code>ADMIN</code>'+(d.admin_password?' &middot; password <code>'+esc(d.admin_password)+'</code>':'')+'</div>'});
-          if(o.kafka&&o.kafka.console_url)h+='<a class="sf-reslink" href="'+esc(o.kafka.console_url)+'" target="_blank" rel="noopener">Kafka stream &#8599;</a>';
+          if(o.kafka&&o.kafka.console_url)h+='<a class="sf-reslink" href="'+esc(kafkaConsole(o))+'" target="_blank" rel="noopener">Kafka cluster &#8599;</a>';
           if(o.warnings&&o.warnings.length)h+='<div class="sf-err" style="margin-top:6px">'
               +o.warnings.map(esc).join('<br>')
               +' <button type="button" class="sf-btn sec" style="padding:3px 10px;font-size:12px;margin-left:6px" data-retry="'+esc(r.sandbox_id)+'">Retry setup</button></div>';
@@ -214,7 +214,7 @@ function sfInit(){
     var q='?region='+rg+'&compartmentId='+c;
     return {data_flow:'https://cloud.oracle.com/data-flow/apps'+q, data_catalog:'https://console.'+rg+'.oraclecloud.com/datacatalogexplorer',
       object_storage:'https://cloud.oracle.com/object-storage/buckets'+q, functions:'https://cloud.oracle.com/functions/applications'+q,
-      queues:'https://cloud.oracle.com/queue/queues'+q, nosql:'https://cloud.oracle.com/nosql/tables'+q};
+      queues:'https://cloud.oracle.com/queues/queues'+q, nosql:'https://cloud.oracle.com/nosql/tables'+q};
   }
   // What a sandbox has, each with the place to open it. Used by the dashboard
   // card, the chat widget and the landing page so they never disagree.
@@ -226,7 +226,7 @@ function sfInit(){
     (o.buckets||[]).forEach(function(b){u['bucket:'+b.name]=b.namespace?'https://cloud.oracle.com/object-storage/buckets/'+b.namespace+'/'+b.name+'/objects?region='+rg:k.object_storage});
     (o.dataflow_jobs||[]).forEach(function(d){u['spark:'+d.name]=d.id?'https://cloud.oracle.com/data-flow/apps/details/'+d.id+'?region='+rg:k.data_flow});
     if(o.catalog)u['catalog']=o.catalog.console_url||'https://console.'+rg+'.oraclecloud.com/datacatalogexplorer';  // Data Catalog lives on console.<region>.oraclecloud.com; older rows still carry the 404 cloud.oracle.com link, so it is not used as a fallback
-    (o.queues||[]).forEach(function(q){u['queue:'+q.name]=q.id?'https://cloud.oracle.com/queue/queues/'+q.id+'?region='+rg:k.queues});
+    (o.queues||[]).forEach(function(q){u['queue:'+q.name]=q.id?'https://cloud.oracle.com/queues/queues/'+q.id+'?region='+rg:k.queues});
     if(o.nosql&&o.nosql.tables)o.nosql.tables.forEach(function(n){u['nosql:'+n]=(o.nosql.table_urls||{})[n]||k.nosql});
     return u;
   }
@@ -254,6 +254,9 @@ function sfInit(){
     var us=(o&&o.app&&o.app.urls)||[], names=appNames(o);
     return us.filter(function(u,i){ return !(names[i]==='mcp' || (us.length===1 && names.length===1 && names[0]==='mcp')); });
   }
+  function kafkaConsole(o){ var k=o&&o.kafka; if(!k||!k.console_url)return null; var rg=window.__sfRegion||(k.console_url.match(/region=([a-z0-9-]+)/)||[])[1]||'us-phoenix-1';
+    if(k.console_url.indexOf('/kafka/clusters')>=0)return k.cluster_id?'https://cloud.oracle.com/osak/kafka-clusters/'+k.cluster_id+'?region='+rg:'https://cloud.oracle.com/osak/kafka-clusters?region='+rg;
+    return k.console_url.replace('cloud.oracle.com/queue/queues','cloud.oracle.com/queues/queues'); }
   function primaryUrl(o){
     if(!o)return null;
     if(o.url)return o.url;
@@ -496,13 +499,13 @@ function sfInit(){
     });
     if(o.kafka){
       if(o.kafka.public_bootstrap){
-        t += row('Kafka bootstrap (public)', o.kafka.public_bootstrap, {open:o.kafka.console_url, hint:'Reachable from your laptop. SASL_SSL, SCRAM-SHA-512. Topics: '+esc((o.kafka.topics||[]).join(', '))});
+        t += row('Kafka bootstrap (public)', o.kafka.public_bootstrap, {open:kafkaConsole(o), hint:'Reachable from your laptop. SASL_SSL, SCRAM-SHA-512. Topics: '+esc((o.kafka.topics||[]).join(', '))});
         if(o.kafka.username) t += row('  username', o.kafka.username, {});
         if(o.kafka.password) t += row('  password', o.kafka.password, {});
         if(o.kafka.client_properties) t += row('  client.properties', o.kafka.client_properties, {hint:'Paste into a file and run: kafka-console-producer --bootstrap-server '+esc(o.kafka.public_bootstrap)+' --producer.config client.properties --topic '+esc((o.kafka.topics||['events'])[0])});
         if(o.kafka.bootstrap_servers) t += row('  private bootstrap', o.kafka.bootstrap_servers, {hint:'For containers inside the sandbox (KAFKA_BOOTSTRAP_SERVERS).'});
       } else {
-        t += row('Kafka bootstrap', o.kafka.bootstrap_servers || '', {open:o.kafka.console_url, hint:'topics: '+esc((o.kafka.topics||[]).join(', '))+(o.kafka.auth_note?'<br>'+esc(o.kafka.auth_note):'')});
+        t += row('Kafka bootstrap', o.kafka.bootstrap_servers || '', {open:kafkaConsole(o), hint:'topics: '+esc((o.kafka.topics||[]).join(', '))+(o.kafka.auth_note?'<br>'+esc(o.kafka.auth_note):'')});
       }
     }
     var ru=resourceUrls(o);

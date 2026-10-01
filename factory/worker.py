@@ -400,6 +400,25 @@ def embed_params() -> str:
     })
 
 
+def ensure_sandbox_schema(cur, pw: str) -> None:
+    """The SANDBOX schema of a database of its own (APEX workspace's schema), same password as ADMIN."""
+    cur.execute("select count(*) from dba_users where username = 'SANDBOX'")
+    if cur.fetchone()[0] == 0:
+        cur.execute(f'create user sandbox identified by "{pw}" default tablespace data quota unlimited on data')
+    else:
+        cur.execute(f'alter user sandbox identified by "{pw}" account unlock')
+    for g in ("connect", "resource", "create view", "create job", "create materialized view", "create synonym"):
+        try:
+            cur.execute(f"grant {g} to sandbox")
+        except Exception:  # noqa: BLE001
+            pass
+    for pkg in ("dbms_cloud", "dbms_cloud_ai", "dbms_vector"):
+        try:
+            cur.execute(f"grant execute on {pkg} to sandbox")
+        except Exception:  # noqa: BLE001
+            pass
+
+
 def seed_database(outputs: dict, seed_sql: str) -> None:
     """Run SEED_SQL against the ADB this sandbox just created in OCI.
 
@@ -434,6 +453,24 @@ def seed_database(outputs: dict, seed_sql: str) -> None:
                 print(f"seed statement failed ({type(e).__name__}): {st[:120]}", flush=True)
         db.commit()
     print(f"seeded {done}/{len(stmts)} statements into {adb.get('db_name')}", flush=True)
+    # the same sample data into the SANDBOX schema (the APEX workspace's schema)
+    try:
+        with oracledb.connect(user="ADMIN", password=pw, dsn=adb_dsn(connect), ssl_server_dn_match=True) as db:
+            ensure_sandbox_schema(db.cursor(), pw)
+            db.commit()
+        with oracledb.connect(user="SANDBOX", password=pw, dsn=adb_dsn(connect), ssl_server_dn_match=True) as db:
+            cur = db.cursor()
+            done2 = 0
+            for st in stmts:
+                try:
+                    cur.execute(st)
+                    done2 += 1
+                except Exception:  # noqa: BLE001
+                    pass
+            db.commit()
+        print(f"seeded {done2}/{len(stmts)} statements into schema SANDBOX (the APEX workspace)", flush=True)
+    except Exception as e:  # noqa: BLE001
+        print(f"SANDBOX schema not seeded ({type(e).__name__})", flush=True)
 
 
 # Who this worker is, for the claim it writes on a request. A replaced worker
@@ -715,12 +752,19 @@ def enable_low_code(outputs: dict) -> None:
                 except Exception:  # noqa: BLE001 - skip what will not REST
                     pass
             db.commit()
-            # An APEX workspace on ADMIN, signed in as ADMIN with the database password: without it the
-            # APEX link lands in instance administration (seen by the user on sbx14, 2026-09-30).
+            # An APEX workspace. APEX refuses one on ADMIN ("reserved schema"), so the database gets a SANDBOX
+            # schema (same password as ADMIN) with the sample tables seeded into it too, ORDS on it, and the
+            # workspace SANDBOX on that schema; the APEX user is ADMIN with the database password. Without this
+            # the APEX link landed in instance administration (the user's screenshot, 2026-09-30).
             workspace = "SANDBOX"
             try:
+                ensure_sandbox_schema(cur, pw)
+                try:
+                    cur.execute("begin ords_admin.enable_schema(p_enabled => true, p_schema => 'SANDBOX', p_url_mapping_type => 'BASE_PATH', p_url_mapping_pattern => 'sandbox', p_auto_rest_auth => true); end;")
+                except Exception:  # noqa: BLE001
+                    pass
                 cur.execute("""begin
-                                 apex_instance_admin.add_workspace(p_workspace => :w, p_primary_schema => 'ADMIN');
+                                 apex_instance_admin.add_workspace(p_workspace => :w, p_primary_schema => 'SANDBOX');
                                exception when others then
                                  if instr(lower(sqlerrm), 'already') = 0 and instr(lower(sqlerrm), 'exists') = 0 then raise; end if;
                                end;""", w=workspace)
@@ -729,7 +773,7 @@ def enable_low_code(outputs: dict) -> None:
                                      apex_util.set_security_group_id(apex_util.find_security_group_id(:w));
                                      apex_util.create_user(p_user_name => 'ADMIN', p_web_password => :p, p_email_address => 'admin@sandbox.local',
                                                            p_developer_privs => 'ADMIN:CREATE:DATA_LOADER:EDIT:HELP:MONITOR:SQL',
-                                                           p_default_schema => 'ADMIN', p_change_password_on_first_use => 'N');
+                                                           p_default_schema => 'SANDBOX', p_change_password_on_first_use => 'N');
                                      commit;
                                    end;""", w=workspace, p=pw)
                 except Exception:  # noqa: BLE001  the user exists (a retry): same password as the database
@@ -741,7 +785,8 @@ def enable_low_code(outputs: dict) -> None:
                                    end;""", w=workspace, p=pw)
                 db.commit()
                 adb["apex_workspace"] = workspace
-                print(f"APEX workspace {workspace} on ADMIN is ready (sign in as ADMIN with the database password)", flush=True)
+                adb["apex_schema"] = "SANDBOX"
+                print(f"APEX workspace {workspace} on schema SANDBOX is ready (sign in as ADMIN with the database password)", flush=True)
             except Exception as e:  # noqa: BLE001
                 print(f"APEX workspace not created ({type(e).__name__}: {str(e)[:160]})", flush=True)
         if True:   # the schema is published even with no tables yet (a pipeline adds them)

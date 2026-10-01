@@ -715,6 +715,35 @@ def enable_low_code(outputs: dict) -> None:
                 except Exception:  # noqa: BLE001 - skip what will not REST
                     pass
             db.commit()
+            # An APEX workspace on ADMIN, signed in as ADMIN with the database password: without it the
+            # APEX link lands in instance administration (seen by the user on sbx14, 2026-09-30).
+            workspace = "SANDBOX"
+            try:
+                cur.execute("""begin
+                                 apex_instance_admin.add_workspace(p_workspace => :w, p_primary_schema => 'ADMIN');
+                               exception when others then
+                                 if instr(lower(sqlerrm), 'already') = 0 and instr(lower(sqlerrm), 'exists') = 0 then raise; end if;
+                               end;""", w=workspace)
+                try:
+                    cur.execute("""begin
+                                     apex_util.set_security_group_id(apex_util.find_security_group_id(:w));
+                                     apex_util.create_user(p_user_name => 'ADMIN', p_web_password => :p, p_email_address => 'admin@sandbox.local',
+                                                           p_developer_privs => 'ADMIN:CREATE:DATA_LOADER:EDIT:HELP:MONITOR:SQL',
+                                                           p_default_schema => 'ADMIN', p_change_password_on_first_use => 'N');
+                                     commit;
+                                   end;""", w=workspace, p=pw)
+                except Exception:  # noqa: BLE001  the user exists (a retry): same password as the database
+                    cur.execute("""begin
+                                     apex_util.set_security_group_id(apex_util.find_security_group_id(:w));
+                                     apex_util.edit_user(p_user_id => apex_util.get_user_id('ADMIN'), p_user_name => 'ADMIN', p_web_password => :p,
+                                                         p_change_password_on_first_use => 'N');
+                                     commit;
+                                   end;""", w=workspace, p=pw)
+                db.commit()
+                adb["apex_workspace"] = workspace
+                print(f"APEX workspace {workspace} on ADMIN is ready (sign in as ADMIN with the database password)", flush=True)
+            except Exception as e:  # noqa: BLE001
+                print(f"APEX workspace not created ({type(e).__name__}: {str(e)[:160]})", flush=True)
         if True:   # the schema is published even with no tables yet (a pipeline adds them)
             base = (adb.get("sql_web_url") or "").split("/ords/")[0]
             # Only promise a REST endpoint that answers. ORDS takes a moment to

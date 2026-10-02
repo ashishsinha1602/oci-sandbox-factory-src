@@ -263,6 +263,78 @@ def heal(region: str) -> int:
         return 0
 
 
+def select_ai_profile(cur, user: str, region: str, model: str, compartment_id: str) -> bool:
+    """The schema user's own Select AI profile, tested with a one-word call.
+
+    No provider_endpoint: with one, DBMS_CLOUD_AI runs an ACL check that a non-ADMIN user fails
+    (ORA-24247 whatever ACEs it holds); without it the call works. Only when the plain profile
+    cannot reach the service (ORA-20404 on some databases) is it recreated with the endpoint.
+    """
+    base = {"provider": "oci", "credential_name": "OCI$RESOURCE_PRINCIPAL", "region": region, "model": model,
+            "comments": "true", "oci_compartment_id": compartment_id, "oci_apiformat": "GENERIC",
+            "object_list": [{"owner": user}]}
+    variants = [("plain", base), ("with endpoint", {**base, "provider_endpoint": f"https://inference.generativeai.{region}.oci.oraclecloud.com"})]
+    for label, attrs in variants:
+        ok = _try(cur, """begin
+                            begin dbms_cloud_ai.drop_profile(:n); exception when others then null; end;
+                            dbms_cloud_ai.create_profile(profile_name => :n, attributes => :a);
+                            dbms_cloud_ai.set_profile(:n);
+                          end;""", f"Select AI profile ({label})", n=PROFILE, a=json.dumps(attrs))
+        if not ok:
+            continue
+        try:
+            cur.execute("select substr(dbms_cloud_ai.generate(prompt => 'Reply with the single word OK', profile_name => :n, action => 'chat'), 1, 20) from dual", n=PROFILE)
+            answer = (cur.fetchone() or [""])[0] or ""
+        except Exception as e:  # noqa: BLE001
+            print(f"Select AI test ({label}) failed for {user}: {str(e)[:140]}", flush=True)
+            continue
+        _try(cur, "begin dbms_cloud_ai.generate_synonyms(profile_name => :n, object_list => :o); end;",
+             "AI catalogue", n=PROFILE, o=json.dumps([{"owner": user}]))
+        print(f"Select AI enabled for {user} (model {model}, profile {label}; test said {answer.strip()[:20]!r})", flush=True)
+        return True
+    print(f"Select AI not working for {user}: no profile variant reached the service", flush=True)
+    return False
+
+
+def heal_profiles(region: str, model: str, compartment_id: str) -> int:
+    """Schemas provisioned before the profile fix: recreate their Select AI profile as themselves (the control
+    database holds each sandbox's schema password on its card). Returns how many were checked."""
+    if EDITION == "free":
+        return 0
+    try:
+        import controldb as cdb
+        with cdb.connect("ADMIN") as con:
+            c = con.cursor()
+            c.execute("""select sandbox_id, outputs from (select r.*, row_number() over (partition by sandbox_id order by id desc) rn
+                           from sbx.sandbox_requests r) where rn = 1 and status = 'DONE' and action <> 'DESTROY'""")
+            rows = [(sid, (o.read() if hasattr(o, "read") else o)) for sid, o in c.fetchall()]
+    except Exception as e:  # noqa: BLE001
+        print(f"shared database: profile heal skipped ({type(e).__name__})", flush=True)
+        return 0
+    n = 0
+    for sid, raw in rows:
+        try:
+            adb = (json.loads(raw) if raw else {}).get("adb") or {}
+            if not adb.get("shared") or not adb.get("admin_password"):
+                continue
+            with _as(adb) as db:
+                cur = db.cursor()
+                try:
+                    cur.execute("select substr(dbms_cloud_ai.generate(prompt => 'Reply with the single word OK', profile_name => :n, action => 'chat'), 1, 20) from dual", n=PROFILE)
+                    cur.fetchone()
+                    n += 1
+                    continue                           # this schema's Select AI answers: nothing to do
+                except Exception:  # noqa: BLE001
+                    pass
+                if select_ai_profile(cur, adb["admin_user"], region, model, compartment_id):
+                    print(f"shared database: Select AI profile repaired for {sid}", flush=True)
+                db.commit()
+                n += 1
+        except Exception as e:  # noqa: BLE001
+            print(f"shared database: profile check skipped for {sid} ({type(e).__name__}: {str(e)[:100]})", flush=True)
+    return n
+
+
 # ---------------------------------------------------------------- one schema per sandbox
 
 def provision(sandbox_id: str, region: str, owner: str = "", expires: str = "") -> dict:
@@ -378,18 +450,7 @@ def finish(outputs: dict, seed_sql: str, region: str, model: str, compartment_id
                 print(f"seeded {done}/{len(stmts)} statements into schema {user}", flush=True)
         # Select AI over this schema only (never another sandbox's)
         if EDITION != "free":
-            attrs = {"provider": "oci", "credential_name": "OCI$RESOURCE_PRINCIPAL", "region": region, "model": model,
-                     "comments": "true", "provider_endpoint": f"https://inference.generativeai.{region}.oci.oraclecloud.com",
-                     "oci_compartment_id": compartment_id, "oci_apiformat": "GENERIC", "object_list": [{"owner": user}]}
-            ok = _try(cur, """begin
-                                begin dbms_cloud_ai.drop_profile(:n); exception when others then null; end;
-                                dbms_cloud_ai.create_profile(profile_name => :n, attributes => :a);
-                                dbms_cloud_ai.set_profile(:n);
-                              end;""", "Select AI profile", n=PROFILE, a=json.dumps(attrs))
-            if ok:
-                _try(cur, "begin dbms_cloud_ai.generate_synonyms(profile_name => :n, object_list => :o); end;",
-                     "AI catalogue", n=PROFILE, o=json.dumps([{"owner": user}]))
-                print(f"Select AI enabled for {user} (model {model})", flush=True)
+            select_ai_profile(cur, user, region, model, compartment_id)
         # REST for every table, now and later
         cur.execute("""select table_name from user_tables
                         where table_name not like 'DEF$%' and table_name not like 'SYS%' and table_name not like 'AQ$%'

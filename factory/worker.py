@@ -1296,6 +1296,7 @@ def main():
         db_panel.start()
         try:
             shared_db.heal(sf.config()["region"])   # schemas made before a grant was added get it now
+            shared_db.heal_profiles(sf.config()["region"], select_ai_model(), sf.foundation()["compartments"]["sandboxes"])
         except Exception as e:  # noqa: BLE001
             print(f"shared database heal skipped ({type(e).__name__})", flush=True)
     except Exception as e:  # noqa: BLE001

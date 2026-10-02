@@ -154,6 +154,18 @@ df = spark.createDataFrame([(i, i * i) for i in range(50)], ["n", "sq"])
 df.writeTo("lake.e2e.squares").createOrReplace()
 print("e2e iceberg rows", spark.table("lake.e2e.squares").count())
 """
+# a Spark job that writes to the sandbox database and reads it back: the private endpoint,
+# the JDBC driver on the classpath and the sandbox's own database user, all at once
+SPARK_DB = """from pyspark.sql import SparkSession
+spark = SparkSession.builder.appName("e2e-sparkdb").getOrCreate()
+c = spark.conf.get
+opts = {"url": c("spark.sandbox.ADB_JDBC_URL"), "user": c("spark.sandbox.ADB_USER"),
+        "password": c("spark.sandbox.ADB_ADMIN_PASSWORD"), "driver": "oracle.jdbc.OracleDriver"}
+df = spark.createDataFrame([(i, i * i) for i in range(25)], ["n", "sq"])
+df.write.format("jdbc").options(**opts, dbtable="E2E_SQUARES").mode("overwrite").save()
+back = spark.read.format("jdbc").options(**opts, dbtable="E2E_SQUARES").load()
+print("e2e sparkdb rows", back.count())
+"""
 
 
 def cases(fn_image: str | None):
@@ -185,6 +197,9 @@ def cases(fn_image: str | None):
         "docs": base("docs", enable_adb=True, adb_tier="paid", enable_rag=True),
         # "just a Data Flow job": no bucket asked for, one is added for its script and logs
         "flow": base("flow", dataflow_jobs=[{"name": "squares", "script": SPARK, "language": "PYTHON"}]),
+        # a Spark job on the sandbox database (a schema in the shared database on the standard edition)
+        "sparkdb": base("sparkdb", enable_adb=True, adb_tier="paid",
+                        dataflow_jobs=[{"name": "todb", "script": SPARK_DB, "language": "PYTHON"}]),
         # a pipeline folder sent as an app deploy must fail at once, in plain words
         "guard": base("guard", action="DEPLOY", enable_app=True, app_port=8080,
                       git_url=REPO_TREE + "/examples/telemetry-pipeline"),
@@ -257,6 +272,37 @@ def verify_iceberg(o, fnd):
         body = osc.get_object(ns, b, csv[-1]).data.content.decode() if csv else ""
         record("iceberg: the query application reads the table back (50 rows)", r.lifecycle_state == "SUCCEEDED" and "50" in body,
                f"run {r.lifecycle_state} {r.lifecycle_details or ''}; result {body.strip()[:60]!r}")
+
+
+def verify_sparkdb(o, fnd):
+    """One run of the job: it must reach the database through the private endpoint, write as the
+    sandbox's own user and read the rows back."""
+    import gzip
+    df = sf.client(oci.data_flow.DataFlowClient)
+    job = (o.get("dataflow_jobs") or [{}])[0]
+    run = df.create_run(oci.data_flow.models.CreateRunDetails(compartment_id=fnd["compartments"]["sandboxes"], application_id=job["id"],
+                                                              display_name="e2e sparkdb")).data
+    for _ in range(60):
+        r = df.get_run(run.id).data
+        if r.lifecycle_state in ("SUCCEEDED", "FAILED", "CANCELED", "STOPPED"):
+            break
+        time.sleep(30)
+    out = ""
+    try:
+        for lg in df.list_run_logs(run.id).data:
+            if lg.name == "spark_application_stdout.log.gz":
+                raw = df.get_run_log(run.id, lg.name).data.content
+                try:
+                    out = gzip.decompress(raw).decode("utf-8", "replace")
+                except Exception:  # noqa: BLE001
+                    out = raw.decode("utf-8", "replace") if isinstance(raw, bytes) else str(raw)
+    except Exception as e:  # noqa: BLE001
+        out = f"(log not readable: {e})"
+    record("sparkdb: Data Flow writes the sandbox database as its own user and reads it back",
+           r.lifecycle_state == "SUCCEEDED" and "e2e sparkdb rows 25" in out,
+           f"run {r.lifecycle_state} {r.lifecycle_details or ''}; stdout tail: {out[-300:]}")
+    record("sparkdb: the job runs through a private endpoint (the database is never public)",
+           bool(df.get_application(job["id"]).data.private_endpoint_id), job.get("name"))
 
 
 def verify_docs(o, fnd):
@@ -613,7 +659,7 @@ def run_wave(f, fnd, todo, keep):
                  "db": verify_db, "rag": verify_rag, "airflow": verify_airflow, "kafka": verify_kafka,
                  "fn": verify_fn, "flow": lambda o: verify_lake(o, fnd, label="flow"),
                  "sched": lambda o: verify_sched(o, fnd), "iceberg": lambda o: verify_iceberg(o, fnd),
-                 "docs": lambda o: verify_docs(o, fnd)}
+                 "docs": lambda o: verify_docs(o, fnd), "sparkdb": lambda o: verify_sparkdb(o, fnd)}
     for name, o in outs.items():
         try:
             verifiers[name](o)

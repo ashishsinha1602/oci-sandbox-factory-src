@@ -530,7 +530,7 @@ function sfInit(){
       else { t += row('Function', f.name, {hint:"oci fn function invoke --function-id "+esc(f.id||'')+" --body '{}' --file -"}); }
     });
     (o.dataflow_jobs||[]).forEach(function(d){
-      t += row('Spark job', d.name, {open:ru['spark:'+d.name], hint:'Open it and press Run; each run shows its logs there. Script: '+esc(d.file_uri||'')});
+      t += row('Spark job', d.name, {open:ru['spark:'+d.name], hint:'Open it and press Run; each run shows its logs there. The job reads every setting as spark.sandbox.<NAME> (the database: ADB_JDBC_URL, ADB_USER, ADB_ADMIN_PASSWORD). Script: '+esc(d.file_uri||'')});
     });
     if(o.catalog) t += row('Data Catalog', o.catalog.display_name || '', {open:ru['catalog'], hint:'Open it to harvest the bucket and browse the tables it finds.'});
     if(o.aidp) t += row('AI Data Platform', o.aidp.display_name || '', {open:o.aidp.console_url, hint:'Open it: workspace <b>'+esc(o.aidp.workspace||'')+'</b>. Create a compute cluster inside (smallest size), attach the sandbox bucket, run the same Spark code.'+(o.aidp.web_socket_endpoint?'<br>endpoint '+esc(o.aidp.web_socket_endpoint):'')});

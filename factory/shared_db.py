@@ -108,7 +108,8 @@ def _try(cur, sql: str, what: str, **binds) -> bool:
         cur.execute(sql, **binds) if binds else cur.execute(sql)
         return True
     except Exception as e:  # noqa: BLE001
-        print(f"shared database: {what} not done ({type(e).__name__}: {str(e)[:140]})", flush=True)
+        # the whole message: an ORA-06550 says what is wrong on its second line
+        print(f"shared database: {what} not done ({type(e).__name__}: {' '.join(str(e).split())[:300]})", flush=True)
         return False
 
 
@@ -285,6 +286,9 @@ def select_ai_profile(cur, user: str, region: str, model: str, compartment_id: s
         try:
             cur.execute("select substr(dbms_cloud_ai.generate(prompt => 'Reply with the single word OK', profile_name => :n, action => 'chat'), 1, 20) from dual", n=PROFILE)
             answer = (cur.fetchone() or [""])[0] or ""
+            # generate() returns a CLOB, and substr of a CLOB is a CLOB: python-oracledb hands
+            # back a LOB object, and .strip() on it killed finish() before REST was enabled
+            answer = answer.read() if hasattr(answer, "read") else str(answer)
         except Exception as e:  # noqa: BLE001
             print(f"Select AI test ({label}) failed for {user}: {str(e)[:140]}", flush=True)
             continue

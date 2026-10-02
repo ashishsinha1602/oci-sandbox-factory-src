@@ -221,6 +221,43 @@ def reap(now_iso: str) -> list[str]:
     return gone
 
 
+# The two hosts a schema user needs for Select AI with the resource principal: the model endpoint, and the
+# identity endpoint the principal fetches its token from (ADMIN gets the latter from enable_resource_principal;
+# a named user does not - ORA-24247 on every Select AI call from a shared schema, sbx14 2026-10-01).
+def network_hosts(region: str) -> list[str]:
+    return [f"inference.generativeai.{region}.oci.oraclecloud.com", f"auth.{region}.oraclecloud.com"]
+
+
+def grant_network(cur, user: str, region: str) -> None:
+    for host in network_hosts(region):
+        _try(cur, """begin dbms_network_acl_admin.append_host_ace(host => :h,
+                       ace => xs$ace_type(privilege_list => xs$name_list('http', 'connect', 'resolve'),
+                                          principal_name => :p, principal_type => xs_acl.ptype_db)); end;""",
+             f"network ACE for {host}", h=host, p=user)
+
+
+def heal(region: str) -> int:
+    """Every schema in the register gets the network grants it needs (schemas made before a fix). Returns the count."""
+    shared = info()
+    if shared is None:
+        return 0
+    try:
+        with _admin(shared) as db:
+            cur = db.cursor()
+            _registry(cur)
+            cur.execute("select schema_name from admin.sbx_schemas")
+            users = [r[0] for r in cur.fetchall()]
+            for u in users:
+                grant_network(cur, u, region)
+            db.commit()
+        if users:
+            print(f"shared database: network grants checked for {len(users)} schema(s)", flush=True)
+        return len(users)
+    except Exception as e:  # noqa: BLE001
+        print(f"shared database: heal skipped ({type(e).__name__}: {str(e)[:120]})", flush=True)
+        return 0
+
+
 # ---------------------------------------------------------------- one schema per sandbox
 
 def provision(sandbox_id: str, region: str, owner: str = "", expires: str = "") -> dict:
@@ -260,10 +297,7 @@ def provision(sandbox_id: str, region: str, owner: str = "", expires: str = "") 
         except Exception as e:  # noqa: BLE001
             if "already" not in str(e).lower():
                 print(f"shared database: resource principal for {user} not enabled ({type(e).__name__})", flush=True)
-        _try(cur, """begin dbms_network_acl_admin.append_host_ace(host => :h,
-                       ace => xs$ace_type(privilege_list => xs$name_list('http', 'connect', 'resolve'),
-                                          principal_name => :p, principal_type => xs_acl.ptype_db)); end;""",
-             "network ACE", h=f"inference.generativeai.{region}.oci.oraclecloud.com", p=user)
+        grant_network(cur, user, region)
         # the schema's own SQL Developer Web and REST, at /ords/<alias>/
         _try(cur, """begin ords_admin.enable_schema(p_enabled => true, p_schema => :s, p_url_mapping_type => 'BASE_PATH',
                        p_url_mapping_pattern => :a, p_auto_rest_auth => true); end;""", "ORDS schema", s=user, a=al)

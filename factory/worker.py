@@ -1294,6 +1294,10 @@ def main():
     try:
         import db_panel
         db_panel.start()
+        try:
+            shared_db.heal(sf.config()["region"])   # schemas made before a grant was added get it now
+        except Exception as e:  # noqa: BLE001
+            print(f"shared database heal skipped ({type(e).__name__})", flush=True)
     except Exception as e:  # noqa: BLE001
         print(f"db panel not started ({type(e).__name__}: {e})", flush=True)
     recover_own_claims(conn)

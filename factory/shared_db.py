@@ -249,6 +249,11 @@ def heal(region: str) -> int:
             users = [r[0] for r in cur.fetchall()]
             for u in users:
                 grant_network(cur, u, region)
+                for pkg in ("dbms_cloud_ai_agent", "dbms_cloud_ai"):
+                    try:
+                        cur.execute(f"grant execute on {pkg} to {u}")
+                    except Exception:  # noqa: BLE001  not on every version
+                        pass
             db.commit()
         if users:
             print(f"shared database: network grants checked for {len(users)} schema(s)", flush=True)
@@ -285,7 +290,7 @@ def provision(sandbox_id: str, region: str, owner: str = "", expires: str = "") 
             print(f"schema {user} created in {shared['where']}", flush=True)
         for g in ("connect", "resource", "create view", "create job", "create materialized view", "create synonym"):
             _try(cur, f"grant {g} to {user}", f"grant {g}")
-        for pkg in ("dbms_cloud", "dbms_cloud_ai", "dbms_cloud_repo", "dbms_vector", "dbms_vector_chain", "ctxsys.ctx_ddl"):
+        for pkg in ("dbms_cloud", "dbms_cloud_ai", "dbms_cloud_ai_agent", "dbms_cloud_repo", "dbms_vector", "dbms_vector_chain", "ctxsys.ctx_ddl"):
             try:
                 cur.execute(f"grant execute on {pkg} to {user}")
             except Exception:  # noqa: BLE001  not every package exists on every version

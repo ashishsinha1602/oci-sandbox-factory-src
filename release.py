@@ -80,7 +80,7 @@ def build(name: str, root: pathlib.Path) -> pathlib.Path:
 def build_free_variant(foundation_zip: pathlib.Path) -> pathlib.Path:
     """The Free Tier button: the foundation zip with schema.yaml edited so the
     edition is preset to free and hidden, and the Gemini key field always shown.
-    Same Terraform byte for byte; only the form differs."""
+    Same Terraform except the edition default, which Resource Manager needs (see below)."""
     import io
     import yaml
     out = DIST / "sandbox-factory-foundation-free.zip"
@@ -100,6 +100,16 @@ def build_free_variant(foundation_zip: pathlib.Path) -> pathlib.Path:
                 doc["variables"]["edition"]["default"] = "free"
                 doc["variables"]["gemini_api_key"].pop("visible", None)
                 data = yaml.safe_dump(doc, sort_keys=False, allow_unicode=True, width=100).encode("utf-8")
+            elif info.filename == "variables.tf":
+                # Resource Manager does not pass a hidden field's default to Terraform, so the schema
+                # default alone left edition at Terraform's "standard": the Free Tier button installed
+                # the paid edition. The variant's Terraform carries the free default itself.
+                import re
+                text, n = re.subn(r'(variable "edition" \{\r?\n\s*type\s*=\s*string\r?\n\s*default\s*=\s*)"standard"',
+                                  r'\1"free"', data.decode("utf-8"))
+                if n != 1:
+                    raise SystemExit("free variant: cannot find the edition default in variables.tf")
+                data = text.encode("utf-8")
             dst.writestr(info, data)
     print(f"{out.relative_to(HERE)}  free-tier variant of the foundation")
     return out

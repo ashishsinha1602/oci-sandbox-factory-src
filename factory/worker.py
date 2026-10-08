@@ -1168,6 +1168,77 @@ def requeue(conn, request_id: int) -> None:
     conn.commit()
 
 
+def run_reapers() -> dict:
+    """Every reaper, each on its own: a stack that will not delete used to raise out of the shared try and skip
+    the schema and Free Tier app reapers for that pass. Returns {sandbox_id: None (deleted) or reason (failed)}."""
+    now = time.strftime("%Y-%m-%dT%H:%MZ", time.gmtime())
+    results: dict = {}
+    try:
+        for r in sf.cmd_reap(argparse.Namespace(dry_run=False)) or []:
+            results[r["sandbox_id"]] = r["error"]
+    except Exception as e:  # noqa: BLE001
+        print(f"reaper (stacks) error: {e}", file=sys.stderr)
+    failed: dict = {}
+    try:
+        for sid in shared_db.reap(now, failed):
+            results[sid] = None
+    except Exception as e:  # noqa: BLE001
+        print(f"reaper (shared schemas) error: {e}", file=sys.stderr)
+    if FREE_APPS:
+        try:
+            import host_apps
+            for sid in host_apps.reap(now, failed):
+                results.setdefault(sid, None)
+        except Exception as e:  # noqa: BLE001
+            print(f"reaper (Free Tier apps) error: {e}", file=sys.stderr)
+    for sid, why in failed.items():
+        results[sid] = why
+    return results
+
+
+REAP_RETRY_NOTE = ("It is tried again every 30 minutes and this card updates each time. To stop paying in the "
+                   "meantime, press Destroy, or delete the sandbox's stack in Resource Manager.")
+
+
+def record_reap(conn, results: dict) -> None:
+    """Put each expired sandbox's outcome on its card, so an end date is never mistaken for proof that the
+    resources are gone: a DESTROY/DONE row when the delete worked, one DESTROY/FAILED row (updated on every
+    retry, not a new row each pass) while it does not."""
+    if not results:
+        return
+    cur = conn.cursor()
+    stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    for sid, why in results.items():
+        cur.execute("""select id, requester, action, status from sbx.sandbox_requests
+                        where sandbox_id = :s order by id desc fetch first 1 rows only""", s=sid)
+        row = cur.fetchone()
+        if not row:
+            continue                       # made outside the app (CLI): no card to update
+        rid, requester, action, status = row
+        if why is None:
+            if action == "DESTROY" and status == "DONE":
+                continue
+            cur.execute("""insert into sbx.sandbox_requests (requester, sandbox_id, action, ttl_days, status, started_at,
+                                  finished_at, outputs, request_text, log)
+                           values (:1, :2, 'DESTROY', 1, 'DONE', systimestamp, systimestamp, :3, 'deleted on expiry', :4)""",
+                        [requester, sid, json.dumps({"destroyed": sid}), f"{stamp}  expired; deleted automatically"])
+            print(f"reaper: {sid} deleted on expiry; recorded on its card")
+        else:
+            why = why[:1500]
+            if action == "DESTROY" and status == "FAILED":
+                cur.execute("""update sbx.sandbox_requests
+                                  set finished_at = systimestamp, error = :e,
+                                      log = log || chr(10) || :l
+                                where id = :i""", e=why, l=f"{stamp}  tried again, still failing: {why}", i=rid)
+            else:
+                cur.execute("""insert into sbx.sandbox_requests (requester, sandbox_id, action, ttl_days, status, started_at,
+                                      finished_at, request_text, error, log)
+                               values (:1, :2, 'DESTROY', 1, 'FAILED', systimestamp, systimestamp, 'expired: automatic delete', :3, :4)""",
+                            [requester, sid, why, f"{stamp}  expired, but the automatic delete failed: {why}\n{REAP_RETRY_NOTE}"])
+            print(f"reaper: {sid} did not delete; the card says so")
+    conn.commit()
+
+
 def reconcile(conn):
     """Sandboxes destroyed outside the app (CLI, reaper) get a DESTROY/DONE row so the UI stops showing them."""
     fnd = sf.foundation()
@@ -1190,7 +1261,8 @@ def reconcile(conn):
           select sandbox_id, requester, action, status,
                  row_number() over (partition by sandbox_id order by id desc) rn
           from sbx.sandbox_requests)
-        where rn = 1 and status = 'DONE' and action in ('CREATE', 'DEPLOY')""")
+        where rn = 1 and ((status = 'DONE' and action in ('CREATE', 'DEPLOY'))
+                          or (status = 'FAILED' and action = 'DESTROY'))""")
     for sandbox_id, requester in cur.fetchall():
         if sandbox_id not in live:
             cur.execute("""insert into sbx.sandbox_requests (requester, sandbox_id, action, ttl_days, status, started_at, finished_at, outputs, request_text)
@@ -1309,11 +1381,7 @@ def main():
             last_reap = time.time()
             try:
                 print(f"[{dt.datetime.now():%H:%M:%S}] reaper: checking for expired sandboxes")
-                sf.cmd_reap(argparse.Namespace(dry_run=False))
-                shared_db.reap(time.strftime("%Y-%m-%dT%H:%MZ", time.gmtime()))
-                if FREE_APPS:
-                    import host_apps
-                    host_apps.reap(time.strftime("%Y-%m-%dT%H:%MZ", time.gmtime()))
+                record_reap(conn, run_reapers())
                 reconcile(conn)
                 if time.time() - last_prices > 86400:          # Oracle's price list, daily
                     last_prices = time.time()

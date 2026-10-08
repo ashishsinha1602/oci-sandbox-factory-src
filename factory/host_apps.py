@@ -254,12 +254,19 @@ def alive_ids() -> set[str]:
         return set()
 
 
-def reap(now_iso: str) -> list[str]:
+def reap(now_iso: str, failed: dict | None = None) -> list[str]:
+    """Remove the pods of expired sandboxes. Returns the sandbox ids removed; ``failed`` (when given) gets
+    {sandbox_id: reason} for the pods that could not be removed."""
     gone = []
     for p in pods():
         lab = p.get("Labels") or {}
         if lab.get("expires") and lab["expires"] < now_iso and lab.get("sandbox_id"):
             print(f"{lab['sandbox_id']} expired {lab['expires']} (Free Tier VM)", flush=True)
-            remove(lab["sandbox_id"])
-            gone.append(lab["sandbox_id"])
+            try:
+                remove(lab["sandbox_id"])
+                gone.append(lab["sandbox_id"])
+            except Exception as e:  # noqa: BLE001
+                print(f"  {lab['sandbox_id']}: could not remove the pod ({e})", flush=True)
+                if failed is not None:
+                    failed[lab["sandbox_id"]] = str(e)
     return gone

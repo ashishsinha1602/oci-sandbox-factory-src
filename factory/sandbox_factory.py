@@ -1164,11 +1164,27 @@ def cmd_reap(args):
             victims.append(s)
     if not victims:
         print("Nothing expired.")
-        return
+        return []
+    results = []
     for s in victims:
-        print(f"{s.freeform_tags['sandbox_id']} expired {s.freeform_tags['expires']}")
-        if not args.dry_run:
+        sid, exp = s.freeform_tags["sandbox_id"], s.freeform_tags["expires"]
+        print(f"{sid} expired {exp}")
+        if args.dry_run:
+            continue
+        # One stack that will not delete must not hold up the others: each is tried, and what happened to it
+        # is returned so the worker can put it on that sandbox's card.
+        try:
             destroy_stack(rm, s)
+            results.append({"sandbox_id": sid, "expires": exp, "error": None})
+        except BaseException as e:  # noqa: BLE001 - run_job ends a failed job with SystemExit
+            if isinstance(e, KeyboardInterrupt):
+                raise
+            results.append({"sandbox_id": sid, "expires": exp, "error": str(e) or type(e).__name__})
+            print(f"  {sid}: delete failed ({str(e) or type(e).__name__}); it is tried again on the next pass", flush=True)
+    failed = [r for r in results if r["error"]]
+    if failed:
+        print(f"{len(failed)} of {len(results)} expired sandboxes did not delete; the next pass tries them again.")
+    return results
 
 
 # ---------------------------------------------------------------------------

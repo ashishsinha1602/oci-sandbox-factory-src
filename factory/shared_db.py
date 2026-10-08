@@ -200,8 +200,9 @@ def alive_ids() -> set[str]:
         return None
 
 
-def reap(now_iso: str) -> list[str]:
-    """Drop the schemas of expired sandboxes. Returns the sandbox ids removed."""
+def reap(now_iso: str, failed: dict | None = None) -> list[str]:
+    """Drop the schemas of expired sandboxes. Returns the sandbox ids removed; ``failed`` (when given) gets
+    {sandbox_id: reason} for the ones that could not be dropped, so their cards can say so."""
     shared = info()
     if shared is None:
         return []
@@ -219,6 +220,8 @@ def reap(now_iso: str) -> list[str]:
         print(f"{sid} expired (schema in the shared database)", flush=True)
         if destroy(sid):
             gone.append(sid)
+        elif failed is not None:
+            failed[sid] = "the schema could not be dropped from the shared database (details in the worker log)"
     return gone
 
 

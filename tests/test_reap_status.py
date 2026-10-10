@@ -158,3 +158,45 @@ def test_reconcile_clears_a_failed_card_once_the_sandbox_is_gone(monkeypatch):
     worker.reconcile(t)
     card = t.latest("s3")
     assert (card["action"], card["status"]) == ("DESTROY", "DONE")
+
+
+# --- the header: when the worker last finished a pass that checked everything ---------------------------
+
+def test_a_reaper_that_could_not_run_makes_the_pass_incomplete(monkeypatch):
+    def boom(_args):
+        raise RuntimeError("Resource Manager unreachable")
+
+    monkeypatch.setattr(worker.sf, "cmd_reap", boom)
+    monkeypatch.setattr(worker.shared_db, "reap", lambda now, failed: [])
+    errors = []
+    worker.run_reapers(errors)
+    assert len(errors) == 1 and errors[0].startswith("stacks:")
+
+
+def test_a_sandbox_that_would_not_delete_still_leaves_a_complete_pass(monkeypatch):
+    """Checked and failed is a card's business; the pass itself looked at everything."""
+    monkeypatch.setattr(worker.sf, "cmd_reap", lambda _a: [{"sandbox_id": "bad1", "error": "bucket not empty"}])
+    monkeypatch.setattr(worker.shared_db, "reap", lambda now, failed: [])
+    errors = []
+    res = worker.run_reapers(errors)
+    assert errors == [] and res == {"bad1": "bucket not empty"}
+
+
+def test_record_pass_writes_an_iso_utc_time():
+    seen = {}
+
+    class Cur:
+        def execute(self, sql, **kw):
+            seen["sql"], seen["v"] = sql, kw.get("v")
+
+    class Conn:
+        def cursor(self):
+            return Cur()
+
+        def commit(self):
+            seen["committed"] = True
+
+    worker.record_pass(Conn())
+    assert "reaper_last_pass" in seen["sql"] and seen.get("committed")
+    import re
+    assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", seen["v"]), seen["v"]

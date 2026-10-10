@@ -1327,6 +1327,9 @@ function sfInit(){
     if(c.user){var w=$('#sf-who');
       w.textContent='Signed in as '+c.user+' · '+(c.live||0)+' of '+(c.cap||3)+' sandboxes'+(c.edition==='free'?' · Free Tier edition':'');
       w.classList.remove('sf-hide');}
+    // When the worker last finished a reaper pass that checked every sandbox. A card that stops changing is
+    // either a delete that keeps failing (the card says so) or a worker that stopped; this line tells them apart.
+    reaperLine(c.reaper_last_pass);
     // Free Tier edition: what Always Free does not include is shown, not offered
     window.__sfEdition=c.edition||'standard'; window.__sfFreeApps=!!c.free_apps;
     if(c.edition==='free'){
@@ -1338,5 +1341,16 @@ function sfInit(){
   })
     .catch(function(){}).then(function(){drawRecipes(); buildTabs(); addClear(); restoreChat()});
   refresh();
+}
+function reaperLine(iso){
+  var w=$('#sf-who'); if(!w)return;
+  var p=document.createElement('span'); p.id='sf-reaper';
+  if(!iso){ p.textContent=' · expired sandboxes: not checked yet'; w.appendChild(p); return; }
+  var t=new Date(iso), mins=Math.round((Date.now()-t.getTime())/60000);
+  var ago=mins<1?'just now':mins<90?mins+' min ago':Math.round(mins/60)+' h ago';
+  p.textContent=' · expired sandboxes last checked '+ago;
+  p.title='Last successful reaper pass: '+t.toISOString().replace('T',' ').slice(0,16)+' UTC. The worker checks every 30 minutes.';
+  if(mins>75){ p.style.color='#b42318'; p.textContent+=' (the worker has not finished a pass since; expired sandboxes are not being deleted)'; }
+  w.appendChild(p);
 }
 (function(){ function go(){ if(window.apex&&apex.server){sfInit()} else {setTimeout(go,100)} } if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',go)} else {go()} })();

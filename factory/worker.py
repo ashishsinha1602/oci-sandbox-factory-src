@@ -1168,9 +1168,12 @@ def requeue(conn, request_id: int) -> None:
     conn.commit()
 
 
-def run_reapers() -> dict:
+def run_reapers(errors: list | None = None) -> dict:
     """Every reaper, each on its own: a stack that will not delete used to raise out of the shared try and skip
-    the schema and Free Tier app reapers for that pass. Returns {sandbox_id: None (deleted) or reason (failed)}."""
+    the schema and Free Tier app reapers for that pass. Returns {sandbox_id: None (deleted) or reason (failed)}.
+    A reaper that could not run at all (it raised, so it never looked at its sandboxes) is appended to ``errors``:
+    that pass did not check everything, which is different from a sandbox that was checked and would not delete."""
+    errors = errors if errors is not None else []
     now = time.strftime("%Y-%m-%dT%H:%MZ", time.gmtime())
     results: dict = {}
     try:
@@ -1178,12 +1181,14 @@ def run_reapers() -> dict:
             results[r["sandbox_id"]] = r["error"]
     except Exception as e:  # noqa: BLE001
         print(f"reaper (stacks) error: {e}", file=sys.stderr)
+        errors.append(f"stacks: {e}")
     failed: dict = {}
     try:
         for sid in shared_db.reap(now, failed):
             results[sid] = None
     except Exception as e:  # noqa: BLE001
         print(f"reaper (shared schemas) error: {e}", file=sys.stderr)
+        errors.append(f"shared schemas: {e}")
     if FREE_APPS:
         try:
             import host_apps
@@ -1191,6 +1196,7 @@ def run_reapers() -> dict:
                 results.setdefault(sid, None)
         except Exception as e:  # noqa: BLE001
             print(f"reaper (Free Tier apps) error: {e}", file=sys.stderr)
+            errors.append(f"Free Tier apps: {e}")
     for sid, why in failed.items():
         results[sid] = why
     return results
@@ -1236,6 +1242,18 @@ def record_reap(conn, results: dict) -> None:
                                values (:1, :2, 'DESTROY', 1, 'FAILED', systimestamp, systimestamp, 'expired: automatic delete', :3, :4)""",
                             [requester, sid, why, f"{stamp}  expired, but the automatic delete failed: {why}\n{REAP_RETRY_NOTE}"])
             print(f"reaper: {sid} did not delete; the card says so")
+    conn.commit()
+
+
+def record_pass(conn) -> None:
+    """The time of the last reaper pass that checked everything, for the page header. Written only when every
+    reaper ran and the cards were updated, so a worker that wakes up but fails its pass does not look healthy, and
+    a card that stops changing can be told apart from a worker that stopped: the header says which."""
+    cur = conn.cursor()
+    stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    cur.execute("""merge into sbx.factory_config c using (select 'reaper_last_pass' key, :v value from dual) s
+                   on (c.key = s.key) when matched then update set c.value = s.value
+                   when not matched then insert (key, value) values (s.key, s.value)""", v=stamp)
     conn.commit()
 
 
@@ -1381,8 +1399,11 @@ def main():
             last_reap = time.time()
             try:
                 print(f"[{dt.datetime.now():%H:%M:%S}] reaper: checking for expired sandboxes")
-                record_reap(conn, run_reapers())
+                reap_errors: list = []
+                record_reap(conn, run_reapers(reap_errors))
                 reconcile(conn)
+                if not reap_errors:
+                    record_pass(conn)
                 if time.time() - last_prices > 86400:          # Oracle's price list, daily
                     last_prices = time.time()
                     import profile as tenancy_profile

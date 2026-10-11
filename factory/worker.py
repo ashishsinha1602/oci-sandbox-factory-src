@@ -1245,16 +1245,31 @@ def record_reap(conn, results: dict) -> None:
     conn.commit()
 
 
+def _set_config(conn, key: str, value: str) -> None:
+    cur = conn.cursor()
+    cur.execute("""merge into sbx.factory_config c using (select :k key, :v value from dual) s
+                   on (c.key = s.key) when matched then update set c.value = s.value
+                   when not matched then insert (key, value) values (s.key, s.value)""", k=key, v=value)
+    conn.commit()
+
+
+def _utc_now() -> str:
+    return dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def record_pass(conn) -> None:
     """The time of the last reaper pass that checked everything, for the page header. Written only when every
     reaper ran and the cards were updated, so a worker that wakes up but fails its pass does not look healthy, and
     a card that stops changing can be told apart from a worker that stopped: the header says which."""
-    cur = conn.cursor()
-    stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    cur.execute("""merge into sbx.factory_config c using (select 'reaper_last_pass' key, :v value from dual) s
-                   on (c.key = s.key) when matched then update set c.value = s.value
-                   when not matched then insert (key, value) values (s.key, s.value)""", v=stamp)
-    conn.commit()
+    _set_config(conn, "reaper_last_pass", _utc_now())
+
+
+def record_attempt(conn, error: str) -> None:
+    """Every pass the worker starts, successful or not, with what went wrong ('' if nothing). Beside the last
+    successful pass this tells a worker that keeps waking up and failing (recent attempt, error, old pass) from
+    one that stopped (old attempt and old pass)."""
+    _set_config(conn, "reaper_last_attempt", _utc_now())
+    _set_config(conn, "reaper_last_error", (error or "")[:300])
 
 
 def reconcile(conn):
@@ -1402,6 +1417,7 @@ def main():
                 reap_errors: list = []
                 record_reap(conn, run_reapers(reap_errors))
                 reconcile(conn)
+                record_attempt(conn, "; ".join(reap_errors))
                 if not reap_errors:
                     record_pass(conn)
                 if time.time() - last_prices > 86400:          # Oracle's price list, daily
@@ -1410,6 +1426,10 @@ def main():
                     tenancy_profile.refresh_prices()
             except Exception as e:  # noqa: BLE001
                 print(f"reaper error: {e}", file=sys.stderr)
+                try:
+                    record_attempt(conn, f"{type(e).__name__}: {e}")
+                except Exception:  # noqa: BLE001 - the control DB itself may be what failed
+                    pass
         try:
             worked = process_one(conn)
         except oracledb.Error as e:

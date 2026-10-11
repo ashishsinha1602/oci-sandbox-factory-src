@@ -188,6 +188,7 @@ def test_record_pass_writes_an_iso_utc_time():
     class Cur:
         def execute(self, sql, **kw):
             seen["sql"], seen["v"] = sql, kw.get("v")
+            seen.setdefault("keys", {})[kw.get("k")] = kw.get("v")
 
     class Conn:
         def cursor(self):
@@ -197,6 +198,28 @@ def test_record_pass_writes_an_iso_utc_time():
             seen["committed"] = True
 
     worker.record_pass(Conn())
-    assert "reaper_last_pass" in seen["sql"] and seen.get("committed")
+    assert seen["keys"].get("reaper_last_pass") and seen.get("committed")
     import re
     assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ", seen["v"]), seen["v"]
+
+
+def test_record_attempt_writes_the_time_and_the_error_even_when_the_pass_failed():
+    keys = {}
+
+    class Cur:
+        def execute(self, sql, **kw):
+            keys[kw["k"]] = kw["v"]
+
+    class Conn:
+        def cursor(self):
+            return Cur()
+
+        def commit(self):
+            pass
+
+    worker.record_attempt(Conn(), "stacks: Resource Manager unreachable")
+    assert keys["reaper_last_error"] == "stacks: Resource Manager unreachable" and keys["reaper_last_attempt"]
+    worker.record_attempt(Conn(), "")
+    assert keys["reaper_last_error"] == ""
+    worker.record_attempt(Conn(), "x" * 1000)
+    assert len(keys["reaper_last_error"]) == 300

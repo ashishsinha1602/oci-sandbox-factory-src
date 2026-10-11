@@ -1329,7 +1329,7 @@ function sfInit(){
       w.classList.remove('sf-hide');}
     // When the worker last finished a reaper pass that checked every sandbox. A card that stops changing is
     // either a delete that keeps failing (the card says so) or a worker that stopped; this line tells them apart.
-    reaperLine(c.reaper_last_pass);
+    reaperLine(c);
     // Free Tier edition: what Always Free does not include is shown, not offered
     window.__sfEdition=c.edition||'standard'; window.__sfFreeApps=!!c.free_apps;
     if(c.edition==='free'){
@@ -1342,15 +1342,27 @@ function sfInit(){
     .catch(function(){}).then(function(){drawRecipes(); buildTabs(); addClear(); restoreChat()});
   refresh();
 }
-function reaperLine(iso){
-  var w=$('#sf-who'); if(!w)return;
+function reaperLine(c){
+  var w=$('#sf-who'); if(!w)return; c=c||{};
   var p=document.createElement('span'); p.id='sf-reaper';
-  if(!iso){ p.textContent=' · expired sandboxes: not checked yet'; w.appendChild(p); return; }
-  var t=new Date(iso), mins=Math.round((Date.now()-t.getTime())/60000);
-  var ago=mins<1?'just now':mins<90?mins+' min ago':Math.round(mins/60)+' h ago';
-  p.textContent=' · expired sandboxes last checked '+ago;
-  p.title='Last successful reaper pass: '+t.toISOString().replace('T',' ').slice(0,16)+' UTC. The worker checks every 30 minutes.';
-  if(mins>75){ p.style.color='#b42318'; p.textContent+=' (the worker has not finished a pass since; expired sandboxes are not being deleted)'; }
+  function ago(iso){ var m=Math.round((Date.now()-new Date(iso).getTime())/60000); return m<1?'just now':m<90?m+' min ago':Math.round(m/60)+' h ago'; }
+  function mins(iso){ return (Date.now()-new Date(iso).getTime())/60000; }
+  var iso=c.reaper_last_pass||'';
+  if(!iso){ p.textContent=' · expired sandboxes: not checked yet'; }
+  else {
+    p.textContent=' · expired sandboxes last checked '+ago(iso);
+    p.title='Last successful reaper pass: '+new Date(iso).toISOString().replace('T',' ').slice(0,16)+' UTC. The worker checks every 30 minutes.';
+    if(mins(iso)>75){ p.style.color='#b42318'; p.textContent+=' (the worker has not finished a pass since; expired sandboxes are not being deleted)'; }
+  }
+  // the worker woke up and tried, but the pass did not finish: say so, with why, instead of just looking stale
+  var at=c.reaper_last_attempt||'', err=c.reaper_last_error||'';
+  if(at && err && (!iso || new Date(at)>new Date(iso))){
+    p.style.color='#b42318'; p.textContent+=' · last attempt '+ago(at)+' failed: '+String(err).slice(0,120);
+  }
   w.appendChild(p);
+  // sandboxes of this user whose delete keeps failing: stuck and still running, even while the line above is green
+  var n=Number(c.stuck||0);
+  if(n>0){ var q=document.createElement('span'); q.id='sf-stuck'; q.style.color='#b42318';
+    q.textContent=' · '+n+' of your sandboxes could not be deleted (see their cards)'; w.appendChild(q); }
 }
 (function(){ function go(){ if(window.apex&&apex.server){sfInit()} else {setTimeout(go,100)} } if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',go)} else {go()} })();

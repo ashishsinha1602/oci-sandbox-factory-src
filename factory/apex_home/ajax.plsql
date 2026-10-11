@@ -402,6 +402,14 @@ begin
     l_out.put('prices', l_prices);
     l_out.put('prices_updated', cfg_value('prices_updated', ''));
     l_out.put('reaper_last_pass', cfg_value('reaper_last_pass', ''));
+    l_out.put('reaper_last_attempt', cfg_value('reaper_last_attempt', ''));
+    l_out.put('reaper_last_error', cfg_value('reaper_last_error', ''));
+    -- this user's sandboxes whose latest state is a failed delete: stuck, and still costing until it works
+    select count(*) into l_id from (
+      select action, status, row_number() over (partition by sandbox_id order by id desc) rn
+        from sandbox_requests where requester = :APP_USER)
+     where rn = 1 and action = 'DESTROY' and status = 'FAILED';
+    l_out.put('stuck', l_id);
     l_out.put('model', c_genai_model);
     l_out.put('user', :APP_USER);
     l_out.put('cap', to_number(cfg_value('max_sandboxes_per_user', '3')));

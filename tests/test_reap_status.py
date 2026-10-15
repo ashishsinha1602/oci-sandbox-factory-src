@@ -223,3 +223,4 @@ def test_record_attempt_writes_the_time_and_the_error_even_when_the_pass_failed(
     assert keys["reaper_last_error"] == ""
     worker.record_attempt(Conn(), "x" * 1000)
     assert len(keys["reaper_last_error"]) == 300
+    assert keys["reaper_interval_seconds"] == str(worker.REAP_SECONDS)

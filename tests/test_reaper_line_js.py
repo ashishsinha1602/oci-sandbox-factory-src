@@ -63,3 +63,16 @@ def test_stuck_sandboxes_are_counted_even_while_the_header_is_green():
     r = _run({"reaper_last_pass": _ago(10), "stuck": 2})
     assert "2 of your sandboxes could not be deleted" in r["text"] and r["parts"] == 2
     assert _run({"reaper_last_pass": _ago(10), "stuck": 0})["parts"] == 1
+
+
+def test_overdue_is_twice_the_workers_own_interval():
+    # default 30 min: 50 min is fine, 65 min is overdue and says the interval
+    assert _run({"reaper_last_pass": _ago(50)})["color"] == ""
+    r = _run({"reaper_last_pass": _ago(65)})
+    assert r["color"] and "overdue: it runs every 30 min" in r["text"]
+    # a worker set to 10 minutes is overdue after 20, and the hover says 10
+    r = _run({"reaper_last_pass": _ago(25), "reaper_interval_seconds": "600"})
+    assert r["color"] and "every 10 min" in r["text"] and "every 10 minutes" in r["title"]
+    assert _run({"reaper_last_pass": _ago(15), "reaper_interval_seconds": "600"})["color"] == ""
+    # garbage or missing falls back to 30
+    assert "every 30 minutes" in _run({"reaper_last_pass": _ago(5), "reaper_interval_seconds": "x"})["title"]

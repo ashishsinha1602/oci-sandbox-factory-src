@@ -404,6 +404,7 @@ begin
     l_out.put('reaper_last_pass', cfg_value('reaper_last_pass', ''));
     l_out.put('reaper_last_attempt', cfg_value('reaper_last_attempt', ''));
     l_out.put('reaper_last_error', cfg_value('reaper_last_error', ''));
+    l_out.put('reaper_interval_seconds', cfg_value('reaper_interval_seconds', '1800'));
     -- this user's sandboxes whose latest state is a failed delete: stuck, and still costing until it works
     select count(*) into l_id from (
       select action, status, row_number() over (partition by sandbox_id order by id desc) rn

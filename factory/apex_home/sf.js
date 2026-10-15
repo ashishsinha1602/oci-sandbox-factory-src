@@ -1348,11 +1348,13 @@ function reaperLine(c){
   function ago(iso){ var m=Math.round((Date.now()-new Date(iso).getTime())/60000); return m<1?'just now':m<90?m+' min ago':Math.round(m/60)+' h ago'; }
   function mins(iso){ return (Date.now()-new Date(iso).getTime())/60000; }
   var iso=c.reaper_last_pass||'';
+  // the worker's real interval, so "overdue" is twice what it actually runs at rather than a number fixed in this page
+  var every=Math.max(1,Math.round((Number(c.reaper_interval_seconds)||1800)/60));
   if(!iso){ p.textContent=' · expired sandboxes: not checked yet'; }
   else {
     p.textContent=' · expired sandboxes last checked '+ago(iso);
-    p.title='Last successful reaper pass: '+new Date(iso).toISOString().replace('T',' ').slice(0,16)+' UTC. The worker checks every 30 minutes.';
-    if(mins(iso)>75){ p.style.color='#b42318'; p.textContent+=' (the worker has not finished a pass since; expired sandboxes are not being deleted)'; }
+    p.title='Last successful reaper pass: '+new Date(iso).toISOString().replace('T',' ').slice(0,16)+' UTC. The worker checks every '+every+' minutes.';
+    if(mins(iso)>2*every){ p.style.color='#b42318'; p.textContent+=' (overdue: it runs every '+every+' min and has not finished a pass since; expired sandboxes are not being deleted)'; }
   }
   // the worker woke up and tried, but the pass did not finish: say so, with why, instead of just looking stale
   var at=c.reaper_last_attempt||'', err=c.reaper_last_error||'';

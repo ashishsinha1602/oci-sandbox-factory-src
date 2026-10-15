@@ -1270,6 +1270,8 @@ def record_attempt(conn, error: str) -> None:
     one that stopped (old attempt and old pass)."""
     _set_config(conn, "reaper_last_attempt", _utc_now())
     _set_config(conn, "reaper_last_error", (error or "")[:300])
+    # the header flags a pass as overdue at twice this, so it follows the real interval instead of a number in the page
+    _set_config(conn, "reaper_interval_seconds", str(REAP_SECONDS))
 
 
 def reconcile(conn):
